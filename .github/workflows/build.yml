@@ -26,13 +26,15 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-         - name: Set up Gradle
-           uses: gradle/actions/setup-gradle@v6
-           with:
-             gradle-version: "8.14.3"
+      # Gradle wird hier direkt installiert. So braucht der Bau die Dateien
+      # gradlew und gradle/wrapper/* nicht (sie gehen beim Hochladen leicht verloren).
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: "8.14.3"
 
-         - name: Run tests and build the APK
-           run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
+      - name: Run tests and build the APK
+        run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
 
       - name: Name the APK
         run: cp app/build/outputs/apk/release/app-release.apk firelite.apk

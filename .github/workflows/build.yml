@@ -1,0 +1,68 @@
+name: Build APK
+
+# Bei jedem Hochladen (und per Knopfdruck) wird die App gebaut und als "Release"
+# veroeffentlicht. Der Link zur neuesten APK bleibt immer gleich:
+#   https://github.com/<DEIN-NAME>/<DEIN-REPO>/releases/latest/download/firelite.apk
+
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out
+        uses: actions/checkout@v7
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+
+      # "sh gradlew" statt "./gradlew": beim Hochladen ueber die GitHub-Webseite
+      # geht die Ausfuehr-Berechtigung der Datei verloren.
+      - name: Run tests and build the APK
+        run: sh gradlew --no-daemon :app:testDebugUnitTest :app:assembleRelease
+
+      - name: Name the APK
+        run: cp app/build/outputs/apk/release/app-release.apk firelite.apk
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v7
+        with:
+          name: firelite-apk
+          path: firelite.apk
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download the APK
+        uses: actions/download-artifact@v7
+        with:
+          name: firelite-apk
+          path: dist
+
+      - name: Publish a release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          gh release create "build-${GITHUB_RUN_NUMBER}" dist/firelite.apk \
+            --target "$GITHUB_SHA" \
+            --title "FireLite Build ${GITHUB_RUN_NUMBER}" \
+            --notes "Per Downloader laden: https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/firelite.apk"

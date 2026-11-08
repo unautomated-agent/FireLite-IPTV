@@ -26,13 +26,13 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v6
+         - name: Set up Gradle
+           uses: gradle/actions/setup-gradle@v6
+           with:
+             gradle-version: "8.14.3"
 
-      # "sh gradlew" statt "./gradlew": beim Hochladen ueber die GitHub-Webseite
-      # geht die Ausfuehr-Berechtigung der Datei verloren.
-      - name: Run tests and build the APK
-        run: sh gradlew --no-daemon :app:testDebugUnitTest :app:assembleRelease
+         - name: Run tests and build the APK
+           run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
 
       - name: Name the APK
         run: cp app/build/outputs/apk/release/app-release.apk firelite.apk

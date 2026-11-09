@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,21 +26,24 @@ import dev.firetvlite.iptv.ui.navigation.RailCollapsedWidth
 import dev.firetvlite.iptv.ui.screens.ComingSoonScreen
 import dev.firetvlite.iptv.ui.screens.HomeScreen
 import dev.firetvlite.iptv.ui.screens.LiveTvScreen
+import dev.firetvlite.iptv.ui.screens.SettingsScreen
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 import dev.firetvlite.iptv.ui.theme.ReferenceDensity
+import dev.firetvlite.iptv.update.UpdateViewModel
 
 /** Root of the UI: normalised density, theme and the navigation shell. */
 @Composable
-fun FireLiteApp() {
+fun FireLiteApp(updateViewModel: UpdateViewModel) {
     ReferenceDensity {
         FireLiteTheme {
-            AppShell()
+            AppShell(updateViewModel)
         }
     }
 }
 
 @Composable
-private fun AppShell() {
+private fun AppShell(updateViewModel: UpdateViewModel) {
+    val updateState by updateViewModel.state.collectAsState()
     var current by rememberSaveable { mutableStateOf(Destination.Home) }
     var railHasFocus by remember { mutableStateOf(false) }
     val railRequesters = remember { Destination.entries.associateWith { FocusRequester() } }
@@ -71,8 +75,18 @@ private fun AppShell() {
             label = "screen",
         ) { destination ->
             when (destination) {
-                Destination.Home -> HomeScreen()
+                Destination.Home -> HomeScreen(
+                    updateState = updateState,
+                    onInstallUpdate = updateViewModel::downloadAndInstall,
+                )
                 Destination.Live -> LiveTvScreen()
+                Destination.Settings -> SettingsScreen(
+                    installed = updateViewModel.installed,
+                    updateState = updateState,
+                    onCheckForUpdate = updateViewModel::checkForUpdate,
+                    onInstallUpdate = updateViewModel::downloadAndInstall,
+                    onOpenInstallSettings = updateViewModel::openInstallSettings,
+                )
                 else -> ComingSoonScreen(destination)
             }
         }

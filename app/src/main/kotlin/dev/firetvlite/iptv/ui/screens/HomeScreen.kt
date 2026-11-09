@@ -35,16 +35,24 @@ import dev.firetvlite.iptv.ui.components.FocusSurface
 import dev.firetvlite.iptv.ui.components.PrimaryButton
 import dev.firetvlite.iptv.ui.components.ProgressBar
 import dev.firetvlite.iptv.ui.components.SecondaryButton
+import dev.firetvlite.iptv.ui.components.UpdateBanner
 import dev.firetvlite.iptv.ui.components.requestFocusWhenReady
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
+import dev.firetvlite.iptv.update.UpdateState
+import dev.firetvlite.iptv.update.pendingRelease
 
 /**
  * Start screen: a hero banner followed by horizontal rows.
  *
- * All content is demo data until sources are connected; the hero says so.
+ * A banner on top offers a pending app update. All other content is demo data until sources are
+ * connected; the hero says so.
  */
 @Composable
-fun HomeScreen(modifier: Modifier = Modifier) {
+fun HomeScreen(
+    updateState: UpdateState,
+    onInstallUpdate: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
     val heroFocus = remember { FocusRequester() }
     LaunchedEffect(Unit) { heroFocus.requestFocusWhenReady() }
 
@@ -53,6 +61,11 @@ fun HomeScreen(modifier: Modifier = Modifier) {
         contentPadding = PaddingValues(start = 16.dp, end = 24.dp, top = 20.dp, bottom = 32.dp),
         verticalArrangement = Arrangement.spacedBy(20.dp),
     ) {
+        if (updateState.pendingRelease != null) {
+            item(key = "update") {
+                UpdateBanner(state = updateState, onInstall = onInstallUpdate)
+            }
+        }
         item(key = "hero") {
             HeroBanner(heroFocus = heroFocus)
         }

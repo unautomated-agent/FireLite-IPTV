@@ -1,5 +1,8 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
+// Shared by versionCode and by the in-app updater (BuildConfig.VERSION_CODE_OFFSET).
+val versionCodeOffset = 100
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
@@ -16,8 +19,14 @@ android {
         targetSdk = 35
         // GitHub's run number only ever increases, so every new build can update the installed one.
         // The offset keeps this repository's builds above those of the earlier 1.x repository.
-        versionCode = 100 + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
-        versionName = "2.0.0-alpha.1"
+        versionCode = versionCodeOffset + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
+        versionName = "2.1.0-alpha.1"
+
+        // The in-app updater reads releases of the repository this build was made in.
+        // GITHUB_REPOSITORY is set by GitHub Actions ("owner/repo"); local builds leave it empty,
+        // which disables the updater.
+        buildConfigField("String", "UPDATE_REPOSITORY", "\"${System.getenv("GITHUB_REPOSITORY") ?: ""}\"")
+        buildConfigField("int", "VERSION_CODE_OFFSET", "$versionCodeOffset")
     }
 
     // A dedicated key for this app only. It is committed on purpose (it is not a secret) so that
@@ -50,6 +59,7 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
     }
 
     // Lint becomes a CI gate in a later package; until then it must not block the release build.
@@ -73,6 +83,10 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
+    implementation(libs.androidx.lifecycle.viewmodel.ktx)
+    implementation(libs.kotlinx.coroutines.android)
 
     testImplementation(libs.junit)
+    // Android's own org.json is only a stub in local unit tests; this is the real implementation.
+    testImplementation(libs.json)
 }

@@ -36,6 +36,27 @@
         <item quantity="other">%d kanału</item>
     </plurals>
 
+    <!-- Settings and app updates -->
+    <string name="update_section">Aktualizacja aplikacji</string>
+    <string name="update_installed">Zainstalowana wersja: %1$s (kompilacja %2$d)</string>
+    <string name="update_check">Sprawdź aktualizacje</string>
+    <string name="update_install">Pobierz i zainstaluj</string>
+    <string name="update_open_settings">Otwórz ustawienia instalacji</string>
+    <string name="update_checking">Sprawdzanie…</string>
+    <string name="update_up_to_date">Masz najnowszą wersję.</string>
+    <string name="update_available">Dostępna nowa wersja: kompilacja %1$d</string>
+    <string name="update_downloading">Pobieranie… %1$d%%</string>
+    <string name="update_downloading_unknown">Pobieranie…</string>
+    <string name="update_error_not_configured">Aktualizacje są wyłączone w tej kompilacji.</string>
+    <string name="update_error_network">Nie udało się połączyć z GitHub. Sprawdź internet i spróbuj ponownie.</string>
+    <string name="update_error_no_apk">Najnowsze wydanie nie zawiera pliku APK.</string>
+    <string name="update_error_unknown_tag">Najnowsze wydanie ma nieznany format numeru.</string>
+    <string name="update_error_download">Pobieranie nie powiodło się. Spróbuj ponownie.</string>
+    <string name="update_error_permission">Zezwól FireLite na instalowanie nieznanych aplikacji (Ustawienia → My Fire TV → Opcje programisty), a następnie wybierz „Pobierz i zainstaluj” ponownie.</string>
+    <string name="update_error_installer">Nie można otworzyć instalatora systemowego.</string>
+    <string name="update_banner_title">Dostępna nowa wersja FireLite</string>
+    <string name="update_banner_action">Zainstaluj teraz</string>
+
     <!-- Placeholder screens -->
     <string name="coming_soon_text">Ten ekran pojawi się w jednej z kolejnych wersji.</string>
 

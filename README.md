@@ -1,73 +1,62 @@
 # FireLite
 
-Ein schlanker IPTV-Player, geschrieben nur für den **Amazon Fire TV Stick (Fire OS 7)**.
-Der Code ist klein und gehört dir: kein Fremdprogramm im Hintergrund, keine Werbung, kein Konto.
+A fast, modern IPTV client built only for the **Amazon Fire TV Stick 4K Max (Fire OS 7)**.
+Kotlin, Jetpack Compose, Media3. The UI language is Polish; code and documentation are English.
 
-FireLite liefert **keine Sender**. Du trägst die Adresse einer M3U-Playlist ein, die du nutzen darfst.
+FireLite ships **no channels or content**. You connect sources you are allowed to use.
 
-## Was FireLite kann
+## Status
 
-- M3U-Playlist per Internetadresse laden (http oder https) und nach Gruppen anzeigen
-- Sender abspielen mit ExoPlayer (HLS `.m3u8`, rohes `.ts`, MP4 und mehr)
-- Mit Hoch/Runter im Bild den Sender wechseln
-- Favoriten merken
-- Die zuletzt geladene Liste bleibt gespeichert, auch wenn der Anbieter einmal nicht antwortet
+`2.0.0-alpha.1` is the foundation: toolchain, design system, navigation and demo screens.
+It contains **no player and makes no network requests**; all content on screen is demo data.
 
-Nicht dabei (noch): Programmführer (EPG), Xtream-Login (es geht nur die M3U-Adresse), Suche, Aufnahmen, DASH-Streams.
+Planned (see the concept document): multiple sources (M3U, Xtream Codes, Stalker), live TV with
+programme guide (XMLTV), search, movies and series with posters, seasons, history and resume.
 
-## Fernbedienung
+## Hard rule: one stream at a time
 
-| Taste | In der Liste | Im Bild |
-| --- | --- | --- |
-| Hoch / Runter | Auswahl bewegen | Sender wechseln |
-| Rechts / Links | zwischen Gruppen und Sendern | – |
-| OK | Sender abspielen | Infoleiste zeigen |
-| Menü (☰) | Favorit an/aus (bei Sendern), Einstellungen (bei Gruppen) | Favorit an/aus |
-| Play/Pause | – | Pause / weiter |
-| Zurück | App beenden | zurück zur Liste |
+The provider allows exactly **one** simultaneous connection and blocks the account on a second one.
+The player (added in a later package) is built around this:
 
-## Installation auf dem Fire TV Stick (mit Downloader)
+- a single player instance owns the only stream connection;
+- the old connection is closed *before* a new one opens, never the other way round;
+- the same channel is never opened twice (previews reuse the playing player);
+- the stream stops immediately when the app goes to the background.
 
-1. Auf dem Stick die App **Downloader** installieren und ihr erlauben, Apps aus unbekannten Quellen zu installieren
-   (Einstellungen → My Fire TV → Entwickleroptionen).
-2. In Downloader diese Adresse eingeben (mit deinem Namen und Repo-Namen):
-   `https://github.com/DEIN-NAME/DEIN-REPO/releases/latest/download/firelite.apk`
-3. Herunterladen, **Installieren**, fertig. Neue Versionen installierst du auf demselben Weg, sie ersetzen die alte.
+## Design principles
 
-Das Repo muss **öffentlich** sein, sonst kommt Downloader nicht an die Datei.
+- **10-foot UI**: everything works with the Fire TV remote; focus is always visible and animated.
+- **Reference canvas**: the UI is laid out on a 960 dp wide canvas and scaled to the real screen
+  (`ReferenceDensity`), so it looks the same on every TV density.
+- **Smooth on modest hardware**: focus effects run in graphics layers (no re-layout), lists are lazy.
+- **Localisation**: all user-facing text is in `res/values/strings.xml` (Polish); resource names are English.
 
-## Playlist-Adresse bequem vom PC setzen
+## Build
 
-Eine lange Adresse mit der Fernbedienung zu tippen ist mühsam. Mit `adb` (Stick im selben WLAN, ADB-Debugging an):
+CI builds on every push (`.github/workflows/build.yml`). Locally you need JDK 17 and the Android SDK:
 
 ```
-adb connect 192.168.x.x
-adb shell am start -n dev.firetvlite.iptv/.MainActivity --es url "http://dein-anbieter/playlist.m3u"
+./gradlew :app:testDebugUnitTest :app:assembleRelease
 ```
 
-## Selbst bauen
+The APK is signed with `app/release.keystore`. It is committed on purpose and is **not a secret**
+(password `firelite`): it only guarantees that all builds share one signature so updates install over
+each other. Use your own private key if you ever distribute the app to others.
 
-Jedes Hochladen auf GitHub startet den Bau automatisch (Reiter **Actions**, Datei `.github/workflows/build.yml`).
-Dabei laufen zuerst die Tests, dann entsteht die APK und wird als **Release** veröffentlicht.
+## Install on the Fire TV Stick
 
-Lokal (JDK 17 und Android SDK nötig): `sh gradlew :app:testDebugUnitTest :app:assembleRelease`
+1. Install **Downloader** on the stick and allow it to install unknown apps.
+2. In Downloader open `https://github.com/<OWNER>/<REPO>/releases/latest/download/firelite.apk`.
+3. Install. New builds update the old one.
 
-## Hinweise
-
-- `app/release.keystore` ist ein Signaturschlüssel **nur für diese App** und liegt absichtlich im Repo
-  (Passwort `firelite`). Dadurch haben alle Builds dieselbe Signatur und Updates klappen.
-  Das ist für den privaten Gebrauch in Ordnung; für eine Veröffentlichung für andere solltest du einen eigenen,
-  geheimen Schlüssel verwenden.
-- Die App erlaubt unverschlüsselte Verbindungen (http), weil viele IPTV-Anbieter nur so liefern.
-
-## Aufbau
+## Layout
 
 ```
-app/src/main/java/dev/firetvlite/iptv/
-  M3uParser.java        liest die Playlist (getestet)
-  PlaylistLoader.java   lädt die Playlist herunter
-  MainActivity.java     Liste mit Gruppen und Sendern, Einstellungen
-  PlayerActivity.java   Wiedergabe mit ExoPlayer
-  Prefs.java, Store.java, Channel.java, Playlist.java
-app/src/test/...        Tests für den Parser
+app/src/main/kotlin/dev/firetvlite/iptv/
+  MainActivity.kt, FireLiteApp.kt   entry point and navigation shell
+  ui/theme/                         colours, typography, shapes, reference density
+  ui/components/                    FocusSurface, buttons, icons, text helpers
+  ui/navigation/                    destinations and the navigation rail
+  ui/screens/                       home, live TV and placeholder screens
+gradle/libs.versions.toml           all dependency and plugin versions
 ```

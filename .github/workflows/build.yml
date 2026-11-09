@@ -1,8 +1,8 @@
 name: Build APK
 
-# Bei jedem Hochladen (und per Knopfdruck) wird die App gebaut und als "Release"
-# veroeffentlicht. Der Link zur neuesten APK bleibt immer gleich:
-#   https://github.com/<DEIN-NAME>/<DEIN-REPO>/releases/latest/download/firelite.apk
+# Every push (and a manual run) builds the app and publishes it as a GitHub release.
+# The link to the newest APK never changes:
+#   https://github.com/<OWNER>/<REPO>/releases/latest/download/firelite.apk
 
 on:
   push:
@@ -15,7 +15,7 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - name: Check out
         uses: actions/checkout@v7
@@ -26,14 +26,14 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      # Gradle wird hier direkt installiert. So braucht der Bau die Dateien
-      # gradlew und gradle/wrapper/* nicht (sie gehen beim Hochladen leicht verloren).
+      # Gradle is installed directly, so the build does not depend on the wrapper files.
+      # Keep this version in sync with gradle/wrapper/gradle-wrapper.properties.
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
           gradle-version: "8.14.3"
 
-      - name: Run tests and build the APK
+      - name: Run unit tests and build the release APK
         run: gradle --no-daemon :app:testDebugUnitTest :app:assembleRelease
 
       - name: Name the APK
@@ -66,5 +66,5 @@ jobs:
           set -euo pipefail
           gh release create "build-${GITHUB_RUN_NUMBER}" dist/firelite.apk \
             --target "$GITHUB_SHA" \
-            --title "FireLite Build ${GITHUB_RUN_NUMBER}" \
-            --notes "Per Downloader laden: https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/firelite.apk"
+            --title "FireLite build ${GITHUB_RUN_NUMBER}" \
+            --notes "Sideload with Downloader: https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/firelite.apk"

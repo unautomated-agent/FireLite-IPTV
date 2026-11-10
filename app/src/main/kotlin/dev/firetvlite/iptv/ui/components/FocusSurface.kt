@@ -19,6 +19,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
@@ -34,6 +39,7 @@ import dev.firetvlite.iptv.ui.theme.FireLiteTheme
  * @param onClick invoked by the OK button.
  * @param background fill of the surface. It is applied inside the scaling layer so it scales too.
  * @param onFocusChanged reports focus gains and losses, e.g. to preview the focused item.
+ * @param onMenuKey invoked when the remote's Menu button is released while this surface has focus.
  * @param content receives the current focus state.
  */
 @Composable
@@ -44,6 +50,7 @@ fun FocusSurface(
     background: Brush = SolidColor(FireLiteTheme.colors.surface),
     focusedScale: Float = 1.06f,
     onFocusChanged: (Boolean) -> Unit = {},
+    onMenuKey: (() -> Unit)? = null,
     content: @Composable BoxScope.(focused: Boolean) -> Unit,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
@@ -69,6 +76,20 @@ fun FocusSurface(
             }
             .clip(shape)
             .background(background)
+            .then(
+                if (onMenuKey != null) {
+                    Modifier.onKeyEvent { event ->
+                        if (event.key == Key.Menu && event.type == KeyEventType.KeyUp) {
+                            onMenuKey()
+                            true
+                        } else {
+                            false
+                        }
+                    }
+                } else {
+                    Modifier
+                },
+            )
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,

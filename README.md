@@ -7,30 +7,53 @@ FireLite ships **no channels or content**. You connect sources you are allowed t
 
 ## Status
 
-`2.1.0-alpha.1`: foundation (toolchain, design system, navigation, demo screens) plus **in-app updates**.
-It contains **no player and opens no streams**; all content on screen is demo data. The only network
-traffic is the update check against the GitHub API.
+`2.2.0-alpha.1`: live TV. An M3U playlist is imported into a local database, browsed by group (favourites,
+recently watched, all channels), played with Media3, and can be rewound and fast-forwarded where the stream
+allows it. App updates are installed from inside the app.
 
-Planned (see the concept document): multiple sources (M3U, Xtream Codes, Stalker), live TV with
-programme guide (XMLTV), search, movies and series with posters, seasons, history and resume.
+Planned (see the concept document): multiple sources (M3U, Xtream Codes, Stalker), a programme guide (XMLTV),
+search, movies and series with posters, seasons, history and resume.
+
+## Live TV
+
+- **Playlist**: Settings, section "Lista kanalow". Users of FireLite 1.x keep their playlist address automatically.
+- **Browsing**: groups, favourites (Menu button), recently watched. Lists are paged from the database, so tens of
+  thousands of channels stay fast.
+- **Watching**: OK starts a channel. Up/Down change the channel. Left/Right jump 10 s where the stream is seekable
+  (HLS with a time-shift window). Rewind/fast-forward jump 30 s, or enter the **archive (catch-up)** in 5 minute
+  steps when the playlist declares it (`catchup`, `catchup-source`, `catchup-days`; types default, append, shift,
+  flussonic).
+- **No live preview** on purpose: it would be a second stream.
 
 ## Hard rule: one stream at a time
 
 The provider allows exactly **one** simultaneous connection and blocks the account on a second one.
-The player (added in a later package) is built around this:
+`PlaybackController` is the only code that opens a stream:
 
 - a single player instance owns the only stream connection;
-- the old connection is closed *before* a new one opens, never the other way round;
-- the same channel is never opened twice (previews reuse the playing player);
-- the stream stops immediately when the app goes to the background.
+- the old connection is closed *before* a new one opens, and a short grace period lets the server notice;
+- rapid channel changes are merged, only the channel the user stops on connects (`StreamGate` is unit tested);
+- the same stream is never opened twice;
+- the stream stops when the app is paused (Home, screensaver, system dialogs) and resumes on return.
 
 ## Design principles
 
 - **10-foot UI**: everything works with the Fire TV remote; focus is always visible and animated.
 - **Reference canvas**: the UI is laid out on a 960 dp wide canvas and scaled to the real screen
   (`ReferenceDensity`), so it looks the same on every TV density.
-- **Smooth on modest hardware**: focus effects run in graphics layers (no re-layout), lists are lazy.
+- **Smooth on modest hardware**: focus effects run in graphics layers (no re-layout), lists are lazy and paged.
 - **Localisation**: all user-facing text is in `res/values/strings.xml` (Polish); resource names are English.
+
+## In-app updates
+
+On start, FireLite asks GitHub for the latest release of the repository it was built in. If it is newer,
+a banner on the home screen offers **Zainstaluj teraz** (install now); Settings has a manual check.
+One press downloads the APK and opens Android's installer.
+
+- Release tags are `build-<N>`; the installed `versionCode` is `100 + N` (see `app/build.gradle.kts`).
+- The repository is baked in at build time from `GITHUB_REPOSITORY`; local builds have updates disabled.
+- The first time, Android asks you to allow FireLite to install unknown apps.
+- The repository must be public so the app can read its releases without a token.
 
 ## Build
 
@@ -44,31 +67,25 @@ The APK is signed with `app/release.keystore`. It is committed on purpose and is
 (password `firelite`): it only guarantees that all builds share one signature so updates install over
 each other. Use your own private key if you ever distribute the app to others.
 
-## In-app updates
-
-On start, FireLite asks GitHub for the latest release of the repository it was built in. If it is newer,
-a banner on the home screen offers **Zainstaluj teraz** (install now); Settings has a manual check.
-One press downloads the APK and opens Android's installer.
-
-- Release tags are `build-<N>`; the installed `versionCode` is `100 + N` (see `app/build.gradle.kts`).
-- The repository is baked in at build time from `GITHUB_REPOSITORY`; local builds have updates disabled.
-- The first time, Android asks you to allow FireLite to install unknown apps.
-- The repository must be public so the app can read its releases without a token.
-
 ## Install on the Fire TV Stick
 
 1. Install **Downloader** on the stick and allow it to install unknown apps.
 2. In Downloader open `https://github.com/<OWNER>/<REPO>/releases/latest/download/firelite.apk`.
-3. Install. New builds update the old one.
+3. Install. From then on, updates are offered inside the app.
 
 ## Layout
 
 ```
 app/src/main/kotlin/dev/firetvlite/iptv/
   MainActivity.kt, FireLiteApp.kt   entry point and navigation shell
+  AppContainer.kt                   manual dependency injection
+  data/db, data/playlist, data/library   Room database, M3U parser and importer, channel list repository
+  playback/                         single-stream player, catch-up URLs, zapping logic
+  update/                           in-app updates from GitHub releases
+  ui/viewmodel/                     view models (library, player)
   ui/theme/                         colours, typography, shapes, reference density
-  ui/components/                    FocusSurface, buttons, icons, text helpers
+  ui/components/                    FocusSurface, buttons, icons, logos, text helpers
   ui/navigation/                    destinations and the navigation rail
-  ui/screens/                       home, live TV and placeholder screens
+  ui/screens/                       home, live TV, player, settings and placeholder screens
 gradle/libs.versions.toml           all dependency and plugin versions
 ```

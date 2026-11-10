@@ -26,24 +26,38 @@ import dev.firetvlite.iptv.ui.navigation.RailCollapsedWidth
 import dev.firetvlite.iptv.ui.screens.ComingSoonScreen
 import dev.firetvlite.iptv.ui.screens.HomeScreen
 import dev.firetvlite.iptv.ui.screens.LiveTvScreen
+import dev.firetvlite.iptv.ui.screens.PlayerDialog
 import dev.firetvlite.iptv.ui.screens.SettingsScreen
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 import dev.firetvlite.iptv.ui.theme.ReferenceDensity
+import dev.firetvlite.iptv.ui.viewmodel.LibraryViewModel
+import dev.firetvlite.iptv.ui.viewmodel.PlayerViewModel
 import dev.firetvlite.iptv.update.UpdateViewModel
 
 /** Root of the UI: normalised density, theme and the navigation shell. */
 @Composable
-fun FireLiteApp(updateViewModel: UpdateViewModel) {
+fun FireLiteApp(
+    updateViewModel: UpdateViewModel,
+    libraryViewModel: LibraryViewModel,
+    playerViewModel: PlayerViewModel,
+) {
     ReferenceDensity {
         FireLiteTheme {
-            AppShell(updateViewModel)
+            AppShell(updateViewModel, libraryViewModel, playerViewModel)
         }
     }
 }
 
 @Composable
-private fun AppShell(updateViewModel: UpdateViewModel) {
+private fun AppShell(
+    updateViewModel: UpdateViewModel,
+    libraryViewModel: LibraryViewModel,
+    playerViewModel: PlayerViewModel,
+) {
     val updateState by updateViewModel.state.collectAsState()
+    val source by libraryViewModel.source.collectAsState()
+    val channelCount by libraryViewModel.channelCount.collectAsState()
+    val importState by libraryViewModel.importState.collectAsState()
     var current by rememberSaveable { mutableStateOf(Destination.Home) }
     var railHasFocus by remember { mutableStateOf(false) }
     val railRequesters = remember { Destination.entries.associateWith { FocusRequester() } }
@@ -79,13 +93,22 @@ private fun AppShell(updateViewModel: UpdateViewModel) {
                     updateState = updateState,
                     onInstallUpdate = updateViewModel::downloadAndInstall,
                 )
-                Destination.Live -> LiveTvScreen()
+                Destination.Live -> LiveTvScreen(
+                    library = libraryViewModel,
+                    player = playerViewModel,
+                    onOpenSettings = { current = Destination.Settings },
+                )
                 Destination.Settings -> SettingsScreen(
                     installed = updateViewModel.installed,
                     updateState = updateState,
                     onCheckForUpdate = updateViewModel::checkForUpdate,
                     onInstallUpdate = updateViewModel::downloadAndInstall,
                     onOpenInstallSettings = updateViewModel::openInstallSettings,
+                    source = source,
+                    channelCount = channelCount,
+                    importState = importState,
+                    onSaveSource = libraryViewModel::saveSource,
+                    onRefreshSource = libraryViewModel::refreshSource,
                 )
                 else -> ComingSoonScreen(destination)
             }
@@ -98,4 +121,7 @@ private fun AppShell(updateViewModel: UpdateViewModel) {
             onFocusWithinChanged = { railHasFocus = it },
         )
     }
+
+    // The player is a dialog window above everything else.
+    PlayerDialog(viewModel = playerViewModel)
 }

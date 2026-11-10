@@ -24,9 +24,6 @@
     <!-- Live TV -->
     <string name="live_groups">Grupy</string>
     <string name="live_channels">Kanały</string>
-    <string name="live_preview_title">Podgląd</string>
-    <string name="live_preview_off">Podgląd jest wyłączony</string>
-    <string name="live_preview_hint">Wybierz kanał, aby go włączyć.</string>
     <string name="live_now">Teraz: %1$s</string>
 
     <plurals name="channel_count">
@@ -56,6 +53,59 @@
     <string name="update_error_installer">Nie można otworzyć instalatora systemowego.</string>
     <string name="update_banner_title">Dostępna nowa wersja FireLite</string>
     <string name="update_banner_action">Zainstaluj teraz</string>
+
+    <!-- Live TV -->
+    <string name="group_favorites">Ulubione</string>
+    <string name="group_recent">Ostatnio oglądane</string>
+    <string name="group_all">Wszystkie kanały</string>
+    <string name="group_ungrouped">Bez grupy</string>
+    <string name="live_no_source">Nie dodano jeszcze listy kanałów.</string>
+    <string name="live_open_settings">Przejdź do ustawień</string>
+    <string name="live_loading">Wczytywanie listy kanałów…</string>
+    <string name="live_empty_list">Lista jest pusta. Odśwież ją w ustawieniach.</string>
+    <string name="live_empty_group">Brak kanałów w tej grupie.</string>
+    <string name="live_hint">OK – oglądaj · Menu – ulubione</string>
+    <string name="detail_group">Grupa: %1$s</string>
+    <string name="badge_catchup">ARCHIWUM</string>
+    <plurals name="catchup_days">
+        <item quantity="one">%d dzień wstecz</item>
+        <item quantity="few">%d dni wstecz</item>
+        <item quantity="many">%d dni wstecz</item>
+        <item quantity="other">%d dnia wstecz</item>
+    </plurals>
+
+    <!-- Player -->
+    <string name="player_live">NA ŻYWO</string>
+    <string name="player_behind">−%1$s od transmisji</string>
+    <string name="player_archive">Archiwum: −%1$d min</string>
+    <string name="player_position">%1$s / %2$s</string>
+    <string name="player_position_of">%1$d z %2$d</string>
+    <string name="player_connecting">Łączenie…</string>
+    <string name="player_error">Ten kanał nie działa (%1$s).\nGóra/Dół – inny kanał, Wstecz – lista.</string>
+    <string name="player_ended">Transmisja się zakończyła.</string>
+    <string name="player_hint">Góra/Dół: kanał · Lewo/Prawo: ±10 s · Przewijanie: ±30 s lub archiwum · Menu: ulubione</string>
+    <string name="player_seek_unsupported">Przewijanie nie jest dostępne dla tego kanału.</string>
+    <string name="player_catchup_unsupported">Archiwum nie działa dla tego kanału.</string>
+
+    <!-- Settings: channel list -->
+    <string name="source_section">Lista kanałów (M3U)</string>
+    <string name="source_none">Nie dodano jeszcze listy.</string>
+    <string name="source_server">Serwer: %1$s</string>
+    <string name="source_stats">%1$s · zaktualizowano %2$s</string>
+    <string name="source_never_refreshed">jeszcze nie wczytano</string>
+    <string name="source_add">Dodaj adres</string>
+    <string name="source_change">Zmień adres</string>
+    <string name="source_refresh">Odśwież listę</string>
+    <string name="source_url_label">Adres listy M3U</string>
+    <string name="source_agent_label">User-Agent (opcjonalnie)</string>
+    <string name="source_save">Zapisz i wczytaj</string>
+    <string name="source_cancel">Anuluj</string>
+    <string name="source_invalid_url">Adres musi zaczynać się od http:// lub https://</string>
+    <string name="import_running">Wczytywanie listy…</string>
+    <string name="import_done">Wczytano listę: %1$s</string>
+    <string name="import_error_network">Nie udało się pobrać listy. Sprawdź adres i internet.</string>
+    <string name="import_error_empty">Lista jest pusta albo to nie jest plik M3U.</string>
+    <string name="import_error_no_source">Najpierw dodaj adres listy.</string>
 
     <!-- Placeholder screens -->
     <string name="coming_soon_text">Ten ekran pojawi się w jednej z kolejnych wersji.</string>

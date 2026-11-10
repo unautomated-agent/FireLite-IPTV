@@ -7,6 +7,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
+    alias(libs.plugins.ksp)
 }
 
 android {
@@ -20,7 +21,7 @@ android {
         // GitHub's run number only ever increases, so every new build can update the installed one.
         // The offset keeps this repository's builds above those of the earlier 1.x repository.
         versionCode = versionCodeOffset + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
-        versionName = "2.1.0-alpha.1"
+        versionName = "2.2.0-alpha.1"
 
         // The in-app updater reads releases of the repository this build was made in.
         // GITHUB_REPOSITORY is set by GitHub Actions ("owner/repo"); local builds leave it empty,
@@ -72,6 +73,8 @@ android {
 kotlin {
     compilerOptions {
         jvmTarget.set(JvmTarget.JVM_11)
+        // Media3 marks much of its API as unstable; opting in once here keeps every file free of annotations.
+        optIn.add("androidx.media3.common.util.UnstableApi")
     }
 }
 
@@ -85,6 +88,18 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.ktx)
     implementation(libs.kotlinx.coroutines.android)
+
+    implementation(libs.androidx.room.runtime)
+    implementation(libs.androidx.room.ktx)
+    implementation(libs.androidx.room.paging)
+    ksp(libs.androidx.room.compiler)
+    implementation(libs.androidx.paging.compose)
+
+    implementation(libs.coil.compose)
+
+    implementation(libs.androidx.media3.exoplayer)
+    implementation(libs.androidx.media3.exoplayer.hls)
+    implementation(libs.androidx.media3.ui)
 
     testImplementation(libs.junit)
     // Android's own org.json is only a stub in local unit tests; this is the real implementation.

@@ -11,6 +11,7 @@
 
     <!-- Many IPTV providers only serve plain http, so cleartext traffic is allowed. -->
     <application
+        android:name=".FireLiteApplication"
         android:allowBackup="false"
         android:banner="@drawable/banner"
         android:icon="@mipmap/ic_launcher"

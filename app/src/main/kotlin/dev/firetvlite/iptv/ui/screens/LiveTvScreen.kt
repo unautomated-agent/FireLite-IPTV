@@ -16,56 +16,100 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.paging.compose.collectAsLazyPagingItems
+import androidx.paging.compose.itemKey
 import dev.firetvlite.iptv.R
+import dev.firetvlite.iptv.data.db.ChannelRow
+import dev.firetvlite.iptv.data.library.GroupKey
+import dev.firetvlite.iptv.data.library.ImportState
+import dev.firetvlite.iptv.ui.components.ChannelLogo
 import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.FocusSurface
 import dev.firetvlite.iptv.ui.components.NavIcon
 import dev.firetvlite.iptv.ui.components.NavIconKind
-import dev.firetvlite.iptv.ui.components.ProgressBar
+import dev.firetvlite.iptv.ui.components.PrimaryButton
 import dev.firetvlite.iptv.ui.components.pluralString
 import dev.firetvlite.iptv.ui.components.requestFocusWhenReady
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
-
-private val groupLabels = listOf(
-    R.string.sample_group_all,
-    R.string.sample_group_news,
-    R.string.sample_group_sport,
-    R.string.sample_group_movies,
-    R.string.sample_group_kids,
-    R.string.sample_group_music,
-)
-
-private const val SAMPLE_CHANNEL_COUNT = 30
-
-/** Demo channels of a group; group 0 holds all of them. Real data arrives with the source packages. */
-private fun sampleChannels(group: Int): List<Int> =
-    (1..SAMPLE_CHANNEL_COUNT).filter { group == 0 || it % (groupLabels.size - 1) == group - 1 }
+import dev.firetvlite.iptv.ui.viewmodel.GroupItem
+import dev.firetvlite.iptv.ui.viewmodel.LibraryViewModel
+import dev.firetvlite.iptv.ui.viewmodel.PlayerViewModel
+import kotlinx.coroutines.launch
 
 /**
- * Live TV browser: groups, channels with "now" and progress, and a preview panel.
- * The preview is off by default; it will be an opt-in setting so no second stream is ever opened.
+ * Live TV browser: groups on the left, the channels of the selected group in the middle (loaded page by page),
+ * details of the focused channel on the right. OK starts the channel; the Menu button toggles the favourite.
+ *
+ * There is deliberately no live preview: a preview would be a second stream next to the one the user opens.
  */
 @Composable
-fun LiveTvScreen(modifier: Modifier = Modifier) {
-    var selectedGroup by rememberSaveable { mutableIntStateOf(0) }
-    val firstGroupFocus = remember { FocusRequester() }
-    LaunchedEffect(Unit) { firstGroupFocus.requestFocusWhenReady() }
+fun LiveTvScreen(
+    library: LibraryViewModel,
+    player: PlayerViewModel,
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val source by library.source.collectAsState()
+    val channelCount by library.channelCount.collectAsState()
+    val importState by library.importState.collectAsState()
+
+    when {
+        source == null -> MessageWithAction(
+            text = stringResource(R.string.live_no_source),
+            actionText = stringResource(R.string.live_open_settings),
+            onAction = onOpenSettings,
+            modifier = modifier,
+        )
+        channelCount == 0 && importState == ImportState.Running -> MessageWithAction(
+            text = stringResource(R.string.live_loading),
+            modifier = modifier,
+        )
+        channelCount == 0 -> MessageWithAction(
+            text = stringResource(R.string.live_empty_list),
+            actionText = stringResource(R.string.live_open_settings),
+            onAction = onOpenSettings,
+            modifier = modifier,
+        )
+        else -> ChannelBrowser(library = library, player = player, modifier = modifier)
+    }
+}
+
+@Composable
+private fun ChannelBrowser(
+    library: LibraryViewModel,
+    player: PlayerViewModel,
+    modifier: Modifier = Modifier,
+) {
+    val groups by library.groups.collectAsState()
+    val selected by library.selectedGroup.collectAsState()
+    val pagingItems = library.channels.collectAsLazyPagingItems()
+    val scope = rememberCoroutineScope()
+    val focusManager = LocalFocusManager.current
+
+    var focusedChannel by remember { mutableStateOf<ChannelRow?>(null) }
+    val initialGroup = remember { library.selectedGroup.value }
+    val initialFocus = remember { FocusRequester() }
+    LaunchedEffect(groups.isNotEmpty()) {
+        if (groups.isNotEmpty()) initialFocus.requestFocusWhenReady()
+    }
 
     Row(
         modifier = modifier
@@ -73,95 +117,111 @@ fun LiveTvScreen(modifier: Modifier = Modifier) {
             .padding(start = 16.dp, end = 24.dp, top = 20.dp, bottom = 24.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        GroupColumn(
-            selectedGroup = selectedGroup,
-            onGroupFocused = { selectedGroup = it },
-            firstGroupFocus = firstGroupFocus,
-            modifier = Modifier.width(188.dp),
-        )
-        ChannelColumn(
-            group = selectedGroup,
-            modifier = Modifier.weight(1f),
-        )
-        PreviewPanel(modifier = Modifier.width(236.dp))
-    }
-}
+        Column(modifier = Modifier.width(188.dp).fillMaxHeight()) {
+            FLText(
+                text = stringResource(R.string.live_groups),
+                style = FireLiteTheme.typography.headline,
+                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+            )
+            LazyColumn(
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(items = groups, key = { it.key.id }) { group ->
+                    GroupRow(
+                        group = group,
+                        selected = group.key == selected,
+                        onFocused = { library.selectGroup(group.key) },
+                        onClick = { focusManager.moveFocus(FocusDirection.Right) },
+                        modifier = if (group.key == initialGroup) Modifier.focusRequester(initialFocus) else Modifier,
+                    )
+                }
+            }
+        }
 
-@Composable
-private fun GroupColumn(
-    selectedGroup: Int,
-    onGroupFocused: (Int) -> Unit,
-    firstGroupFocus: FocusRequester,
-    modifier: Modifier = Modifier,
-) {
-    Column(modifier = modifier.fillMaxHeight()) {
-        FLText(
-            text = stringResource(R.string.live_groups),
-            style = FireLiteTheme.typography.headline,
-            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
-        )
-        LazyColumn(
-            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            itemsIndexed(groupLabels) { index, labelRes ->
-                val selected = index == selectedGroup
-                FocusSurface(
-                    onClick = { onGroupFocused(index) },
-                    onFocusChanged = { focused -> if (focused) onGroupFocused(index) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .then(if (index == 0) Modifier.focusRequester(firstGroupFocus) else Modifier),
-                    background = SolidColor(
-                        if (selected) FireLiteTheme.colors.surfaceHigh else FireLiteTheme.colors.surface,
-                    ),
-                ) {
-                    Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                        FLText(
-                            text = stringResource(labelRes),
-                            style = FireLiteTheme.typography.title,
-                            color = if (selected) FireLiteTheme.colors.accent else FireLiteTheme.colors.textPrimary,
-                            maxLines = 1,
-                        )
-                        FLText(
-                            text = pluralString(R.plurals.channel_count, sampleChannels(index).size),
-                            style = FireLiteTheme.typography.label,
-                            maxLines = 1,
+        Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
+            FLText(
+                text = stringResource(R.string.live_channels),
+                style = FireLiteTheme.typography.headline,
+                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
+            )
+            if (pagingItems.itemCount == 0) {
+                FLText(
+                    text = stringResource(R.string.live_empty_group),
+                    style = FireLiteTheme.typography.body,
+                    modifier = Modifier.padding(start = 4.dp, top = 8.dp),
+                )
+            }
+            LazyColumn(
+                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                items(count = pagingItems.itemCount, key = pagingItems.itemKey { it.channel.id }) { index ->
+                    val row = pagingItems[index]
+                    if (row != null) {
+                        ChannelRowItem(
+                            row = row,
+                            onFocused = { focusedChannel = row },
+                            onClick = {
+                                scope.launch {
+                                    library.zapContext(selected)?.let { player.open(it, index) }
+                                }
+                            },
+                            onMenu = { library.toggleFavorite(row.channel.streamUrl) },
                         )
                     }
                 }
             }
         }
+
+        DetailPanel(row = focusedChannel, modifier = Modifier.width(236.dp))
     }
 }
 
 @Composable
-private fun ChannelColumn(
-    group: Int,
+private fun GroupRow(
+    group: GroupItem,
+    selected: Boolean,
+    onFocused: () -> Unit,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val channels = remember(group) { sampleChannels(group) }
-    Column(modifier = modifier.fillMaxHeight()) {
-        FLText(
-            text = stringResource(R.string.live_channels),
-            style = FireLiteTheme.typography.headline,
-            modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
-        )
-        LazyColumn(
-            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            items(items = channels, key = { it }) { number ->
-                ChannelRow(number = number)
-            }
+    FocusSurface(
+        onClick = onClick,
+        onFocusChanged = { focused -> if (focused) onFocused() },
+        modifier = modifier.fillMaxWidth(),
+        background = SolidColor(
+            if (selected) FireLiteTheme.colors.surfaceHigh else FireLiteTheme.colors.surface,
+        ),
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            FLText(
+                text = groupLabel(group.key),
+                style = FireLiteTheme.typography.title,
+                color = if (selected) FireLiteTheme.colors.accent else FireLiteTheme.colors.textPrimary,
+                maxLines = 1,
+            )
+            FLText(
+                text = pluralString(R.plurals.channel_count, group.channelCount),
+                style = FireLiteTheme.typography.label,
+                maxLines = 1,
+            )
         }
     }
 }
 
 @Composable
-private fun ChannelRow(number: Int) {
+private fun ChannelRowItem(
+    row: ChannelRow,
+    onFocused: () -> Unit,
+    onClick: () -> Unit,
+    onMenu: () -> Unit,
+) {
+    val channel = row.channel
     FocusSurface(
-        onClick = {},
+        onClick = onClick,
+        onFocusChanged = { focused -> if (focused) onFocused() },
+        onMenuKey = onMenu,
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp),
@@ -169,81 +229,106 @@ private fun ChannelRow(number: Int) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 14.dp),
+                .padding(horizontal = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            ChannelLogo(name = channel.name, logoUrl = channel.logoUrl)
             FLText(
-                text = number.toString(),
+                text = channel.name,
                 style = FireLiteTheme.typography.title,
-                color = FireLiteTheme.colors.accent,
-                modifier = Modifier.width(34.dp),
-            )
-            Column(
+                maxLines = 1,
                 modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.Center,
-            ) {
+            )
+            if (channel.catchupDays > 0) {
                 FLText(
-                    text = stringResource(R.string.sample_channel_name, number),
-                    style = FireLiteTheme.typography.title,
-                    maxLines = 1,
-                )
-                FLText(
-                    text = stringResource(
-                        R.string.live_now,
-                        stringResource(R.string.sample_program_title, number),
-                    ),
+                    text = stringResource(R.string.badge_catchup),
                     style = FireLiteTheme.typography.label,
-                    maxLines = 1,
+                    color = FireLiteTheme.colors.accent,
                 )
             }
-            ProgressBar(
-                progress = 0.1f + 0.027f * number,
-                modifier = Modifier.width(64.dp),
-            )
+            if (row.isFavorite) {
+                NavIcon(
+                    kind = NavIconKind.Favorites,
+                    tint = FireLiteTheme.colors.accent,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun PreviewPanel(modifier: Modifier = Modifier) {
+private fun DetailPanel(
+    row: ChannelRow?,
+    modifier: Modifier = Modifier,
+) {
     Column(
         modifier = modifier
             .fillMaxHeight()
             .clip(FireLiteTheme.shapes.large)
             .background(FireLiteTheme.colors.surface)
             .padding(20.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        FLText(
-            text = stringResource(R.string.live_preview_title),
-            style = FireLiteTheme.typography.headline,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Box(
-            modifier = Modifier.weight(1f),
-            contentAlignment = Alignment.Center,
-        ) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                NavIcon(
-                    kind = NavIconKind.Live,
-                    tint = FireLiteTheme.colors.textSecondary,
-                    modifier = Modifier.size(40.dp),
-                )
-                Spacer(modifier = Modifier.height(12.dp))
+        if (row != null) {
+            val channel = row.channel
+            ChannelLogo(name = channel.name, logoUrl = channel.logoUrl, size = 72.dp)
+            Spacer(modifier = Modifier.height(4.dp))
+            FLText(text = channel.name, style = FireLiteTheme.typography.headline, maxLines = 3)
+            FLText(
+                text = stringResource(R.string.detail_group, groupLabel(GroupKey.Named(channel.groupName))),
+                style = FireLiteTheme.typography.body,
+                maxLines = 2,
+            )
+            if (channel.catchupDays > 0) {
                 FLText(
-                    text = stringResource(R.string.live_preview_off),
-                    style = FireLiteTheme.typography.title,
-                )
-                Spacer(modifier = Modifier.height(4.dp))
-                FLText(
-                    text = stringResource(R.string.live_preview_hint),
+                    text = pluralString(R.plurals.catchup_days, channel.catchupDays),
                     style = FireLiteTheme.typography.body,
+                    color = FireLiteTheme.colors.accent,
                 )
             }
         }
+        Spacer(modifier = Modifier.weight(1f))
         FLText(
-            text = stringResource(R.string.sample_notice),
+            text = stringResource(R.string.live_hint),
             style = FireLiteTheme.typography.label,
         )
     }
+}
+
+@Composable
+private fun MessageWithAction(
+    text: String,
+    modifier: Modifier = Modifier,
+    actionText: String? = null,
+    onAction: () -> Unit = {},
+) {
+    val requester = remember { FocusRequester() }
+    LaunchedEffect(actionText) {
+        if (actionText != null) requester.requestFocusWhenReady()
+    }
+    Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(16.dp),
+        ) {
+            FLText(text = text, style = FireLiteTheme.typography.headline)
+            if (actionText != null) {
+                PrimaryButton(
+                    text = actionText,
+                    onClick = onAction,
+                    modifier = Modifier.focusRequester(requester),
+                )
+            }
+        }
+    }
+}
+
+@Composable
+internal fun groupLabel(key: GroupKey): String = when (key) {
+    GroupKey.Favorites -> stringResource(R.string.group_favorites)
+    GroupKey.Recent -> stringResource(R.string.group_recent)
+    GroupKey.All -> stringResource(R.string.group_all)
+    is GroupKey.Named -> key.name.ifEmpty { stringResource(R.string.group_ungrouped) }
 }

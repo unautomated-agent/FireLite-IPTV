@@ -1,0 +1,138 @@
+package dev.firetvlite.iptv.ui.viewmodel
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import androidx.paging.Pager
+import androidx.paging.PagingConfig
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
+import dev.firetvlite.iptv.FireLiteApplication
+import dev.firetvlite.iptv.data.db.ChannelRow
+import dev.firetvlite.iptv.data.db.FavoriteEntity
+import dev.firetvlite.iptv.data.db.SourceEntity
+import dev.firetvlite.iptv.data.library.GroupKey
+import dev.firetvlite.iptv.data.library.ImportState
+import dev.firetvlite.iptv.data.library.LibraryRepository
+import dev.firetvlite.iptv.data.library.ListZapContext
+import dev.firetvlite.iptv.data.library.QueryZapContext
+import dev.firetvlite.iptv.data.library.ZapContext
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+
+/** An entry of the group list: a [GroupKey] with the number of channels in it. */
+data class GroupItem(
+    val key: GroupKey,
+    val channelCount: Int,
+)
+
+/** Everything the live TV screen and the settings need to know about the channel list. */
+@OptIn(ExperimentalCoroutinesApi::class)
+class LibraryViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val container = (application as FireLiteApplication).container
+    private val repository: LibraryRepository = container.library
+    private val channelDao = container.database.channelDao()
+    private val userDao = container.database.userDao()
+
+    val source: StateFlow<SourceEntity?> =
+        repository.source.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val importState: StateFlow<ImportState> = repository.importState
+
+    private val sourceId: Flow<Long?> = source.map { it?.id }.distinctUntilChanged()
+
+    val channelCount: StateFlow<Int> = sourceId
+        .flatMapLatest { id -> if (id == null) flowOf(0) else channelDao.observeCount(id) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
+
+    private val mutableSelectedGroup = MutableStateFlow<GroupKey>(GroupKey.All)
+    val selectedGroup: StateFlow<GroupKey> = mutableSelectedGroup.asStateFlow()
+
+    fun selectGroup(key: GroupKey) {
+        mutableSelectedGroup.value = key
+    }
+
+    /** Favourites, recently watched, all channels, then the groups of the playlist. */
+    val groups: StateFlow<List<GroupItem>> = sourceId
+        .flatMapLatest { id ->
+            if (id == null) {
+                flowOf(emptyList())
+            } else {
+                combine(
+                    channelDao.observeGroups(id),
+                    channelDao.observeCount(id),
+                    userDao.observeFavoriteCount(),
+                    userDao.observeRecentCount(),
+                ) { named, all, favorites, recent ->
+                    buildList {
+                        add(GroupItem(GroupKey.Favorites, favorites))
+                        add(GroupItem(GroupKey.Recent, recent))
+                        add(GroupItem(GroupKey.All, all))
+                        named.forEach { add(GroupItem(GroupKey.Named(it.groupName), it.channelCount)) }
+                    }
+                }
+            }
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    /** The channels of the selected group, loaded page by page. */
+    val channels: Flow<PagingData<ChannelRow>> = combine(sourceId, mutableSelectedGroup) { id, key -> id to key }
+        .flatMapLatest { (id, key) ->
+            if (id == null) {
+                flowOf(PagingData.empty<ChannelRow>())
+            } else {
+                Pager(PagingConfig(pageSize = 40, enablePlaceholders = false)) {
+                    when (key) {
+                        GroupKey.Favorites -> channelDao.pagingFavorites(id)
+                        GroupKey.Recent -> channelDao.pagingRecent(id)
+                        GroupKey.All -> channelDao.pagingAll(id)
+                        is GroupKey.Named -> channelDao.pagingGroup(id, key.name)
+                    }
+                }.flow
+            }
+        }
+        .cachedIn(viewModelScope)
+
+    fun toggleFavorite(streamUrl: String) {
+        viewModelScope.launch {
+            if (userDao.isFavorite(streamUrl)) {
+                userDao.removeFavorite(streamUrl)
+            } else {
+                userDao.addFavorite(FavoriteEntity(streamUrl, System.currentTimeMillis()))
+            }
+        }
+    }
+
+    /** The list to walk through with channel up/down when a channel of [key] is opened. */
+    suspend fun zapContext(key: GroupKey): ZapContext? {
+        val id = source.value?.id ?: return null
+        return when (key) {
+            GroupKey.Favorites -> ListZapContext(channelDao.favoriteChannels(id))
+            GroupKey.Recent -> ListZapContext(channelDao.recentChannels(id))
+            GroupKey.All -> QueryZapContext(
+                countQuery = { channelDao.count(id) },
+                atQuery = { channelDao.allAt(id, it) },
+            )
+            is GroupKey.Named -> QueryZapContext(
+                countQuery = { channelDao.groupCount(id, key.name) },
+                atQuery = { channelDao.groupAt(id, key.name, it) },
+            )
+        }
+    }
+
+    fun saveSource(url: String, userAgent: String) = repository.saveSource(url, userAgent)
+
+    fun refreshSource() = repository.refresh()
+}

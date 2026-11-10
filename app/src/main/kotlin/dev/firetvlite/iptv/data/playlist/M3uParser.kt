@@ -1,0 +1,170 @@
+package dev.firetvlite.iptv.data.playlist
+
+import java.io.BufferedReader
+import java.io.Reader
+
+data class ParsedChannel(
+    val name: String,
+    /** Empty if the playlist gives the channel no group. */
+    val group: String,
+    val url: String,
+    val logoUrl: String?,
+    val tvgId: String?,
+    val catchupType: String?,
+    val catchupSource: String?,
+    val catchupDays: Int,
+)
+
+/**
+ * Reads M3U/M3U8 playlists line by line, so even very large lists need little memory.
+ *
+ * Understood: `#EXTINF` with `group-title`, `tvg-id`, `tvg-name`, `tvg-logo` and the catch-up attributes
+ * `catchup`, `catchup-source`, `catchup-days` (also `tvg-rec` and `timeshift`), `#EXTGRP`, and catch-up
+ * defaults on the `#EXTM3U` header line. Everything else starting with `#` is ignored.
+ */
+object M3uParser {
+
+    private class Pending(
+        val name: String = "",
+        val group: String = "",
+        val logoUrl: String? = null,
+        val tvgId: String? = null,
+        val catchupType: String? = null,
+        val catchupSource: String? = null,
+        val catchupDays: Int = 0,
+    )
+
+    private class Defaults(
+        val catchupType: String? = null,
+        val catchupSource: String? = null,
+        val catchupDays: Int = 0,
+    )
+
+    fun parse(source: Reader, onChannel: (ParsedChannel) -> Unit) {
+        val reader = source as? BufferedReader ?: BufferedReader(source, 1 shl 16)
+        var defaults = Defaults()
+        var pending: Pending? = null
+        var firstLine = true
+
+        while (true) {
+            var line = reader.readLine() ?: break
+            if (firstLine) {
+                firstLine = false
+                if (line.startsWith("\uFEFF")) line = line.substring(1)
+            }
+            line = line.trim()
+            if (line.isEmpty()) continue
+
+            if (line.startsWith("#")) {
+                when {
+                    line.startsWith("#EXTM3U", ignoreCase = true) -> defaults = readDefaults(line)
+                    line.startsWith("#EXTINF", ignoreCase = true) -> pending = readInfo(line)
+                    line.startsWith("#EXTGRP:", ignoreCase = true) -> {
+                        val group = line.substring("#EXTGRP:".length).trim()
+                        val current = pending
+                        if (current != null && current.group.isEmpty() && group.isNotEmpty()) {
+                            pending = Pending(
+                                name = current.name,
+                                group = group,
+                                logoUrl = current.logoUrl,
+                                tvgId = current.tvgId,
+                                catchupType = current.catchupType,
+                                catchupSource = current.catchupSource,
+                                catchupDays = current.catchupDays,
+                            )
+                        }
+                    }
+                }
+                continue
+            }
+
+            // Not a comment: the stream address of the channel described by the last #EXTINF.
+            if (looksLikeUrl(line)) {
+                onChannel(toChannel(pending ?: Pending(), line, defaults))
+            }
+            pending = null
+        }
+    }
+
+    private fun readDefaults(line: String): Defaults {
+        val source = attribute(line, "catchup-source")
+        val type = attribute(line, "catchup") ?: if (source != null) "default" else null
+        return Defaults(type, source, readCatchupDays(line))
+    }
+
+    private fun readInfo(line: String): Pending {
+        val rest = line.substringAfter(':', "")
+        val comma = firstCommaOutsideQuotes(rest)
+        val attrs = if (comma >= 0) rest.substring(0, comma) else rest
+        var name = if (comma >= 0) rest.substring(comma + 1).trim() else ""
+        if (name.isEmpty()) name = attribute(attrs, "tvg-name").orEmpty()
+        return Pending(
+            name = name,
+            group = attribute(attrs, "group-title").orEmpty(),
+            logoUrl = attribute(attrs, "tvg-logo")?.takeIf { it.isNotEmpty() },
+            tvgId = attribute(attrs, "tvg-id")?.takeIf { it.isNotEmpty() },
+            catchupType = attribute(attrs, "catchup")?.takeIf { it.isNotEmpty() },
+            catchupSource = attribute(attrs, "catchup-source")?.takeIf { it.isNotEmpty() },
+            catchupDays = readCatchupDays(attrs),
+        )
+    }
+
+    private fun toChannel(info: Pending, url: String, defaults: Defaults): ParsedChannel {
+        val source = info.catchupSource ?: defaults.catchupSource
+        val type = info.catchupType ?: defaults.catchupType ?: if (source != null) "default" else null
+        val days = if (info.catchupDays > 0) info.catchupDays else defaults.catchupDays
+        return ParsedChannel(
+            name = info.name.ifEmpty { url },
+            group = info.group,
+            url = url,
+            logoUrl = info.logoUrl,
+            tvgId = info.tvgId,
+            catchupType = type,
+            catchupSource = source,
+            catchupDays = days,
+        )
+    }
+
+    private fun readCatchupDays(attrs: String): Int =
+        (attribute(attrs, "catchup-days") ?: attribute(attrs, "tvg-rec") ?: attribute(attrs, "timeshift"))
+            ?.toIntOrNull() ?: 0
+
+    /** Index of the first comma that is not inside quotes, or -1. */
+    internal fun firstCommaOutsideQuotes(text: String): Int {
+        var quoted = false
+        for (index in text.indices) {
+            val c = text[index]
+            if (c == '"') {
+                quoted = !quoted
+            } else if (c == ',' && !quoted) {
+                return index
+            }
+        }
+        return -1
+    }
+
+    /** Value of key="..." (key is matched ignoring case, at the start of a word), or null. */
+    internal fun attribute(attrs: String, key: String): String? {
+        val needle = "$key=\""
+        var from = 0
+        while (from <= attrs.length - needle.length) {
+            val index = attrs.indexOf(needle, from, ignoreCase = true)
+            if (index < 0) return null
+            val atWordStart = index == 0 || attrs[index - 1].isWhitespace()
+            if (atWordStart) {
+                val start = index + needle.length
+                val end = attrs.indexOf('"', start)
+                return if (end < 0) null else attrs.substring(start, end).trim()
+            }
+            from = index + 1
+        }
+        return null
+    }
+
+    /** True for "scheme://..." at the start of the line, e.g. http://, https://, udp://. */
+    internal fun looksLikeUrl(line: String): Boolean {
+        val separator = line.indexOf("://")
+        if (separator <= 0) return false
+        return line.substring(0, separator).all { it.isLetterOrDigit() || it == '+' || it == '-' || it == '.' }
+    }
+}

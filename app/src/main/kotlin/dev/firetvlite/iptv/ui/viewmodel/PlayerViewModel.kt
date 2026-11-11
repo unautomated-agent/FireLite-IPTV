@@ -213,6 +213,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun openOverlay() {
+        closeTimeline()
         if (mutableMode.value != PlayerMode.Fullscreen) return
         settlePendingZap()
         setMode(PlayerMode.Overlay)
@@ -221,6 +222,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun closeOverlay() {
         if (mutableMode.value == PlayerMode.Overlay) setMode(mutableMode.value.afterBack())
+    }
+
+    fun closeToTab(): BrowserTarget? {
+        restoreChannel()
+        val target = mutableBrowserTarget.value
+        close()
+        return target
     }
 
     fun openTimeline(

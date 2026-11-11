@@ -33,6 +33,7 @@ import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 import dev.firetvlite.iptv.ui.theme.ReferenceDensity
 import dev.firetvlite.iptv.ui.viewmodel.LibraryViewModel
 import dev.firetvlite.iptv.ui.viewmodel.PlayerViewModel
+import dev.firetvlite.iptv.ui.viewmodel.BrowserTarget
 import dev.firetvlite.iptv.update.UpdateViewModel
 
 /** Root of the UI: normalised density, theme and the navigation shell. */
@@ -64,11 +65,13 @@ private fun AppShell(
     var previewBounds by remember { mutableStateOf<Rect?>(null) }
     var current by rememberSaveable { mutableStateOf(Destination.Home) }
     var railHasFocus by remember { mutableStateOf(false) }
+    var tabReturn by remember { mutableStateOf<BrowserTarget?>(null) }
     val railRequesters = remember { Destination.entries.associateWith { FocusRequester() } }
 
     // Back first returns focus to the rail; only a second press (with the rail focused) leaves the app.
     fun navigate(destination: Destination) {
         if (destination != Destination.Live) playerViewModel.close()
+        tabReturn = null
         current = destination
     }
 
@@ -99,8 +102,11 @@ private fun AppShell(
         ) { destination ->
             when (destination) {
                 Destination.Home -> HomeScreen(
+                    library = libraryViewModel, player = playerViewModel,
+                    active = current == Destination.Home && !mode.fullFrame, returnTarget = tabReturn,
                     updateState = updateState,
                     onInstallUpdate = updateViewModel::downloadAndInstall,
+                    onLive = { navigate(Destination.Live) }, onSettings = { navigate(Destination.Settings) },
                 )
                 Destination.Live -> LiveTvScreen(
                     library = libraryViewModel,
@@ -134,6 +140,10 @@ private fun AppShell(
             onSelect = ::navigate,
             onFocusWithinChanged = { railHasFocus = it },
         )
-        PlayerLayer(viewModel = playerViewModel, library = libraryViewModel, previewBounds = previewBounds)
+        PlayerLayer(viewModel = playerViewModel, library = libraryViewModel, previewBounds = previewBounds,
+            onBackToBrowser = {
+                if (current == Destination.Live) playerViewModel.backToPreview()
+                else tabReturn = playerViewModel.closeToTab()
+            })
     }
 }

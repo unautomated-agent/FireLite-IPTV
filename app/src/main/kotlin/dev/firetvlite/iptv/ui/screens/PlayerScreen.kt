@@ -89,7 +89,7 @@ private const val OVERLAY_VISIBLE_MS = 5_000L
 private const val SEEK_STEP_MS = 10_000L
 
 @Composable
-fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBounds: Rect?) {
+fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBounds: Rect?, onBackToBrowser: () -> Unit) {
     val mode by viewModel.mode.collectAsState()
     val player by viewModel.player.collectAsState()
     val status by viewModel.status.collectAsState()
@@ -105,7 +105,7 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
     }
     BackHandler(enabled = full) {
         if (timeline != null) viewModel.closeTimeline()
-        else if (mode == PlayerMode.Overlay) viewModel.closeOverlay() else viewModel.backToPreview()
+        else if (mode == PlayerMode.Overlay) viewModel.closeOverlay() else onBackToBrowser()
     }
     Box(Modifier.fillMaxSize()) {
         // The SurfaceView stays in this single AndroidView slot; only its bounds change.

@@ -501,7 +501,7 @@ private fun GroupRow(
 }
 
 @Composable
-private fun ChannelRowItem(
+internal fun ChannelRowItem(
     row: ChannelRow,
     programme: ProgrammeEntity?,
     now: Long,

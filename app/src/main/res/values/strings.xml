@@ -12,12 +12,8 @@
     <string name="nav_settings">Ustawienia</string>
 
     <!-- Home -->
-    <string name="home_hero_eyebrow">KONTYNUUJ OGLĄDANIE</string>
-    <string name="home_hero_resume">Kontynuuj od %1$s</string>
-    <string name="home_hero_details">Szczegóły</string>
-    <string name="home_row_continue">Kontynuuj oglądanie</string>
-    <string name="home_row_recent_channels">Ostatnio oglądane kanały</string>
-    <string name="home_row_new_movies">Nowe filmy</string>
+    <string name="home_recent">Ostatnio oglądane</string>
+    <string name="home_empty">Nie oglądano jeszcze kanałów z tej listy. Otwórz TV na żywo lub dodaj listę w ustawieniach.</string>
 
     <!-- Live TV -->
     <string name="live_groups">Grupy</string>
@@ -145,17 +141,4 @@
     <string name="coming_soon_text">Ten ekran pojawi się w jednej z kolejnych wersji.</string>
 
     <!-- Demo content, only used until real sources are connected -->
-    <string name="sample_notice">Dane przykładowe</string>
-    <string name="sample_hero_title">Przykładowy film</string>
-    <string name="sample_hero_meta">2025 · 114 min · Film</string>
-    <string name="sample_hero_resume_time">34:12</string>
-    <string name="sample_movie_title">Przykładowy film %1$d</string>
-    <string name="sample_channel_name">Kanał %1$d</string>
-    <string name="sample_program_title">Program %1$d</string>
-    <string name="sample_group_all">Wszystkie</string>
-    <string name="sample_group_news">Informacje</string>
-    <string name="sample_group_sport">Sport</string>
-    <string name="sample_group_movies">Filmy</string>
-    <string name="sample_group_kids">Dla dzieci</string>
-    <string name="sample_group_music">Muzyka</string>
 </resources>

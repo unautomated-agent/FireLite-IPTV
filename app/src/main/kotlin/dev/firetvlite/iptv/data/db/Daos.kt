@@ -98,6 +98,14 @@ interface ChannelDao {
     )
     fun pagingRecent(sourceId: Long): PagingSource<Int, ChannelRow>
 
+    @Query("$CHANNEL_ROW INNER JOIN recent rec ON rec.streamUrl=c.streamUrl " +
+        "WHERE c.sourceId=:sourceId ORDER BY rec.watchedAt DESC LIMIT 30")
+    fun observeRecentRows(sourceId: Long): Flow<List<ChannelRow>>
+
+    @Query("$CHANNEL_ROW INNER JOIN favorite fav ON fav.streamUrl=c.streamUrl " +
+        "WHERE c.sourceId=:sourceId ORDER BY fav.addedAt DESC LIMIT 30")
+    fun observeHomeFavorites(sourceId: Long): Flow<List<ChannelRow>>
+
     // ---- Neighbours for channel up/down while watching ----
 
     @Query("SELECT * FROM channel WHERE sourceId = :sourceId ORDER BY position LIMIT 1 OFFSET :offset")

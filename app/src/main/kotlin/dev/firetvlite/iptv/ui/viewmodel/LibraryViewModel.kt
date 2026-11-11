@@ -56,6 +56,14 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     private val sourceId: Flow<Long?> = source.map { it?.id }.distinctUntilChanged()
 
+    val recentRows = sourceId.flatMapLatest { id ->
+        if (id == null) flowOf(emptyList()) else channelDao.observeRecentRows(id)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val homeFavorites = sourceId.flatMapLatest { id ->
+        if (id == null) flowOf(emptyList()) else channelDao.observeHomeFavorites(id)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
     val channelCount: StateFlow<Int> = sourceId
         .flatMapLatest { id -> if (id == null) flowOf(0) else channelDao.observeCount(id) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)

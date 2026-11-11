@@ -45,10 +45,6 @@ import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 import dev.firetvlite.iptv.ui.viewmodel.ChannelTimelineTarget
 import dev.firetvlite.iptv.ui.viewmodel.LibraryViewModel
 import dev.firetvlite.iptv.ui.viewmodel.PlayerViewModel
-import java.text.SimpleDateFormat
-import java.util.Calendar
-import java.util.Date
-import java.util.Locale
 
 @Composable
 internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerViewModel, library: LibraryViewModel) {
@@ -61,17 +57,22 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
     val timeline = remember(programmes, target) { ChannelTimeline.items(programmes.map { it.programme }, now, earliest) }
     val items = remember(timeline) { ChannelTimeline.history(timeline, earliest != null) }
     val nextProgramme = timeline.firstOrNull { it.future }
-    var focusTime by remember(target) { mutableStateOf(target.frame.watchedMs) }
-    var liveFocused by remember(target) { mutableStateOf(false) }
+    var focus by remember(target) { mutableStateOf(HistoryFocus(now, live = true)) }
     var atStart by remember(target) { mutableStateOf(false) }
-    val index = if (liveFocused) 0 else ChannelTimeline.historyFocusIndex(items, focusTime)
+    val index = focus.index(items)
     val focused = items[index]
     val frame by player.frame.collectAsState()
     val playingIndex = if (target.playing) ChannelTimeline.historyFocusIndex(items, frame.watchedMs) else -1
     val requester = remember { FocusRequester() }
-    val listState = rememberLazyListState()
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = index)
     LaunchedEffect(Unit) { requester.requestFocusWhenReady() }
-    LaunchedEffect(index) { listState.scrollToItem(maxOf(0, index - 1)) }
+    LaunchedEffect(index, items.size) {
+        val layout = listState.layoutInfo
+        val row = layout.visibleItemsInfo.firstOrNull { it.index == index }
+        if (row == null || row.offset < layout.viewportStartOffset || row.offset + row.size > layout.viewportEndOffset) {
+            listState.animateScrollToItem(index)
+        }
+    }
     val colors = FireLiteTheme.colors
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
         Column(Modifier.width(480.dp).fillMaxHeight()
@@ -82,13 +83,20 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
                     if (event.type == KeyEventType.KeyUp) player.closeTimeline()
                     true
                 } else if (event.type != KeyEventType.KeyDown) false else when (event.key) {
-                    Key.DirectionLeft, Key.DirectionRight, Key.MediaRewind -> true
+                    Key.DirectionLeft, Key.DirectionRight -> true
+                    Key.MediaRewind, Key.MediaFastForward -> {
+                        if (event.nativeKeyEvent.repeatCount == 0) {
+                            focus = HistoryNavigation.jumpDay(items, focus,
+                                if (event.key == Key.MediaRewind) -1 else 1, now)
+                            atStart = false
+                        }
+                        true
+                    }
                     Key.DirectionUp, Key.DirectionDown -> {
                         val delta = if (event.key == Key.DirectionUp) -1 else 1
                         val next = ChannelTimeline.move(index, delta, items.size)
-                        atStart = next == index && delta > 0
-                        liveFocused = items[next].live
-                        focusTime = items[next].start
+                        atStart = next == index && delta < 0
+                        focus = HistoryFocus(items[next].start, items[next].live)
                         true
                     }
                     Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
@@ -103,8 +111,10 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
                 FLText(stringResource(R.string.epg_next, "${clockTime(it.start)}–${clockTime(it.stop)}", timelineTitle(it)),
                     style = FireLiteTheme.typography.label, maxLines = 2, color = colors.textSecondary.copy(alpha = 0.6f))
             }
+            FLText(HistoryNavigation.dayLabel(focused.start, now), style = FireLiteTheme.typography.title,
+                color = colors.accent)
             LazyColumn(state = listState, modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                itemsIndexed(items) { itemIndex, item ->
+                itemsIndexed(items, key = { _, item -> if (item.live) "live" else "past:${item.start}" }) { itemIndex, item ->
                     Column(Modifier.fillMaxWidth()
                         .background(if (itemIndex == index) colors.surfaceHigh.copy(alpha = 0.75f) else Color.Transparent)
                         .border(2.dp, if (itemIndex == index) Color.White else Color.Transparent)
@@ -116,7 +126,7 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
                     }
                 }
             }
-            FLText("${timelineDay(focused.start, now)} · " +
+            FLText("${HistoryNavigation.dayLabel(focused.start, now)} · " +
                 (if (focused.live) "" else "${clockTime(focused.start)}–${clockTime(focused.stop)} · ") + timelineTitle(focused),
                 style = FireLiteTheme.typography.body, maxLines = 1)
             FLText(focused.programme?.description?.takeIf { it.isNotBlank() }
@@ -133,19 +143,7 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
 
 @Composable
 private fun timelineTitle(item: TimelineItem): String = when {
-    item.live -> stringResource(R.string.channel_timeline_live)
+    item.live -> stringResource(R.string.channel_timeline_live) + (item.programme?.title?.let { " · $it" } ?: "")
     item.programme != null -> item.programme.title
     else -> stringResource(R.string.channel_timeline_hour)
-}
-
-@Composable
-private fun timelineDay(time: Long, now: Long): String {
-    val format = remember { SimpleDateFormat("dd.MM.yyyy", Locale("pl", "PL")) }
-    val day = format.format(Date(time))
-    val yesterday = Calendar.getInstance().apply { timeInMillis = now; add(Calendar.DAY_OF_YEAR, -1) }
-    return when (day) {
-        format.format(Date(now)) -> stringResource(R.string.channel_timeline_today)
-        format.format(yesterday.time) -> stringResource(R.string.channel_timeline_yesterday)
-        else -> day
-    }
 }

@@ -108,8 +108,10 @@ with posters, seasons, history and resume.
   Long OK/Menu never also fire their short actions.
   Long-press Left jumps to the current programme's start when catch-up is available. Archive seeks stay inside
   a seekable archive or re-request it after debounce; reaching the live edge returns to live.
-- **Programme history**: a translucent right-side list leaves video full-size behind it. Na żywo is at the top,
-  followed by compact single-line time/title rows, newest first, with details below. Up/Down select; one OK starts the programme from its start (clipped to
+- **Programme history**: a translucent right-side list leaves video full-size behind it. Compact single-line
+  time/title rows run oldest first, with Na żywo at the bottom and initially focused. Rewind/FastForward jump
+  to the previous/next Warsaw calendar day, clamped to the archive range and today; a day header and details
+  follow the selection. Up/Down select; one OK starts the programme from its start (clipped to
   the archive/window limit), including the current programme when rewind is available. Na żywo returns live.
   The next programme is shown dimmed above the list, not selectable. Without archive or a seekable window,
   only Na żywo is selectable. Back or Menu closes without changing playback. Opening/browsing history never

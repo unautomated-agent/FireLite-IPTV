@@ -83,22 +83,23 @@ class ChannelTimelineTest {
         assertEquals(0, ChannelTimeline.move(0, -1, 0))
     }
 
-    @Test fun historyIsNewestFirstWithLiveAtTopAndFutureOutsideThePlayableList() {
+    @Test fun historyIsOldestFirstWithLiveAtBottomAndFutureOutsideThePlayableList() {
         val past = programme(now - 2_000, now - 1_000)
         val current = programme(now - 1_000, now + 1_000)
         val future = programme(now + 1_000, now + 2_000)
         val history = ChannelTimeline.history(ChannelTimeline.items(listOf(past, current, future), now, now - 2_000))
-        assertTrue(history.first().live)
-        assertEquals(listOf(current, past), history.drop(1).map { it.programme })
+        assertTrue(history.last().live)
+        assertEquals(current, history.last().programme)
+        assertEquals(listOf(past, current), history.dropLast(1).map { it.programme })
         assertEquals(TimelineAction.Past, ChannelTimeline.action(history[1]))
         val liveOnly = ChannelTimeline.history(ChannelTimeline.items(listOf(current, future), now, null), false)
         assertTrue(liveOnly.single().live)
         assertEquals(1, ChannelTimeline.historyFocusIndex(history, now))
-        assertEquals(2, ChannelTimeline.historyFocusIndex(history, now - 1_500))
-        assertEquals(2, ChannelTimeline.historyFocusIndex(history, now - 3_000))
+        assertEquals(0, ChannelTimeline.historyFocusIndex(history, now - 1_500))
+        assertEquals(0, ChannelTimeline.historyFocusIndex(history, now - 3_000))
         assertEquals(2, ChannelTimeline.move(2, 1, history.size))
         assertEquals(0, ChannelTimeline.move(0, -1, history.size))
-        assertEquals(0, ChannelTimeline.historyFocusIndex(history, now + 5_000))
+        assertEquals(2, ChannelTimeline.historyFocusIndex(history, now + 5_000))
     }
 
     @Test fun emptyAndGuideLessHistoryHaveSafeFocus() {

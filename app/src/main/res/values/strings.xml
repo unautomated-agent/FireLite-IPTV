@@ -106,7 +106,7 @@
     <string name="channel_timeline_start">Początek archiwum</string>
     <string name="channel_timeline_unavailable">Ten kanał nie ma dostępnego archiwum.</string>
     <string name="channel_timeline_future">Ten program jeszcze się nie rozpoczął.</string>
-    <string name="channel_timeline_hint">Góra/Dół: audycja · OK: oglądaj · Wstecz: zamknij</string>
+    <string name="channel_timeline_hint">Góra/Dół: audycja · ⏪/⏩: dzień · OK: oglądaj · Wstecz: zamknij</string>
     <string name="channel_timeline_overlay_hint">Prawo: historia audycji</string>
     <string name="player_seek_unsupported">Przewijanie nie jest dostępne dla tego kanału.</string>
     <string name="player_catchup_unsupported">Archiwum nie działa dla tego kanału.</string>

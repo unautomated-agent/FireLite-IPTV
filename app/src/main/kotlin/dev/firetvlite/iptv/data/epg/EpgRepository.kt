@@ -1,5 +1,6 @@
 package dev.firetvlite.iptv.data.epg
 
+import androidx.room.withTransaction
 import dev.firetvlite.iptv.data.db.ChannelProgramme
 import dev.firetvlite.iptv.data.db.FireLiteDatabase
 import dev.firetvlite.iptv.data.db.ProgrammeEntity
@@ -47,12 +48,23 @@ class EpgRepository(private val database: FireLiteDatabase, private val scope: C
         jobs[sourceId] = scope.launch(Dispatchers.IO) {
             gate.withLock {
                 val source = database.sourceDao().byId(sourceId) ?: return@withLock
-                if (!force && source.epgRefreshedAt > 0 &&
-                    System.currentTimeMillis() - source.epgRefreshedAt <= 12L * 60 * 60 * 1000
-                ) return@withLock
                 try {
                     val urls = EpgSources.urls(source.epgUrl, source.discoveredEpgUrls, source.url)
-                    if (urls.isEmpty()) return@withLock
+                    when (EpgRefreshPolicy.action(urls.isNotEmpty(), source.epgRefreshedAt, System.currentTimeMillis(), force)) {
+                        EpgRefreshAction.Clear -> {
+                            database.withTransaction {
+                                val current = database.sourceDao().byId(sourceId) ?: return@withTransaction
+                                if (EpgSources.urls(current.epgUrl, current.discoveredEpgUrls, current.url).isNotEmpty()) return@withTransaction
+                                database.sourceDao().publishEpg(sourceId, "", 0, 0)
+                                database.epgDao().clearMappings(sourceId)
+                                database.epgDao().clearProgrammes(sourceId)
+                            }
+                            mutableStates.update { it - sourceId }
+                            return@withLock
+                        }
+                        EpgRefreshAction.Skip -> return@withLock
+                        EpgRefreshAction.Import -> Unit
+                    }
                     mutableStates.update { it + (sourceId to EpgState.Running) }
                     val count = importer.import(source, urls)
                     currentCoroutineContext().ensureActive()

@@ -27,6 +27,12 @@ interface EpgDao {
     @Insert
     suspend fun insertMappings(mappings: List<ChannelEpgEntity>)
 
+    @Query("DELETE FROM programme WHERE sourceId = :sourceId")
+    suspend fun clearProgrammes(sourceId: Long)
+
+    @Query("DELETE FROM channel_epg WHERE sourceId = :sourceId")
+    suspend fun clearMappings(sourceId: Long)
+
     @Query("SELECT id, name, tvgId, streamUrl FROM channel WHERE sourceId = :sourceId ORDER BY position")
     suspend fun channels(sourceId: Long): List<EpgChannel>
 

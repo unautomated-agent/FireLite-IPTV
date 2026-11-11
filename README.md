@@ -138,7 +138,10 @@ may still deliver their sole track: track selection cannot transcode or reduce t
 
 The Live browser uses a paged 2.5-hour programme grid. Up/Down preserve the selected absolute time;
 Left/Right move between programmes, and Left from a channel name returns to its group. Rewind/fast-forward
-shift the window by an hour; Play/Pause returns to now. Menu toggles the row's favourite. OK plays a current
+shift the window by an hour in the Live browser. In Program TV (both the main-menu tab and the full guide
+opened by long OK), Rewind focuses the selected group; Fast-forward returns to that group's remembered
+grid row and programme time/window. Group changes keep focus in the group list. Play/Pause returns to now.
+Menu toggles the row's favourite. OK plays a current
 programme live or a retained catch-up programme from its start; future/unavailable cells only show details.
 The group determines history bounds (at most seven days); future browsing ends at the guide's end, capped
 at three days. Focusing a row always previews live, including after leaving archive playback. The fullscreen

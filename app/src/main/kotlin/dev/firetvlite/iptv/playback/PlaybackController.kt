@@ -1,12 +1,15 @@
 package dev.firetvlite.iptv.playback
 
 import android.content.Context
+import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -17,6 +20,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicInteger
 
 /** What to play. */
 data class StreamRequest(
@@ -63,14 +67,19 @@ data class PlaybackSnapshot(
  */
 class PlaybackController internal constructor(
     private val scope: CoroutineScope,
-    private val createPlayer: (DefaultHttpDataSource.Factory) -> ExoPlayer,
+    private val createPlayer: (HttpDataSource.Factory) -> ExoPlayer,
+    private val trace: (String) -> Unit,
+    private val mediaItem: (String) -> MediaItem = { MediaItem.fromUri(it) },
 ) {
+    internal constructor(scope: CoroutineScope, createPlayer: (HttpDataSource.Factory) -> ExoPlayer) :
+        this(scope, createPlayer, {})
+
     constructor(context: Context, scope: CoroutineScope) : this(scope, { httpFactory ->
         val renderers = DefaultRenderersFactory(context).setEnableDecoderFallback(true)
         ExoPlayer.Builder(context, renderers)
             .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
             .build()
-    })
+    }, { Log.d("FireLiteStream", it) })
 
     private val gate = StreamGate()
     private val httpFactory = DefaultHttpDataSource.Factory()
@@ -83,6 +92,45 @@ class PlaybackController internal constructor(
     private var retries = 0
     private var activeRequest: StreamRequest? = null
     private var suspendedRequest: StreamRequest? = null
+    private var preview = false
+    private val connections = AtomicInteger()
+    private val trackedFactory = object : HttpDataSource.Factory {
+        override fun setDefaultRequestProperties(properties: Map<String, String>): HttpDataSource.Factory {
+            httpFactory.setDefaultRequestProperties(properties)
+            return this
+        }
+
+        override fun createDataSource(): HttpDataSource {
+            val delegate = httpFactory.createDataSource()
+            return object : HttpDataSource by delegate {
+                private var connected = false
+                private var stream = 0
+
+                override fun open(dataSpec: DataSpec): Long {
+                    stream = dataSpec.uri.toString().hashCode()
+                    connected = true
+                    trace("HTTP_OPEN stream=$stream active=${connections.incrementAndGet()}")
+                    return try {
+                        delegate.open(dataSpec)
+                    } catch (error: Exception) {
+                        runCatching { close() }
+                        throw error
+                    }
+                }
+
+                override fun close() {
+                    try {
+                        delegate.close()
+                    } finally {
+                        if (connected) {
+                            connected = false
+                            trace("HTTP_CLOSE stream=$stream active=${connections.decrementAndGet()}")
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     private val mutablePlayer = MutableStateFlow<ExoPlayer?>(null)
     val player: StateFlow<ExoPlayer?> = mutablePlayer.asStateFlow()
@@ -109,11 +157,14 @@ class PlaybackController internal constructor(
         val player = ensurePlayer()
         player.stop() // first close the old connection ...
         player.clearMediaItems()
+        trace("STOP before switch")
         mutableStatus.value = PlaybackStatus.Connecting
 
         startJob = scope.launch {
             delay(CLOSE_GRACE_MS) // ... and give the server time to notice, only then open the new one
-            player.setMediaItem(MediaItem.fromUri(request.url))
+            awaitConnectionClose()
+            trace("PREPARE player=${System.identityHashCode(player)} stream=${request.url.hashCode()}")
+            player.setMediaItem(mediaItem(request.url))
             player.playWhenReady = true
             player.prepare()
         }
@@ -131,6 +182,25 @@ class PlaybackController internal constructor(
             it.clearMediaItems()
         }
         mutableStatus.value = PlaybackStatus.Idle
+        trace("STOP closed")
+    }
+
+    fun setPreview(enabled: Boolean) {
+        if (preview == enabled) return
+        preview = enabled
+        exo?.let(::applyQuality)
+        trace("QUALITY preview=$enabled")
+    }
+
+    private fun applyQuality(player: ExoPlayer) {
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setMaxVideoSize(if (preview) 960 else Int.MAX_VALUE, if (preview) 540 else Int.MAX_VALUE)
+            .setMaxVideoBitrate(if (preview) 1_500_000 else Int.MAX_VALUE)
+            .build()
+    }
+
+    private suspend fun awaitConnectionClose() {
+        while (connections.get() > 0) delay(25)
     }
 
     /** Called when the app goes to the background: closes the stream but remembers it. */
@@ -199,7 +269,8 @@ class PlaybackController internal constructor(
 
     private fun ensurePlayer(): ExoPlayer {
         exo?.let { return it }
-        val player = createPlayer(httpFactory)
+        val player = createPlayer(trackedFactory)
+        applyQuality(player)
         player.setAudioAttributes(AudioAttributes.DEFAULT, true)
         player.addListener(listener)
         exo = player
@@ -230,6 +301,7 @@ class PlaybackController internal constructor(
             startJob?.cancel()
             startJob = scope.launch {
                 delay(RETRY_DELAY_MS * retries)
+                awaitConnectionClose()
                 exo?.prepare() // the failed connection is closed already; open a fresh one
             }
         } else {

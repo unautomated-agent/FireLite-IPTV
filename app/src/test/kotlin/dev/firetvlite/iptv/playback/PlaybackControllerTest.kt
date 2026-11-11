@@ -1,6 +1,8 @@
 package dev.firetvlite.iptv.playback
 
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.common.TrackSelectionParameters
+import androidx.media3.common.MediaItem
 import java.lang.reflect.Proxy
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
@@ -95,8 +97,52 @@ class PlaybackControllerTest {
         assertEquals(PlaybackSnapshot.EMPTY, controller.snapshot())
     }
 
+    @Test
+    fun previewCapsTracksAndFullscreenLiftsCapsWithoutReconnecting() = runBlocking {
+        val fake = FakePlayer()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY })
+        controller.setPreview(true)
+        controller.play(request)
+        delay(450)
+        assertEquals(960, fake.parameters.maxVideoWidth)
+        assertEquals(540, fake.parameters.maxVideoHeight)
+        assertEquals(1_500_000, fake.parameters.maxVideoBitrate)
+        val calls = fake.calls.count { it == "stop" || it == "prepare" || it == "setMediaItem" }
+
+        controller.setPreview(false)
+        controller.play(request)
+
+        assertEquals(Int.MAX_VALUE, fake.parameters.maxVideoWidth)
+        assertEquals(Int.MAX_VALUE, fake.parameters.maxVideoBitrate)
+        assertEquals(calls, fake.calls.count { it == "stop" || it == "prepare" || it == "setMediaItem" })
+        assertSame(fake.player, controller.player.value)
+        controller.stop()
+    }
+
+    @Test
+    fun switchingStopsBeforeTheNextPrepareAndRapidRequestsMerge() = runBlocking {
+        val fake = FakePlayer()
+        val trace = mutableListOf<String>()
+        val controller = PlaybackController(this, { fake.player }, { trace += it }, { MediaItem.EMPTY })
+        controller.play(request)
+        delay(450)
+        fake.calls.clear()
+
+        controller.play(request.copy(url = "https://example.org/second"))
+        controller.play(request.copy(url = "https://example.org/third"))
+        assertEquals(0, fake.calls.count { it == "prepare" })
+        delay(450)
+
+        assertEquals(1, fake.calls.count { it == "prepare" })
+        assertEquals(2, fake.calls.count { it == "stop" })
+        assertEquals(true, fake.calls.indexOf("stop") < fake.calls.indexOf("prepare"))
+        assertEquals(2, trace.count { it.startsWith("PREPARE") })
+        controller.stop()
+    }
+
     private class FakePlayer {
         val calls = mutableListOf<String>()
+        var parameters = TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT
         val player = Proxy.newProxyInstance(
             ExoPlayer::class.java.classLoader,
             arrayOf(ExoPlayer::class.java),
@@ -105,6 +151,8 @@ class PlaybackControllerTest {
                 "equals" -> proxy === args?.get(0)
                 "hashCode" -> System.identityHashCode(proxy)
                 "toString" -> "FakePlayer"
+                "getTrackSelectionParameters" -> parameters
+                "setTrackSelectionParameters" -> { parameters = args!![0] as TrackSelectionParameters; null }
                 else -> {
                     calls += method.name
                     when (method.returnType) {

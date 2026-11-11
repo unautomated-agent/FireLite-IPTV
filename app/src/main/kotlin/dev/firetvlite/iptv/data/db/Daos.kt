@@ -97,6 +97,14 @@ interface ChannelDao {
     @Query("SELECT * FROM channel WHERE sourceId = :sourceId ORDER BY position LIMIT 1 OFFSET :offset")
     suspend fun allAt(sourceId: Long, offset: Int): ChannelEntity?
 
+    @Query("SELECT (SELECT COUNT(*) FROM channel x WHERE x.sourceId=c.sourceId AND x.position<c.position) " +
+        "FROM channel c WHERE c.sourceId=:sourceId AND c.streamUrl=:url ORDER BY c.position LIMIT 1")
+    suspend fun allIndex(sourceId: Long, url: String): Int?
+
+    @Query("SELECT (SELECT COUNT(*) FROM channel x WHERE x.sourceId=c.sourceId AND x.groupName=c.groupName AND x.position<c.position) " +
+        "FROM channel c WHERE c.sourceId=:sourceId AND c.groupName=:group AND c.streamUrl=:url ORDER BY c.position LIMIT 1")
+    suspend fun groupIndex(sourceId: Long, group: String, url: String): Int?
+
     @Query("SELECT COUNT(*) FROM channel WHERE sourceId = :sourceId AND groupName = :group")
     suspend fun groupCount(sourceId: Long, group: String): Int
 

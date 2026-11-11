@@ -10,9 +10,11 @@ import dev.firetvlite.iptv.data.db.FavoriteEntity
 import dev.firetvlite.iptv.data.db.RecentEntity
 import dev.firetvlite.iptv.data.library.LibraryRepository
 import dev.firetvlite.iptv.data.library.ZapContext
+import dev.firetvlite.iptv.data.library.GroupKey
 import dev.firetvlite.iptv.playback.CatchupUrlBuilder
 import dev.firetvlite.iptv.playback.PlaybackSnapshot
 import dev.firetvlite.iptv.playback.PlaybackStatus
+import dev.firetvlite.iptv.playback.PlayerMode
 import dev.firetvlite.iptv.playback.StreamRequest
 import dev.firetvlite.iptv.playback.ZapMath
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -33,8 +35,10 @@ enum class PlayerMessage { SeekUnsupported, CatchupUnsupported }
 /** Position in the list the user is zapping through (1-based) and its size. */
 data class ZapPosition(val number: Int, val count: Int)
 
+data class BrowserTarget(val group: GroupKey, val channel: ChannelEntity, val token: Int)
+
 /**
- * Drives the full-screen player: channel up/down, favourites, jumping back and forth.
+ * Drives preview, fullscreen and overlay: channel selection, favourites and archive playback.
  * All streams go through [dev.firetvlite.iptv.playback.PlaybackController], which keeps to one connection.
  */
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -48,8 +52,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     val player: StateFlow<ExoPlayer?> = playback.player
     val status: StateFlow<PlaybackStatus> = playback.status
 
-    private val mutableOpen = MutableStateFlow(false)
-    val isOpen: StateFlow<Boolean> = mutableOpen.asStateFlow()
+    private val mutableMode = MutableStateFlow(PlayerMode.Closed)
+    val mode = mutableMode.asStateFlow()
+    private val mutableBrowserTarget = MutableStateFlow<BrowserTarget?>(null)
+    val browserTarget = mutableBrowserTarget.asStateFlow()
+    private var playingGroup: GroupKey = GroupKey.All
+    private var targetToken = 0
+    private var previewJob: Job? = null
+    private var activeChannel: ChannelEntity? = null
+    private var activeIndex = 0
 
     private val mutableChannel = MutableStateFlow<ChannelEntity?>(null)
     val channel: StateFlow<ChannelEntity?> = mutableChannel.asStateFlow()
@@ -80,8 +91,29 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var messageJob: Job? = null
 
     /** Opens the player on item [startIndex] of [zap] and starts playing it. */
-    fun open(zap: ZapContext, startIndex: Int) {
-        if (mutableOpen.value || openJob?.isActive == true) return
+    fun open(zap: ZapContext, startIndex: Int, group: GroupKey) {
+        cancelPreview()
+        select(zap, startIndex, group, PlayerMode.Fullscreen)
+    }
+
+    fun preview(zap: ZapContext, startIndex: Int, group: GroupKey) {
+        cancelPreview()
+        if (!mutableMode.value.acceptsPreview) return
+        previewJob = viewModelScope.launch {
+            delay(800)
+            select(zap, startIndex, group, PlayerMode.Preview)
+        }
+    }
+
+    fun cancelPreview() {
+        previewJob?.cancel()
+        previewJob = null
+    }
+
+    private fun select(zap: ZapContext, startIndex: Int, group: GroupKey, mode: PlayerMode) {
+        openJob?.cancel()
+        zapJob?.cancel()
+        catchupJob?.cancel()
         openJob = viewModelScope.launch {
             val count = zap.count()
             if (count == 0) return@launch
@@ -91,14 +123,59 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             zapContext = zap
             zapCount = count
             zapIndex = index
-            mutableOpen.value = true
+            playingGroup = group
+            val sameChannel = mutableMode.value != PlayerMode.Closed && mutableChannel.value?.streamUrl == first.streamUrl
+            setMode(mode)
             show(first)
-            startLive(first)
+            if (sameChannel) {
+                activeChannel = first
+                activeIndex = index
+            }
+            if (!sameChannel || status.value is PlaybackStatus.Failed) startLive(first)
+        }
+    }
+
+    private fun setMode(mode: PlayerMode) {
+        mutableMode.value = mode
+        playback.setPreview(mode == PlayerMode.Preview)
+    }
+
+    fun backToPreview() {
+        if (mutableChannel.value == null) return
+        cancelPreview()
+        settlePendingZap()
+        setMode(mutableMode.value.afterBack())
+        restoreChannel()
+    }
+
+    fun openOverlay() {
+        if (mutableMode.value != PlayerMode.Fullscreen) return
+        settlePendingZap()
+        setMode(PlayerMode.Overlay)
+        restoreChannel()
+    }
+
+    fun closeOverlay() {
+        if (mutableMode.value == PlayerMode.Overlay) setMode(mutableMode.value.afterBack())
+    }
+
+    private fun restoreChannel() {
+        mutableChannel.value?.let { mutableBrowserTarget.value = BrowserTarget(playingGroup, it, ++targetToken) }
+    }
+
+    private fun settlePendingZap() {
+        openJob?.cancel()
+        zapJob?.cancel()
+        catchupJob?.cancel()
+        activeChannel?.let {
+            zapIndex = activeIndex
+            show(it)
         }
     }
 
     /** Channel up (-1) / down (+1). Rapid presses are merged: only the channel the user stops on connects. */
     fun zap(delta: Int) {
+        if (mutableMode.value != PlayerMode.Fullscreen) return
         val zap = zapContext ?: return
         if (zapCount == 0) return
         zapIndex = ZapMath.wrap(zapIndex, delta, zapCount)
@@ -114,18 +191,26 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun close() {
+        cancelPreview()
         openJob?.cancel()
         zapJob?.cancel()
         catchupJob?.cancel()
         messageJob?.cancel()
         playback.stop()
-        mutableOpen.value = false
+        setMode(PlayerMode.Closed)
+        mutableBrowserTarget.value = null
         mutableChannel.value = null
+        activeChannel = null
         mutableCatchupOffset.value = 0
         mutableMessage.value = null
         mutablePosition.value = ZapPosition(0, 0)
         zapCount = 0
         zapContext = null
+    }
+
+    override fun onCleared() {
+        close()
+        super.onCleared()
     }
 
     fun toggleFavorite() {
@@ -204,6 +289,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun startLive(channel: ChannelEntity) {
+        activeChannel = channel
+        activeIndex = zapIndex
         mutableCatchupOffset.value = 0
         playback.play(StreamRequest(channel.streamUrl, userAgent))
         viewModelScope.launch {

@@ -23,7 +23,19 @@ search, movies and series with posters, seasons, history and resume.
   (HLS with a time-shift window). Rewind/fast-forward jump 30 s, or enter the **archive (catch-up)** in 5 minute
   steps when the playlist declares it (`catchup`, `catchup-source`, `catchup-days`; types default, append, shift,
   flussonic).
-- **No live preview** on purpose: it would be a second stream.
+- **Live preview** reuses the single stream and the same PlayerView/ExoPlayer as fullscreen. Focus a channel
+  for 800 ms to switch preview; OK expands it without reconnecting. Back shrinks fullscreen into the browser
+  and restores focus to the playing channel. Leaving the Live tab stops playback.
+- **Fullscreen remote**: Menu opens the channel overlay; long-press OK toggles favourite (short OK shows info).
+  Back returns to preview. Up/Down zap; Left/Right seek 10 seconds; rewind/fast-forward seek or enter catch-up.
+- **Overlay remote**: Up/Down browse without zapping; OK plays and closes the panel; Menu toggles the focused
+  channel's favourite. Left reveals groups, Right returns to channels, Left from groups or Back closes the overlay.
+
+The shell keeps one default SurfaceView-backed PlayerView at a stable composition slot and parent, resizing
+its bounds rather than re-parenting or swapping surfaces. SurfaceView avoids the extra GPU composition/copy
+cost of TextureView for 4K on the Fire TV 4K Max. The view detaches from the player on release. Preview requests
+960x540 / 1.5 Mbps maximum tracks; fullscreen lifts these limits. Providers without lower-resolution variants
+may still deliver their sole track: track selection cannot transcode or reduce the bitrate of a fixed stream.
 
 ## Hard rule: one stream at a time
 
@@ -32,6 +44,8 @@ The provider allows exactly **one** simultaneous connection and blocks the accou
 
 - a single player instance owns the only stream connection;
 - the old connection is closed *before* a new one opens, and a short grace period lets the server notice;
+- a new prepare waits for all previous HTTP data sources to close; `FireLiteStream` logs open/close ordering
+  using opaque URI hashes (never provider URLs or credentials);
 - rapid channel changes are merged, only the channel the user stops on connects (`StreamGate` is unit tested);
 - the same stream is never opened twice;
 - the stream stops when the app is paused (Home, screensaver, system dialogs) and resumes on return.

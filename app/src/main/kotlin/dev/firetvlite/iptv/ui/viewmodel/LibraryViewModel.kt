@@ -102,7 +102,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             if (id == null) {
                 flowOf(PagingData.empty<ChannelRow>())
             } else {
-                Pager(PagingConfig(pageSize = 40, enablePlaceholders = false)) {
+                Pager(PagingConfig(pageSize = 40, enablePlaceholders = true)) {
                     when (key) {
                         GroupKey.Favorites -> channelDao.pagingFavorites(id)
                         GroupKey.Recent -> channelDao.pagingRecent(id)
@@ -120,6 +120,16 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             } else {
                 userDao.addFavorite(FavoriteEntity(streamUrl, System.currentTimeMillis()))
             }
+        }
+    }
+
+    suspend fun channelIndex(key: GroupKey, url: String): Int? {
+        val id = source.value?.id ?: return null
+        return when (key) {
+            GroupKey.All -> channelDao.allIndex(id, url)
+            is GroupKey.Named -> channelDao.groupIndex(id, key.name, url)
+            GroupKey.Favorites -> channelDao.favoriteChannels(id).indexOfFirst { it.streamUrl == url }.takeIf { it >= 0 }
+            GroupKey.Recent -> channelDao.recentChannels(id).indexOfFirst { it.streamUrl == url }.takeIf { it >= 0 }
         }
     }
 

@@ -1,7 +1,9 @@
 package dev.firetvlite.iptv.ui.screens
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -20,18 +22,28 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -60,17 +72,21 @@ import dev.firetvlite.iptv.ui.viewmodel.GroupItem
 import dev.firetvlite.iptv.ui.viewmodel.LibraryViewModel
 import dev.firetvlite.iptv.ui.viewmodel.PlayerViewModel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 
 /**
  * Live TV browser: groups on the left, the channels of the selected group in the middle (loaded page by page),
  * details of the focused channel on the right. OK starts the channel; the Menu button toggles the favourite.
  *
- * There is deliberately no live preview: a preview would be a second stream next to the one the user opens.
+ * Preview and fullscreen share the single player hosted by the shell.
  */
 @Composable
 fun LiveTvScreen(
     library: LibraryViewModel,
     player: PlayerViewModel,
+    active: Boolean,
+    onPreviewBounds: (Rect) -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -95,7 +111,29 @@ fun LiveTvScreen(
             onAction = onOpenSettings,
             modifier = modifier,
         )
-        else -> ChannelBrowser(library = library, player = player, modifier = modifier)
+        else -> {
+            val mode by player.mode.collectAsState()
+            ChannelBrowser(
+                library = library, player = player,
+                active = active && mode.acceptsPreview,
+                onPreviewBounds = onPreviewBounds, modifier = modifier,
+            )
+        }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalComposeUiApi::class)
+fun PlayerChannelOverlay(library: LibraryViewModel, player: PlayerViewModel) {
+    var showGroups by remember { mutableStateOf(false) }
+    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
+        ChannelBrowser(
+            library = library, player = player, active = true,
+            overlay = true, showGroups = showGroups, onShowGroups = { showGroups = it },
+            modifier = Modifier.fillMaxWidth(if (showGroups) 0.66f else 0.42f).fillMaxHeight()
+                .background(Brush.horizontalGradient(listOf(Color(0xDD101820), Color(0xF2101820))))
+                .focusProperties { exit = { FocusRequester.Cancel } }.focusGroup(),
+        )
     }
 }
 
@@ -103,10 +141,16 @@ fun LiveTvScreen(
 private fun ChannelBrowser(
     library: LibraryViewModel,
     player: PlayerViewModel,
+    active: Boolean,
+    overlay: Boolean = false,
+    showGroups: Boolean = true,
+    onShowGroups: (Boolean) -> Unit = {},
+    onPreviewBounds: (Rect) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val groups by library.groups.collectAsState()
     val selected by library.selectedGroup.collectAsState()
+    val restore by player.browserTarget.collectAsState()
     val pagingItems = key(selected) {
         remember(selected) { library.channels(selected) }.collectAsLazyPagingItems()
     }
@@ -115,6 +159,11 @@ private fun ChannelBrowser(
     val channelListState = remember(selected) { LazyListState() }
     val groupRequesters = remember(groups.map { it.key }) { groups.associate { it.key to FocusRequester() } }
     val firstChannelFocus = remember(selected) { FocusRequester() }
+    val restoreFocus = remember(selected) { FocusRequester() }
+    var restoreIndex by remember(selected) { mutableStateOf<Int?>(null) }
+    var pendingRestore by remember { mutableStateOf<Pair<GroupKey, Int>?>(null) }
+    var handledRestore by remember { mutableStateOf<Int?>(null) }
+    var channelsHaveFocus by remember { mutableStateOf(false) }
     fun focusGroup(index: Int) {
         if (index !in groups.indices) return
         scope.launch {
@@ -127,8 +176,9 @@ private fun ChannelBrowser(
     fun focusChannels() {
         if (pagingItems.itemCount == 0) return
         scope.launch {
-            channelListState.scrollToItem(0)
-            firstChannelFocus.requestFocusWhenReady()
+            val index = restoreIndex ?: 0
+            channelListState.scrollToItem(index)
+            if (index == restoreIndex) restoreFocus.requestFocusWhenReady() else firstChannelFocus.requestFocusWhenReady()
         }
     }
     fun focusSelectedGroup() {
@@ -136,10 +186,44 @@ private fun ChannelBrowser(
     }
 
     var focusedChannel by remember(selected) { mutableStateOf<ChannelRow?>(null) }
+    var focusedIndex by remember(selected) { mutableStateOf(0) }
+    LaunchedEffect(active, focusedChannel?.channel?.streamUrl, focusedIndex, selected, channelsHaveFocus) {
+        if (overlay) return@LaunchedEffect
+        player.cancelPreview()
+        if (active && channelsHaveFocus && focusedChannel != null) {
+            library.zapContext(selected)?.let { player.preview(it, focusedIndex, selected) }
+        }
+    }
+    DisposableEffect(Unit) { onDispose { if (!overlay) player.cancelPreview() } }
+    LaunchedEffect(active, restore?.token) {
+        val target = restore ?: return@LaunchedEffect
+        if (!active || handledRestore == target.token) return@LaunchedEffect
+        focusedChannel = null
+        var group = target.group
+        var index = library.channelIndex(group, target.channel.streamUrl)
+        if (index == null) {
+            group = GroupKey.Named(target.channel.groupName)
+            index = library.channelIndex(group, target.channel.streamUrl)
+        }
+        if (index != null) {
+            pendingRestore = group to index
+            library.selectGroup(group)
+        }
+    }
+    LaunchedEffect(active, pendingRestore, selected, pagingItems.itemCount) {
+        val (group, index) = pendingRestore ?: return@LaunchedEffect
+        if (!active || selected != group || index !in 0 until pagingItems.itemCount) return@LaunchedEffect
+        restoreIndex = index
+        channelListState.scrollToItem(index)
+        snapshotFlow { pagingItems.peek(index) }.filterNotNull().first()
+        restoreFocus.requestFocusWhenReady()
+        handledRestore = restore?.token
+        pendingRestore = null
+    }
     val initialGroup = remember { library.selectedGroup.value }
     var initialFocusRequested by remember { mutableStateOf(false) }
-    LaunchedEffect(groups.isNotEmpty()) {
-        if (groups.isNotEmpty() && !initialFocusRequested) {
+    LaunchedEffect(groups.isNotEmpty(), active) {
+        if (active && !overlay && restore == null && groups.isNotEmpty() && !initialFocusRequested) {
             initialFocusRequested = true
             val index = groups.indexOfFirst { it.key == initialGroup }
             if (index >= 0) {
@@ -148,14 +232,22 @@ private fun ChannelBrowser(
             }
         }
     }
+    LaunchedEffect(showGroups) {
+        if (overlay && showGroups) focusSelectedGroup()
+    }
+    LaunchedEffect(showGroups, pagingItems.itemCount, pendingRestore) {
+        if (overlay && !showGroups && !channelsHaveFocus && handledRestore != null && pendingRestore == null) {
+            focusChannels()
+        }
+    }
 
     Row(
         modifier = modifier
-            .fillMaxSize()
+            .fillMaxHeight()
             .padding(start = 16.dp, end = 24.dp, top = 20.dp, bottom = 24.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Column(modifier = Modifier.width(188.dp).fillMaxHeight()) {
+        if (showGroups) Column(modifier = Modifier.width(188.dp).fillMaxHeight()) {
             FLText(
                 text = stringResource(R.string.live_groups),
                 style = FireLiteTheme.typography.headline,
@@ -166,7 +258,15 @@ private fun ChannelBrowser(
                 modifier = Modifier.onPreviewKeyEvent { event ->
                     when (event.key) {
                         Key.DirectionRight -> {
-                            if (event.type == KeyEventType.KeyDown) focusChannels()
+                            if (event.type == KeyEventType.KeyDown) {
+                                if (overlay) onShowGroups(false)
+                                focusChannels()
+                            }
+                            true
+                        }
+                        Key.DirectionLeft -> {
+                            if (!overlay) return@onPreviewKeyEvent false
+                            if (event.type == KeyEventType.KeyDown) player.closeOverlay()
                             true
                         }
                         else -> false
@@ -203,9 +303,11 @@ private fun ChannelBrowser(
                 }
                 LazyColumn(
                     state = channelListState,
-                    modifier = Modifier.fillMaxSize().onPreviewKeyEvent { event ->
+                    modifier = Modifier.fillMaxSize().onFocusChanged { channelsHaveFocus = it.hasFocus }.onPreviewKeyEvent { event ->
                         if (event.key == Key.DirectionLeft) {
-                            if (event.type == KeyEventType.KeyDown) focusSelectedGroup()
+                            if (event.type == KeyEventType.KeyDown) {
+                                if (overlay && !showGroups) onShowGroups(true) else focusSelectedGroup()
+                            }
                             true
                         } else false
                     },
@@ -217,22 +319,28 @@ private fun ChannelBrowser(
                         if (row != null) {
                             ChannelRowItem(
                                 row = row,
-                                modifier = if (index == 0) Modifier.focusRequester(firstChannelFocus) else Modifier,
-                                onFocused = { focusedChannel = row },
+                                modifier = when (index) {
+                                    restoreIndex -> Modifier.focusRequester(restoreFocus)
+                                    0 -> Modifier.focusRequester(firstChannelFocus)
+                                    else -> Modifier
+                                },
+                                onFocused = { focusedChannel = row; focusedIndex = index },
                                 onClick = {
                                     scope.launch {
-                                        library.zapContext(selected)?.let { player.open(it, index) }
+                                        library.zapContext(selected)?.let { player.open(it, index, selected) }
                                     }
                                 },
                                 onMenu = { library.toggleFavorite(row.channel.streamUrl) },
                             )
+                        } else {
+                            Spacer(Modifier.fillMaxWidth().height(56.dp))
                         }
                     }
                 }
             }
         }
 
-        DetailPanel(row = focusedChannel, modifier = Modifier.width(236.dp))
+        if (!overlay) DetailPanel(row = focusedChannel, onPreviewBounds = onPreviewBounds, modifier = Modifier.width(236.dp))
     }
 }
 
@@ -320,6 +428,7 @@ private fun ChannelRowItem(
 @Composable
 private fun DetailPanel(
     row: ChannelRow?,
+    onPreviewBounds: (Rect) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -330,6 +439,8 @@ private fun DetailPanel(
             .padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(8.dp),
     ) {
+        Box(Modifier.fillMaxWidth().aspectRatio(16f / 9f).background(Color.Black)
+            .onGloballyPositioned { onPreviewBounds(it.boundsInRoot()) })
         if (row != null) {
             val channel = row.channel
             ChannelLogo(name = channel.name, logoUrl = channel.logoUrl, size = 72.dp)

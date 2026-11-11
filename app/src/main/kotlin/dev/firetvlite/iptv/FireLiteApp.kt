@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -26,6 +27,8 @@ import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.dp
 import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.WarsawClockBox
+import dev.firetvlite.iptv.ui.components.LocalFilmRatings
+import dev.firetvlite.iptv.ui.screens.FilmRankingsScreen
 import dev.firetvlite.iptv.ui.navigation.AppNavigationRail
 import dev.firetvlite.iptv.ui.navigation.Destination
 import dev.firetvlite.iptv.ui.navigation.RailCollapsedWidth
@@ -52,7 +55,10 @@ fun FireLiteApp(
 ) {
     ReferenceDensity {
         FireLiteTheme {
-            AppShell(updateViewModel, libraryViewModel, playerViewModel)
+            val ratings by libraryViewModel.films.ratings.collectAsState()
+            CompositionLocalProvider(LocalFilmRatings provides ratings) {
+                AppShell(updateViewModel, libraryViewModel, playerViewModel)
+            }
         }
     }
 }
@@ -120,6 +126,7 @@ private fun AppShell(
                     updateState = updateState,
                     onInstallUpdate = updateViewModel::downloadAndInstall,
                     onLive = { navigate(Destination.Live) }, onSettings = { navigate(Destination.Settings) },
+                    onFilms = { navigate(Destination.Films) },
                 )
                 Destination.Live -> LiveTvScreen(
                     library = libraryViewModel,
@@ -153,6 +160,8 @@ private fun AppShell(
                     current == Destination.Favorites && mainMenuVisible, tabReturn, { navigate(Destination.Live) })
                 Destination.Search -> SearchScreen(libraryViewModel, playerViewModel,
                     current == Destination.Search && mainMenuVisible, tabReturn)
+                Destination.Films -> FilmRankingsScreen(libraryViewModel, playerViewModel,
+                    current == Destination.Films && mainMenuVisible, onSettings = { navigate(Destination.Settings) })
             }
         }
 

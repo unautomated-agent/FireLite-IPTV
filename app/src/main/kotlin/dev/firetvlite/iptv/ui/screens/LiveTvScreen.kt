@@ -1,5 +1,7 @@
 package dev.firetvlite.iptv.ui.screens
 
+import dev.firetvlite.iptv.ui.components.ImdbRating
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.focusGroup
@@ -538,6 +540,7 @@ private fun ChannelBrowser(
                     FLText("Następnie: ${clockTime(it.start)} ${it.title}",
                         style = FireLiteTheme.typography.label, maxLines = 2,
                         modifier = Modifier.padding(top = 8.dp))
+                    ImdbRating(it)
                 }
                 FLText(stringResource(R.string.channel_timeline_overlay_hint),
                     style = FireLiteTheme.typography.label, modifier = Modifier.padding(top = 8.dp))
@@ -619,6 +622,7 @@ internal fun ChannelRowItem(
                 if (programme != null) {
                     FLText(text = programme.title, style = FireLiteTheme.typography.label,
                         color = FireLiteTheme.colors.textSecondary, maxLines = 1)
+                    ImdbRating(programme)
                     ProgressBar(PlaybackTime.progress(now, programme.start, programme.stop))
                 }
             }
@@ -667,6 +671,7 @@ private fun DetailPanel(
             programme?.let { current ->
                 FLText(programmeTimes(current), style = FireLiteTheme.typography.label, color = FireLiteTheme.colors.accent)
                 FLText(current.title, style = FireLiteTheme.typography.title, maxLines = 2)
+                ImdbRating(current)
                 current.description?.let { FLText(it, style = FireLiteTheme.typography.label, maxLines = 3) }
             }
             val available = programme != null && programme.start <= now &&

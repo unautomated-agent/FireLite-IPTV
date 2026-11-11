@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Default (and only) UI language: Polish. Resource names are English. -->
 <resources>
+    <string name="nav_films">Najlepsze filmy</string>
     <string name="diagnostics_title">Diagnostyka</string>
     <string name="diagnostics_open">Pokaż raport i kod QR</string>
     <string name="diagnostics_scan">Zeskanuj kod telefonem i prześlij tekst raportu. Dane logowania są ukryte. Góra/Dół przewijają raport.</string>

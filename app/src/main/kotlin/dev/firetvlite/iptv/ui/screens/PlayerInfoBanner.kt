@@ -26,6 +26,7 @@ import dev.firetvlite.iptv.playback.PlaybackFrame
 import dev.firetvlite.iptv.playback.PlaybackTime
 import dev.firetvlite.iptv.ui.components.ChannelLogo
 import dev.firetvlite.iptv.ui.components.FLText
+import dev.firetvlite.iptv.ui.components.ImdbRating
 import dev.firetvlite.iptv.ui.components.ProgressBar
 import dev.firetvlite.iptv.ui.components.clockTime
 import dev.firetvlite.iptv.ui.components.minuteClock
@@ -59,6 +60,7 @@ internal fun PlayerInfoBanner(channel: ChannelEntity?, frame: PlaybackFrame, gui
             FLText(current?.title ?: "Brak informacji o programie",
                 style = type.headline.copy(fontSize = 28.sp, fontWeight = FontWeight.Bold), maxLines = 2)
             if (current != null) {
+                ImdbRating(current)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     FLText(programmeTimes(current), style = type.body)
                     FLText("jeszcze ${((current.stop - frame.watchedMs).coerceAtLeast(0) + 59_999) / 60_000} min",

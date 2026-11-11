@@ -32,6 +32,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 
@@ -43,6 +45,7 @@ fun LabeledTextField(
     value: String,
     onValueChange: (String) -> Unit,
     modifier: Modifier = Modifier,
+    secret: Boolean = false,
 ) {
     val colors = FireLiteTheme.colors
     var editing by remember { mutableStateOf(false) }
@@ -89,7 +92,8 @@ fun LabeledTextField(
                 singleLine = true,
                 textStyle = FireLiteTheme.typography.title,
                 cursorBrush = SolidColor(colors.accent),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri, imeAction = ImeAction.Done),
+                keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else KeyboardType.Uri, imeAction = ImeAction.Done),
+                visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
                 keyboardActions = KeyboardActions(onDone = { finishEditing() }),
                 modifier = Modifier
                     .fillMaxWidth()
@@ -117,7 +121,7 @@ fun LabeledTextField(
                 focusedScale = 1f,
             ) {
                 FLText(
-                    text = value.ifEmpty { " " },
+                    text = (if (secret) "•".repeat(value.length) else value).ifEmpty { " " },
                     style = FireLiteTheme.typography.title,
                     maxLines = 1,
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),

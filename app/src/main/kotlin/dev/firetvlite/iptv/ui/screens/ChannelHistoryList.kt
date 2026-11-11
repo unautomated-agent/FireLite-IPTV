@@ -1,5 +1,7 @@
 package dev.firetvlite.iptv.ui.screens
 
+import dev.firetvlite.iptv.ui.components.ImdbRating
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
@@ -129,6 +131,7 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
             FLText("${HistoryNavigation.dayLabel(focused.start, now)} · " +
                 (if (focused.live) "" else "${clockTime(focused.start)}–${clockTime(focused.stop)} · ") + timelineTitle(focused),
                 style = FireLiteTheme.typography.body, maxLines = 1)
+            ImdbRating(focused.programme)
             FLText(focused.programme?.description?.takeIf { it.isNotBlank() }
                 ?: "",
                 style = FireLiteTheme.typography.label, maxLines = 2)

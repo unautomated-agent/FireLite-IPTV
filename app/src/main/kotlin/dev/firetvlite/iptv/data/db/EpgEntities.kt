@@ -1,6 +1,7 @@
 package dev.firetvlite.iptv.data.db
 
 import androidx.room.Embedded
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
@@ -25,6 +26,11 @@ data class ProgrammeEntity(
     val title: String,
     val description: String?,
     val category: String?,
+    val year: Int? = null,
+    val originalTitle: String? = null,
+    val credits: String? = null,
+    val episodeNum: String? = null,
+    @ColumnInfo(defaultValue = "''") val categories: String = "",
 )
 
 @Entity(

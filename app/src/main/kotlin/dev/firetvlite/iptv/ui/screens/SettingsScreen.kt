@@ -91,6 +91,7 @@ fun SettingsScreen(
             style = FireLiteTheme.typography.display,
             modifier = Modifier.padding(start = 4.dp),
         )
+        SettingsCard { OmdbSettings() }
         SourceSection(
             source = source,
             sources = sources,

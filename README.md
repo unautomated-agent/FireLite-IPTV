@@ -144,6 +144,30 @@ The group determines history bounds (at most seven days); future browsing ends a
 at three days. Focusing a row always previews live, including after leaving archive playback. The fullscreen
 overlay remains a simple channel list.
 
+## IMDb film ratings
+
+Settings accepts a locally stored, masked OMDb key (free keys: omdbapi.com/apikey.aspx).
+Diagnostics exposes only whether it is configured. Without a key, badges are hidden and
+Najlepsze filmy explains how to enable them. The main menu rail and Home card open this ranking.
+The two windows are rolling 0–24 and 24–48 hours, with currently airing films included in the first.
+Rated films sort by IMDb score, then votes; unrated candidates follow in grey. OK on a future film
+only shows its start time; OK on an airing film uses the normal channel playback path.
+
+Film candidates require a four-digit XMLTV year, 60–240-minute duration, a film/genre category,
+and no episode or series markers. XMLTV imports retain all categories, original titles, years,
+credits and episode numbers. Database migration 6→7 requests a fresh guide without discarding
+the previously published guide. Lookup is limited to mapped channels of the active playlist and
+programme starts in the next 48 hours. Original title is preferred, then Polish title, then ±1 year;
+only movie responses within ±1 year are accepted. Ratings are cached in Room for 30 days,
+negative matches for 7 days. Sequential data requests are spaced by 250 ms and every request,
+including fallbacks, reserves one of 400 persisted daily slots (Warsaw calendar day).
+Import completion, active-source/key changes and hourly process refreshes trigger enrichment;
+cache TTLs avoid unnecessary daily requests. This uses the existing app-process refresh model,
+not an OS job that wakes a stopped application. Network/authentication failures never affect playback.
+
+Debug builds alone read `debug_base_url` from the private `omdb` preferences, for a local fixture;
+release builds always use `https://www.omdbapi.com/`. Never put a real key in fixture files or logs.
+
 ## Hard rule: one stream at a time
 
 The provider allows exactly **one streaming session** (account/IP), not one HTTP request. HLS playlist

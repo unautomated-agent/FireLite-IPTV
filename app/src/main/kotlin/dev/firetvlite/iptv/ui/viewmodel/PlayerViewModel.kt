@@ -20,6 +20,9 @@ import dev.firetvlite.iptv.playback.SeekPlan
 import dev.firetvlite.iptv.data.epg.CurrentAndNext
 import dev.firetvlite.iptv.playback.StreamRequest
 import dev.firetvlite.iptv.playback.ZapMath
+import dev.firetvlite.iptv.playback.ChannelTimeline
+import dev.firetvlite.iptv.playback.TimelineAction
+import dev.firetvlite.iptv.playback.TimelineItem
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -43,6 +46,16 @@ data class ZapPosition(val number: Int, val count: Int)
 
 data class BrowserTarget(val group: GroupKey, val channel: ChannelEntity, val token: Int)
 
+data class ChannelTimelineTarget(
+    val channel: ChannelEntity,
+    val zap: ZapContext,
+    val index: Int,
+    val group: GroupKey,
+    val frame: PlaybackFrame,
+    val liveWindowStart: Long?,
+    val playing: Boolean,
+)
+
 /**
  * Drives preview, fullscreen and overlay: channel selection, favourites and archive playback.
  * All streams go through [dev.firetvlite.iptv.playback.PlaybackController], which keeps to one connection.
@@ -63,6 +76,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     val mode = mutableMode.asStateFlow()
     private val mutableBrowserTarget = MutableStateFlow<BrowserTarget?>(null)
     val browserTarget = mutableBrowserTarget.asStateFlow()
+    private val mutableTimeline = MutableStateFlow<ChannelTimelineTarget?>(null)
+    val timeline = mutableTimeline.asStateFlow()
     private var playingGroup: GroupKey = GroupKey.All
     private var targetToken = 0
     private var previewJob: Job? = null
@@ -208,6 +223,53 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         if (mutableMode.value == PlayerMode.Overlay) setMode(mutableMode.value.afterBack())
     }
 
+    fun openTimeline(
+        zap: ZapContext? = zapContext,
+        index: Int = activeIndex,
+        group: GroupKey = playingGroup,
+        channel: ChannelEntity? = activeChannel,
+    ) {
+        if (!mutableMode.value.fullFrame || zap == null || channel == null) return
+        cancelPreview()
+        settlePendingZap()
+        val playing = activeChannel?.streamUrl == channel.streamUrl
+        val current = updateFrame()
+        val frame = if (playing) current else PlaybackFrame(current.nowMs, current.nowMs)
+        val windowStart = if (playing && archiveStartMs == null && frame.snapshot.seekable)
+            frame.watchedMs - frame.snapshot.positionMs else null
+        mutableTimeline.value = ChannelTimelineTarget(channel, zap, index, group, frame, windowStart, playing)
+        setMode(PlayerMode.Fullscreen)
+    }
+
+    fun closeTimeline() { mutableTimeline.value = null }
+
+    fun playTimeline(item: TimelineItem) {
+        val target = mutableTimeline.value ?: return
+        when (ChannelTimeline.action(item)) {
+            TimelineAction.None -> return
+            TimelineAction.Live -> {
+                closeTimeline()
+                if (activeChannel?.streamUrl == target.channel.streamUrl && archiveStartMs == null)
+                    playback.seekToLiveEdge()
+                open(target.zap, target.index, target.group)
+            }
+            TimelineAction.Past -> {
+                val channel = target.channel
+                if (CatchupUrlBuilder.isSupported(channel) && channel.catchupDays > 0) {
+                    val limit = System.currentTimeMillis() - channel.catchupDays.toLong() * ChannelTimeline.DAY
+                    if (item.stop <= limit) return
+                    closeTimeline()
+                    openArchive(target.zap, target.index, target.group, maxOf(item.start, limit))
+                } else if (activeChannel?.streamUrl == channel.streamUrl && archiveStartMs == null) {
+                    val frame = updateFrame()
+                    if (!frame.snapshot.seekable) { notify(PlayerMessage.SeekUnsupported); return }
+                    closeTimeline()
+                    seekAbsolute(maxOf(item.start, frame.watchedMs - frame.snapshot.positionMs))
+                }
+            }
+        }
+    }
+
     private fun restoreChannel() {
         mutableChannel.value?.let { mutableBrowserTarget.value = BrowserTarget(playingGroup, it, ++targetToken) }
     }
@@ -243,6 +305,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun close() {
+        closeTimeline()
         cancelPreview()
         openJob?.cancel()
         zapJob?.cancel()

@@ -92,7 +92,17 @@
     <string name="player_connecting">Łączenie…</string>
     <string name="player_error">Ten kanał nie działa (%1$s).\nGóra/Dół – inny kanał, Wstecz – lista.</string>
     <string name="player_ended">Transmisja się zakończyła.</string>
-    <string name="player_hint">Góra/Dół: kanał · Lewo/Prawo: ±10 s · Przewijanie: ±30 s\nPrzytrzymaj Lewo: początek audycji · Menu: lista · Przytrzymaj OK: ulubione</string>
+    <string name="player_hint">Góra/Dół: kanał · Lewo/Prawo: ±10 s · ⏪: oś czasu · ⏩: +30 s\nPrzytrzymaj Lewo: początek audycji · Menu: lista · Przytrzymaj OK: ulubione</string>
+    <string name="channel_timeline_title">Oś czasu kanału · %1$s</string>
+    <string name="channel_timeline_live">Na żywo</string>
+    <string name="channel_timeline_hour">Przedział godzinowy</string>
+    <string name="channel_timeline_today">Dziś</string>
+    <string name="channel_timeline_yesterday">Wczoraj</string>
+    <string name="channel_timeline_start">Początek archiwum</string>
+    <string name="channel_timeline_unavailable">Ten kanał nie ma dostępnego archiwum.</string>
+    <string name="channel_timeline_future">Ten program jeszcze się nie rozpoczął.</string>
+    <string name="channel_timeline_hint">Lewo/Prawo: audycja · OK: oglądaj · Wstecz: zamknij</string>
+    <string name="channel_timeline_overlay_hint">Prawo: oś czasu kanału</string>
     <string name="player_seek_unsupported">Przewijanie nie jest dostępne dla tego kanału.</string>
     <string name="player_catchup_unsupported">Archiwum nie działa dla tego kanału.</string>
 

@@ -377,7 +377,15 @@ private fun ChannelBrowser(
                 LazyColumn(
                     state = channelListState,
                     modifier = Modifier.fillMaxSize().onFocusChanged { channelsHaveFocus = it.hasFocus }.onPreviewKeyEvent { event ->
-                        if (overlay && event.key == Key.DirectionLeft) {
+                        if (overlay && event.key == Key.DirectionRight) {
+                            if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0) {
+                                val channel = focusedChannel?.channel
+                                if (channel != null) scope.launch {
+                                    library.zapContext(selected)?.let { player.openTimeline(it, focusedIndex, selected, channel) }
+                                }
+                            }
+                            true
+                        } else if (overlay && event.key == Key.DirectionLeft) {
                             if (event.type == KeyEventType.KeyDown) {
                                 if (overlay && !showGroups) onShowGroups(true) else focusSelectedGroup()
                             }
@@ -447,6 +455,8 @@ private fun ChannelBrowser(
                     drawLine(Color(0xFFFF6B6B), Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx())
                 }
             }
+            if (overlay) FLText(stringResource(R.string.channel_timeline_overlay_hint),
+                style = FireLiteTheme.typography.label, modifier = Modifier.padding(top = 8.dp))
         }
 
         if (!overlay) DetailPanel(row = focusedChannel, guide = detailGuide,

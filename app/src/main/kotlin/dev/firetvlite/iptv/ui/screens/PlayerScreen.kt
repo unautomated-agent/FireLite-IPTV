@@ -92,6 +92,7 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
     val mode by viewModel.mode.collectAsState()
     val player by viewModel.player.collectAsState()
     val status by viewModel.status.collectAsState()
+    val timeline by viewModel.timeline.collectAsState()
     val density = LocalDensity.current
     val full = mode.fullFrame
     val video = when {
@@ -102,7 +103,8 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
         else -> Modifier.size(0.dp)
     }
     BackHandler(enabled = full) {
-        if (mode == PlayerMode.Overlay) viewModel.closeOverlay() else viewModel.backToPreview()
+        if (timeline != null) viewModel.closeTimeline()
+        else if (mode == PlayerMode.Overlay) viewModel.closeOverlay() else viewModel.backToPreview()
     }
     Box(Modifier.fillMaxSize()) {
         // The SurfaceView stays in this single AndroidView slot; only its bounds change.
@@ -122,8 +124,9 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
             modifier = if (full) Modifier.matchParentSize() else video,
         )
         if (mode == PlayerMode.Preview) Box(video) { StatusLayer(status) }
-        if (mode == PlayerMode.Fullscreen) PlayerContent(viewModel)
+        if (mode == PlayerMode.Fullscreen && timeline == null) PlayerContent(viewModel)
         if (mode == PlayerMode.Overlay) PlayerChannelOverlay(library, viewModel)
+        timeline?.let { ChannelTimelineStrip(it, viewModel, library) }
     }
 }
 
@@ -234,7 +237,7 @@ private fun PlayerContent(viewModel: PlayerViewModel) {
                         true
                     }
                     Key.MediaRewind -> {
-                        if (firstPress) viewModel.jump(forward = false)
+                        if (firstPress) viewModel.openTimeline()
                         overlayToken++
                         true
                     }

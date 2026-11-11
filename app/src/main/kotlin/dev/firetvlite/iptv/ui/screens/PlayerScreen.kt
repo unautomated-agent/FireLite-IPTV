@@ -59,6 +59,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.media3.common.Player
+import dev.firetvlite.iptv.playback.ScreenAwakePolicy
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.db.ChannelEntity
 import dev.firetvlite.iptv.playback.PlaybackSnapshot
@@ -94,6 +96,15 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
     val player by viewModel.player.collectAsState()
     val status by viewModel.status.collectAsState()
     val timeline by viewModel.timeline.collectAsState()
+    var playWhenReady by remember(player) { mutableStateOf(player?.playWhenReady == true) }
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onPlayWhenReadyChanged(ready: Boolean, reason: Int) { playWhenReady = ready }
+        }
+        player?.addListener(listener)
+        onDispose { player?.removeListener(listener) }
+    }
+    val keepAwake = ScreenAwakePolicy.keepAwake(mode, status, playWhenReady)
     val density = LocalDensity.current
     val full = mode.fullFrame
     val video = when {
@@ -120,8 +131,11 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
                     setKeepContentOnPlayerReset(true)
                 }
             },
-            update = { view -> if (view.player !== player) view.player = player },
-            onRelease = { view -> view.player = null },
+            update = { view ->
+                if (view.player !== player) view.player = player
+                view.keepScreenOn = keepAwake
+            },
+            onRelease = { view -> view.keepScreenOn = false; view.player = null },
             modifier = if (full) Modifier.matchParentSize() else video,
         )
         if (mode == PlayerMode.Preview) Box(video) { StatusLayer(status) }

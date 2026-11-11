@@ -19,6 +19,25 @@ with posters, seasons, history and resume.
 
 ## Live TV
 
+- **Provider compatibility**: M3U guide attributes `x-tvg-url`, `url-tvg`, `tvg-url` accept mixed case,
+  double/single quotes or bare values, multiple comma/space-separated feeds and separate option headers.
+  XMLTV feeds are streamed in bounded batches, merged by case-insensitive IDs (including `.pl` aliases),
+  and duplicate channel/time intervals keep the first feed's programme. Matching also uses saved `tvg-name`
+  and normalized display names. Offset-free XMLTV timestamps follow the specification's UTC default.
+  With no guide URL, Xtream `get.php` or live paths derive the metadata-only `xmltv.php` endpoint.
+- **Archive metadata**: `catchup-type`, header defaults, `tvg-rec`, `timeshift`, `catchup-time` and
+  `default/append/shift/flussonic/fs/xc` formats are recognized. `catchup-time` values of at least 86400
+  are interpreted as seconds; smaller values as days. A declared archive without retention uses 7 days;
+  explicit zero days disables it. Xtream paths use duration rounded up to minutes, the live extension
+  (`.ts`/`.m3u8`) and UTC `YYYY-MM-DD:HH-MM`. No archive is assumed for an otherwise unmarked Xtream channel;
+  optional `player_api.php` probing is not performed. Detection is not proof of provider entitlement.
+- **Diagnostics**: Settings → Diagnostyka shows active-source guide URLs, import time/count/error,
+  matched channels, archive counts/types and the last crash. Usernames, passwords and query values are
+  masked before display/export. The QR contains UTF-8 text limited to 1800 bytes (the crash tail may be
+  truncated); scan and copy it with a phone. QR generation is local and never contacts a stream.
+- **Screen saver**: the shared PlayerView keeps the screen awake while visible playback is running or
+  buffering, including preview/overlay. Pausing, closing or disposing it releases that request.
+
 - **Playlist**: Settings, section "Lista kanalow". Users of FireLite 1.x keep their playlist address automatically.
 - **Start**: recent channels and up to 30 favourites from the active playlist; OK starts fullscreen playback.
   No preview/autoplay runs on Start, Programme Guide, Favourites or Search. Back from their fullscreen player

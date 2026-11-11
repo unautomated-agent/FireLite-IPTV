@@ -9,6 +9,22 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class M3uParserTest {
+    @Test fun discoversMixedCaseSingleQuotedBareAndSeparateHeaderUrls() {
+        var urls = emptyList<String>()
+        val rows = mutableListOf<ParsedChannel>()
+        M3uParser.parse(StringReader("""
+            #extm3u TVG-URL = 'http://a/epg http://b/epg,http://a/epg'
+            #extvlcopt:URL-TVG=http://c/epg
+            #X-TVG-URL="http://d/epg"
+            #EXTINF:-1 TVG-ID=' TVN.PL ' tvg-name='TVN, HD',TVN display
+            http://host/live/a/b/1.ts
+        """.trimIndent()), onEpgUrls = { urls = it }) { rows.add(it) }
+        assertEquals(listOf("http://a/epg", "http://b/epg", "http://c/epg", "http://d/epg"), urls)
+        assertEquals("TVN, HD", rows.single().tvgName)
+        assertEquals("TVN display", rows.single().name)
+        assertEquals("TVN.PL", rows.single().tvgId)
+    }
+
 
     private fun parse(text: String): List<ParsedChannel> {
         val channels = ArrayList<ParsedChannel>()

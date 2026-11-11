@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ProgrammeEntity::class,
         ChannelEpgEntity::class,
     ],
-    version = 3,
+    version = 4,
     exportSchema = false,
 )
 abstract class FireLiteDatabase : RoomDatabase() {
@@ -26,6 +26,17 @@ abstract class FireLiteDatabase : RoomDatabase() {
     abstract fun epgDao(): EpgDao
 
     companion object {
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE channel ADD COLUMN tvgName TEXT")
+                db.execSQL("DELETE FROM programme WHERE id NOT IN (SELECT MIN(id) FROM programme " +
+                    "GROUP BY sourceId, generation, epgKey, start, stop)")
+                db.execSQL("DROP INDEX index_programme_sourceId_generation_epgKey_start_stop")
+                db.execSQL("CREATE UNIQUE INDEX index_programme_sourceId_generation_epgKey_start_stop " +
+                    "ON programme(sourceId, generation, epgKey, start, stop)")
+            }
+        }
+
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE source ADD COLUMN lastUsedAt INTEGER NOT NULL DEFAULT 0")
@@ -59,7 +70,7 @@ abstract class FireLiteDatabase : RoomDatabase() {
 
         fun create(context: Context): FireLiteDatabase =
             Room.databaseBuilder(context, FireLiteDatabase::class.java, "firelite.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
                 .build()
     }
 }

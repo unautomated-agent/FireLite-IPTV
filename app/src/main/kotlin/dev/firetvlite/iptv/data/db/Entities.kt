@@ -61,6 +61,7 @@ data class ChannelEntity(
     val catchupType: String?,
     val catchupSource: String?,
     val catchupDays: Int,
+    val tvgName: String? = null,
 )
 
 /** Favourites are keyed by stream URL, so they survive re-importing the playlist. */

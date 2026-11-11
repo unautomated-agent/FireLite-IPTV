@@ -49,6 +49,7 @@ class PlaylistImporter(
                             streamUrl = parsed.url,
                             logoUrl = parsed.logoUrl,
                             tvgId = parsed.tvgId,
+                            tvgName = parsed.tvgName,
                             catchupType = parsed.catchupType,
                             catchupSource = parsed.catchupSource,
                             catchupDays = parsed.catchupDays,
@@ -57,6 +58,11 @@ class PlaylistImporter(
                 }
             }
             if (channels.isEmpty()) throw EmptyPlaylistException()
+            if (epgUrls.isEmpty()) {
+                val address = XtreamAddress.playlist(source.url)
+                    ?: channels.firstNotNullOfOrNull { XtreamAddress.stream(it.streamUrl) }
+                epgUrls = listOfNotNull(address?.epgUrl())
+            }
 
             database.withTransaction {
                 val dao = database.channelDao()

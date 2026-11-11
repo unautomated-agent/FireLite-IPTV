@@ -30,7 +30,7 @@ internal class EpgImporter(private val database: FireLiteDatabase) {
                 dao.deleteOtherMappings(source.id, source.epgGeneration)
                 dao.deleteOtherProgrammes(source.id, source.epgGeneration)
             }
-            urls.forEachIndexed { feed, url ->
+            urls.distinct().forEach { url ->
                 val connection = URL(url).openConnection() as HttpURLConnection
                 connection.connectTimeout = 15_000
                 connection.readTimeout = 30_000
@@ -44,20 +44,20 @@ internal class EpgImporter(private val database: FireLiteDatabase) {
                         XmlTvParser.parse(
                             input, window,
                             onChannel = { id, names ->
-                                val key = "$feed:${EpgMatching.id(id)}"
-                                xmlChannels[key] = XmlTvChannel(key, id, names)
+                                val key = EpgMatching.id(id)
+                                xmlChannels[key] = XmlTvChannel(key, id,
+                                    (xmlChannels[key]?.displayNames.orEmpty() + names).distinct())
                             },
                             onProgramme = { programme ->
-                                val key = "$feed:${EpgMatching.id(programme.channelId)}"
+                                val key = EpgMatching.id(programme.channelId)
                                 xmlChannels.putIfAbsent(key, XmlTvChannel(key, programme.channelId, emptyList()))
                                 batch.add(ProgrammeEntity(
                                     sourceId = source.id, generation = generation, epgKey = key,
                                     start = programme.start, stop = programme.stop, title = programme.title,
                                     description = programme.description, category = programme.category,
                                 ))
-                                count++
                                 if (batch.size == 500) {
-                                    dao.insertProgrammes(batch)
+                                    count += dao.insertProgrammes(batch).count { it != -1L }
                                     batch.clear()
                                 }
                             },
@@ -67,10 +67,10 @@ internal class EpgImporter(private val database: FireLiteDatabase) {
                     connection.disconnect()
                 }
             }
-            if (batch.isNotEmpty()) dao.insertProgrammes(batch)
+            if (batch.isNotEmpty()) count += dao.insertProgrammes(batch).count { it != -1L }
             val index = EpgMatching.Index(xmlChannels.values.toList())
             val mappings = dao.channels(source.id).mapNotNull { channel ->
-                index.match(channel.tvgId, channel.name)?.let { key ->
+                index.match(channel.tvgId, channel.name, channel.tvgName)?.let { key ->
                     ChannelEpgEntity(source.id, generation, channel.streamUrl, key)
                 }
             }.distinctBy { it.streamUrl }

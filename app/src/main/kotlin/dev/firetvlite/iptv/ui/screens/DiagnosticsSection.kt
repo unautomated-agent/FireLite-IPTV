@@ -53,6 +53,7 @@ import dev.firetvlite.iptv.ui.components.SecondaryButton
 import dev.firetvlite.iptv.ui.components.requestFocusWhenReady
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 import java.io.File
+import dev.firetvlite.iptv.playback.PlaybackDiagnosticsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.launch
@@ -64,10 +65,16 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
     val context = LocalContext.current
     val store = remember(context) { CrashReportStore(File(context.filesDir, "last-crash.txt")) }
     var crash by remember { mutableStateOf<String?>(null) }
+    var playback by remember { mutableStateOf("") }
     var opened by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
-    LaunchedEffect(store) { crash = withContext(Dispatchers.IO) { store.read() } }
-    val report = remember(source, state, stats, crash) { DiagnosticsReport.text(source, state, stats, crash) }
+    LaunchedEffect(store) {
+        withContext(Dispatchers.IO) { store.read() to PlaybackDiagnosticsStore(context.filesDir).summary() }.let {
+            crash = it.first
+            playback = it.second
+        }
+    }
+    val report = remember(source, state, stats, crash, playback) { DiagnosticsReport.text(source, state, stats, crash, playback) }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         FLText(stringResource(R.string.diagnostics_title), style = FireLiteTheme.typography.headline)
         PrimaryButton(stringResource(R.string.diagnostics_open), { opened = true })

@@ -5,6 +5,9 @@ import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Format
+import androidx.media3.common.Tracks
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
@@ -13,9 +16,15 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DecoderReuseEvaluation
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.LoadEventInfo
+import androidx.media3.exoplayer.source.MediaLoadData
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -23,11 +32,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
 import java.io.Closeable
+import java.util.Locale
 
 /** What to play. */
 data class StreamRequest(
     val url: String,
     val userAgent: String,
+    val archive: Boolean = false,
 )
 
 sealed interface PlaybackStatus {
@@ -74,18 +85,28 @@ class PlaybackController internal constructor(
     private val trace: (String) -> Unit,
     private val mediaItem: (String) -> MediaItem = { MediaItem.fromUri(it) },
     private val setStream: (ExoPlayer, MediaItem, HttpDataSource.Factory) -> Unit = { player, item, _ -> player.setMediaItem(item) },
+    private val recordPlayback: (Boolean, String) -> Unit = { _, _ -> },
+    private val progressiveItem: (String) -> MediaItem = {
+        MediaItem.Builder().setUri(it).setMimeType(MimeTypes.VIDEO_MP2T).build()
+    },
 ) {
     internal constructor(scope: CoroutineScope, createPlayer: (HttpDataSource.Factory) -> ExoPlayer) :
         this(scope, createPlayer, {})
 
     constructor(context: Context, scope: CoroutineScope) : this(scope, { httpFactory ->
-        val renderers = DefaultRenderersFactory(context).setEnableDecoderFallback(true)
+        val renderers = DefaultRenderersFactory(context)
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+            .setEnableDecoderFallback(true)
         ExoPlayer.Builder(context, renderers)
             .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
-            .build()
+            .build().apply {
+                trackSelectionParameters = trackSelectionParameters.buildUpon()
+                    .setPreferredAudioLanguages(*AudioPreferences.languages(listOf(Locale.getDefault())).toTypedArray())
+                    .build()
+            }
     }, { Log.d("FireLiteStream", it) }, setStream = { player, item, factory ->
         player.setMediaSource(DefaultMediaSourceFactory(factory).createMediaSource(item))
-    })
+    }, recordPlayback = diagnosticRecorder(context, scope))
 
     private val gate = StreamGate()
     private val httpFactory = DefaultHttpDataSource.Factory()
@@ -96,9 +117,13 @@ class PlaybackController internal constructor(
     private var exo: ExoPlayer? = null
     private var startJob: Job? = null
     private var retries = 0
+    private var activeSession = 0L
+    private var recovery = PlaybackRecovery()
     private var activeRequest: StreamRequest? = null
     private var suspendedRequest: StreamRequest? = null
     private var preview = false
+    private var audioDecoder: String? = null
+    private var successfulSignature: String? = null
     private val connections = AtomicInteger()
     private val connectionGate = HttpConnectionGate()
     private fun trackedFactory(session: Long) = object : HttpDataSource.Factory {
@@ -155,13 +180,73 @@ class PlaybackController internal constructor(
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) = refreshStatus()
 
         override fun onPlayerError(error: PlaybackException) = handleError(error)
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) { if (isPlaying) recordSuccess() }
+
+        override fun onTracksChanged(tracks: Tracks) { recordSuccess() }
+    }
+
+    private val analytics = object : AnalyticsListener {
+        override fun onLoadCompleted(eventTime: AnalyticsListener.EventTime, loadEventInfo: LoadEventInfo,
+            mediaLoadData: MediaLoadData) {
+            if (activeRequest != null && mediaLoadData.dataType == C.DATA_TYPE_MANIFEST)
+                recovery.onManifestLoaded()
+        }
+
+        override fun onAudioDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String,
+            initializedTimestampMs: Long, initializationDurationMs: Long) {
+            audioDecoder = decoderName
+            recordSuccess()
+        }
+
+        override fun onAudioDecoderReleased(eventTime: AnalyticsListener.EventTime, decoderName: String) {
+            audioDecoder = null
+        }
+
+        override fun onAudioInputFormatChanged(eventTime: AnalyticsListener.EventTime, format: Format,
+            decoderReuseEvaluation: DecoderReuseEvaluation?) { recordSuccess() }
+
+        override fun onVideoInputFormatChanged(eventTime: AnalyticsListener.EventTime, format: Format,
+            decoderReuseEvaluation: DecoderReuseEvaluation?) { recordSuccess() }
+    }
+
+    private fun describe(format: Format): String =
+        "${format.sampleMimeType ?: "?"}/${format.codecs ?: "?"} ch=${format.channelCount} bps=${format.bitrate}"
+
+    private fun selectedFormats(): String = listOfNotNull(
+        exo?.audioFormat?.let { "A ${describe(it)}" },
+        exo?.videoFormat?.let { "V ${describe(it)}" },
+    ).joinToString("; ")
+
+    private fun availableFormats(): String = exo?.currentTracks?.groups.orEmpty()
+        .filter { it.type == C.TRACK_TYPE_AUDIO || it.type == C.TRACK_TYPE_VIDEO }
+        .flatMap { group -> (0 until group.length).map { index ->
+            "${if (group.isTrackSelected(index)) "*" else ""}${describe(group.getTrackFormat(index))}" +
+                if (group.isTrackSupported(index)) "" else " [nieobsługiwany]"
+        } }.joinToString("; ")
+
+    private fun diagnostic(error: PlaybackException? = null): String {
+        val request = activeRequest ?: return ""
+        val mode = (if (preview) "preview/" else "") + if (request.archive) "archive" else "live"
+        return PlaybackDiagnosticRecord.text(request.url, mode, error?.errorCodeName, error,
+            selectedFormats(), availableFormats(), audioDecoder)
+    }
+
+    private fun recordSuccess() {
+        if (activeRequest == null || exo?.isPlaying != true) return
+        val signature = "$audioDecoder|${selectedFormats()}|$preview"
+        if (signature == successfulSignature) return
+        successfulSignature = signature
+        recordPlayback(false, diagnostic())
     }
 
     /** Plays [request]. A request for the stream that is already active does nothing. */
     fun play(request: StreamRequest) {
         if (gate.onRequest(request.url) == StreamGate.Action.Ignore) return
         activeRequest = request
+        successfulSignature = null
         retries = 0
+        recovery = PlaybackRecovery()
         startJob?.cancel()
         httpFactory.setUserAgent(request.userAgent)
 
@@ -169,6 +254,7 @@ class PlaybackController internal constructor(
         player.stop() // first close the old connection ...
         player.clearMediaItems()
         val session = connectionGate.nextSession()
+        activeSession = session
         trace("STOP before switch")
         mutableStatus.value = PlaybackStatus.Connecting
 
@@ -202,6 +288,7 @@ class PlaybackController internal constructor(
         if (preview == enabled) return
         preview = enabled
         exo?.let(::applyQuality)
+        recordSuccess()
         trace("QUALITY preview=$enabled")
     }
 
@@ -238,6 +325,7 @@ class PlaybackController internal constructor(
         mutablePlayer.value = null
         exo?.let {
             it.removeListener(listener)
+            it.removeAnalyticsListener(analytics)
             it.release()
         }
         exo = null
@@ -286,6 +374,7 @@ class PlaybackController internal constructor(
         applyQuality(player)
         player.setAudioAttributes(AudioAttributes.DEFAULT, true)
         player.addListener(listener)
+        player.addAnalyticsListener(analytics)
         exo = player
         mutablePlayer.value = player
         return player
@@ -297,6 +386,7 @@ class PlaybackController internal constructor(
         when (player.playbackState) {
             Player.STATE_BUFFERING -> mutableStatus.value = PlaybackStatus.Buffering
             Player.STATE_READY -> {
+                recovery.onReady()
                 retries = 0
                 mutableStatus.value =
                     if (player.playWhenReady) PlaybackStatus.Playing else PlaybackStatus.Paused
@@ -308,14 +398,33 @@ class PlaybackController internal constructor(
 
     private fun handleError(error: PlaybackException) {
         if (activeRequest == null) return
+        recordPlayback(true, diagnostic(error))
         if (retries < MAX_RETRIES) {
             retries++
+            val request = activeRequest ?: return
+            val session = activeSession
+            val action = recovery.action(error.errorCode, request.url, error.cause)
             mutableStatus.value = PlaybackStatus.Connecting
             startJob?.cancel()
+            exo?.stop()
             startJob = scope.launch {
-                delay(RETRY_DELAY_MS * retries)
+                delay(if (action == RecoveryAction.Retry) RETRY_DELAY_MS * retries else CLOSE_GRACE_MS)
                 awaitConnectionClose()
-                exo?.prepare() // the failed connection is closed already; open a fresh one
+                val player = exo ?: return@launch
+                if (activeRequest !== request || activeSession != session) return@launch
+                recovery.onRecovery(action)
+                when (action) {
+                    RecoveryAction.LiveEdge -> player.seekToDefaultPosition()
+                    RecoveryAction.Progressive -> {
+                        setStream(player, progressiveItem(request.url), trackedFactory(session))
+                    }
+                    RecoveryAction.RestoreHls -> {
+                        setStream(player, mediaItem(request.url), trackedFactory(session))
+                    }
+                    RecoveryAction.Retry -> Unit
+                }
+                trace("RECOVER session=$session action=$action")
+                player.prepare()
             }
         } else {
             mutableStatus.value = PlaybackStatus.Failed(error.errorCodeName)
@@ -326,6 +435,15 @@ class PlaybackController internal constructor(
     }
 
     private companion object {
+        fun diagnosticRecorder(context: Context, scope: CoroutineScope): (Boolean, String) -> Unit {
+            val store = PlaybackDiagnosticsStore(context.filesDir)
+            val records = Channel<Pair<Boolean, String>>(Channel.UNLIMITED)
+            scope.launch(Dispatchers.IO) {
+                for ((failed, record) in records) runCatching { store.write(failed, record) }
+            }
+            return { failed, record -> records.trySend(failed to record); Unit }
+        }
+
         const val CLOSE_GRACE_MS = 400L
         const val RETRY_DELAY_MS = 1_500L
         const val MAX_RETRIES = 3

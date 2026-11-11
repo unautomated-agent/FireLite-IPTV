@@ -3,7 +3,11 @@ package dev.firetvlite.iptv.playback
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import android.os.Bundle
 import java.lang.reflect.Proxy
+import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
@@ -140,9 +144,172 @@ class PlaybackControllerTest {
         controller.stop()
     }
 
+    @Test fun liveWindowRecoveryStopsThenSeeksAndPreparesWithoutANewSession() = runBlocking {
+        val fake = FakePlayer()
+        val trace = mutableListOf<String>()
+        val controller = PlaybackController(this, { fake.player }, { trace += it }, { MediaItem.EMPTY })
+        controller.play(request)
+        delay(450)
+        fake.calls.clear()
+        fake.listener!!.onPlayerError(TestError(PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW))
+        assertEquals(listOf("stop"), fake.calls.filter { it in listOf("stop", "prepare", "seekToDefaultPosition") })
+        delay(450)
+        assertEquals(listOf("stop", "seekToDefaultPosition", "prepare"),
+            fake.calls.filter { it in listOf("stop", "prepare", "seekToDefaultPosition") })
+        assertEquals(1, trace.count { it.startsWith("PREPARE session=1") })
+        assertEquals(1, trace.count { it == "RECOVER session=1 action=LiveEdge" })
+        controller.stop()
+    }
+
+    @Test fun formatFallbackKeepsTheUrlAndSessionAndIsOnlySelectedOnce() = runBlocking {
+        val fake = FakePlayer()
+        val trace = mutableListOf<String>()
+        val urls = mutableListOf<String>()
+        val hlsUrls = mutableListOf<String>()
+        var sources = 0
+        val controller = PlaybackController(this, { fake.player }, { trace += it }, { hlsUrls += it; MediaItem.EMPTY },
+            setStream = { _, _, _ -> sources++ }, progressiveItem = { urls += it; MediaItem.EMPTY })
+        val hls = request.copy(url = "https://example.org/live.m3u8")
+        controller.play(hls)
+        delay(450)
+        fake.listener!!.onPlayerError(TestError(3002))
+        delay(450)
+        assertEquals(listOf(hls.url), urls)
+        assertEquals(2, sources)
+        assertEquals(1, trace.count { it == "RECOVER session=1 action=Progressive" })
+        fake.listener!!.onPlayerError(TestError(3002))
+        val connections = PlaybackController::class.java.getDeclaredField("connections").let {
+            it.isAccessible = true
+            it.get(controller) as AtomicInteger
+        }
+        connections.set(1)
+        delay(450)
+        assertEquals(2, sources)
+        connections.decrementAndGet()
+        delay(50)
+        assertEquals(3, sources)
+        assertEquals(listOf(hls.url, hls.url), hlsUrls)
+        assertEquals(listOf(hls.url), urls)
+        assertEquals(1, trace.count { it == "RECOVER session=1 action=RestoreHls" })
+        fake.listener!!.onPlayerError(TestError(3002))
+        delay(450)
+        assertEquals(3, sources)
+        assertEquals(listOf(hls.url), urls)
+        controller.stop()
+    }
+
+    @Test fun successfulProgressivePlaybackRetriesItsSourceInTheSameSessionAfterTransientErrors() = runBlocking {
+        val fake = FakePlayer()
+        val trace = mutableListOf<String>()
+        val hlsUrls = mutableListOf<String>()
+        val progressiveUrls = mutableListOf<String>()
+        var sources = 0
+        val controller = PlaybackController(this, { fake.player }, { trace += it }, { hlsUrls += it; MediaItem.EMPTY },
+            setStream = { _, _, _ -> sources++ }, progressiveItem = { progressiveUrls += it; MediaItem.EMPTY })
+        val hls = request.copy(url = "https://example.org/live.m3u8")
+        controller.play(hls)
+        delay(450)
+        fake.listener!!.onPlayerError(TestError(3002))
+        delay(450)
+        fake.state = Player.STATE_READY
+        fake.listener!!.onPlaybackStateChanged(fake.state)
+        fake.state = Player.STATE_BUFFERING
+        fake.listener!!.onPlaybackStateChanged(fake.state)
+        val connections = PlaybackController::class.java.getDeclaredField("connections").let {
+            it.isAccessible = true
+            it.get(controller) as AtomicInteger
+        }
+        connections.set(1)
+        fake.calls.clear()
+        fake.listener!!.onPlayerError(TestError(2001))
+        delay(1600)
+        assertEquals(0, fake.calls.count { it == "prepare" })
+        connections.decrementAndGet()
+        delay(50)
+        assertEquals(1, fake.calls.count { it == "prepare" })
+        fake.listener!!.onPlayerError(TestError(3002))
+        delay(3100)
+        assertEquals(2, trace.count { it == "RECOVER session=1 action=Retry" })
+        assertEquals(0, trace.count { it.endsWith("action=RestoreHls") })
+        assertEquals(2, sources)
+        assertEquals(listOf(hls.url), hlsUrls)
+        assertEquals(listOf(hls.url), progressiveUrls)
+        controller.stop()
+    }
+
+    @Test fun segmentErrorsAfterReadyKeepTheHlsSourceEvenAfterBufferingAgain() = runBlocking {
+        val fake = FakePlayer()
+        val trace = mutableListOf<String>()
+        var progressive = 0
+        var sources = 0
+        val controller = PlaybackController(this, { fake.player }, { trace += it }, { MediaItem.EMPTY },
+            setStream = { _, _, _ -> sources++ }, progressiveItem = { progressive++; MediaItem.EMPTY })
+        controller.play(request.copy(url = "https://example.org/live.m3u8"))
+        delay(450)
+        fake.state = Player.STATE_READY
+        fake.listener!!.onPlaybackStateChanged(fake.state)
+        fake.state = Player.STATE_BUFFERING
+        fake.listener!!.onPlaybackStateChanged(fake.state)
+        fake.listener!!.onPlayerError(TestError(3001))
+        delay(1600)
+        assertEquals(0, progressive)
+        assertEquals(1, sources)
+        assertEquals(1, trace.count { it == "RECOVER session=1 action=Retry" })
+        controller.stop()
+    }
+
+    @Test fun switchingOrStoppingCancelsPendingRecoveryAndOldPlayerCannotPrepare() = runBlocking {
+        val fake = FakePlayer()
+        val trace = mutableListOf<String>()
+        val controller = PlaybackController(this, { fake.player }, { trace += it }, { MediaItem.EMPTY })
+        controller.play(request)
+        delay(450)
+        fake.listener!!.onPlayerError(TestError(1002))
+        controller.play(request.copy(url = "https://example.org/second"))
+        delay(450)
+        assertEquals(0, trace.count { it.startsWith("RECOVER") })
+        assertEquals(1, trace.count { it.startsWith("PREPARE session=2") })
+        fake.listener!!.onPlayerError(TestError(1002))
+        controller.stop()
+        delay(450)
+        assertEquals(0, trace.count { it.startsWith("RECOVER") })
+    }
+
+    @Test fun bothRecoveriesWaitForEveryOldConnectionToClose() = runBlocking {
+        for (code in listOf(1002, 3002)) {
+            val fake = FakePlayer()
+            val trace = mutableListOf<String>()
+            val controller = PlaybackController(this, { fake.player }, { trace += it }, { MediaItem.EMPTY },
+                progressiveItem = { MediaItem.EMPTY })
+            controller.play(request.copy(url = "https://example.org/live.m3u8"))
+            delay(450)
+            val connections = PlaybackController::class.java.getDeclaredField("connections").let {
+                it.isAccessible = true
+                it.get(controller) as AtomicInteger
+            }
+            connections.set(2)
+            fake.calls.clear()
+            fake.listener!!.onPlayerError(TestError(code))
+            delay(450)
+            assertEquals(0, fake.calls.count { it == "prepare" })
+            connections.decrementAndGet()
+            delay(50)
+            assertEquals(0, fake.calls.count { it == "prepare" })
+            connections.decrementAndGet()
+            delay(50)
+            assertEquals(1, fake.calls.count { it == "prepare" })
+            assertEquals(1, trace.count { it.startsWith("RECOVER session=1") })
+            controller.stop()
+        }
+    }
+
+    private class TestError(code: Int) : PlaybackException("fixture", null, code, Bundle.EMPTY, 0)
+
     private class FakePlayer {
         val calls = mutableListOf<String>()
         var parameters = TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT
+        var listener: Player.Listener? = null
+        var state = Player.STATE_IDLE
         val player = Proxy.newProxyInstance(
             ExoPlayer::class.java.classLoader,
             arrayOf(ExoPlayer::class.java),
@@ -153,6 +320,8 @@ class PlaybackControllerTest {
                 "toString" -> "FakePlayer"
                 "getTrackSelectionParameters" -> parameters
                 "setTrackSelectionParameters" -> { parameters = args!![0] as TrackSelectionParameters; null }
+                "addListener" -> { listener = args!![0] as Player.Listener; null }
+                "getPlaybackState" -> state
                 else -> {
                     calls += method.name
                     when (method.returnType) {

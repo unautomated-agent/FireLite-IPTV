@@ -423,7 +423,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
         archiveStartMs = start * 1000
-        playback.play(StreamRequest(url, userAgent))
+        playback.play(StreamRequest(url, userAgent, archive = true))
         updateFrame()
     }
 

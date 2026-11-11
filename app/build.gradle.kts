@@ -102,6 +102,7 @@ dependencies {
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.exoplayer.hls)
     implementation(libs.androidx.media3.ui)
+    implementation("org.jellyfin.media3:media3-ffmpeg-decoder:1.5.0+1")
 
     testImplementation(libs.junit)
     // Android's own org.json is only a stub in local unit tests; this is the real implementation.

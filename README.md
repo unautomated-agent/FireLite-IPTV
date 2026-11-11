@@ -5,6 +5,13 @@ Kotlin, Jetpack Compose, Media3. The UI language is Polish; code and documentati
 
 FireLite ships **no channels or content**. You connect sources you are allowed to use.
 
+## License
+
+FireLite is distributed under GPL-3.0 (see [LICENSE](LICENSE)) because it includes the GPL-3.0
+Jellyfin FFmpeg decoder. Keep the license and provide corresponding source, including the decoder,
+when distributing builds. Decoder source: https://github.com/jellyfin/jellyfin-androidx-media/tree/v1.5.0+1.
+Other bundled dependencies retain their respective licenses.
+
 ## Status
 
 `2.2.0-alpha.1`: live TV. An M3U playlist is imported into a local database, browsed by group (favourites,
@@ -144,6 +151,24 @@ One press downloads the APK and opens Android's installer.
 - The repository must be public so the app can read its releases without a token.
 
 ## Build
+
+### Playback compatibility and diagnostics
+
+- Audio selection prefers Polish (`pl`/`pol`), then the device language. Preview video limits remain unchanged.
+- Media3 1.5.1 uses the published Jellyfin FFmpeg extension `1.5.0+1`, with extension renderers preferred
+  and platform decoder fallback enabled. FFmpeg audio decodes supported formats to PCM in-app;
+  device/output capabilities and the provider's actual media formats still determine successful playback.
+- Settings diagnostics retain the last handled playback error and the last successful playback snapshot,
+  including live/archive/preview mode, selected and available formats, and the audio decoder name.
+  Credentials and stream URL paths are hidden before writing either record to internal storage.
+  Both compact records precede the guide/crash details in the QR report, capped at 1800 UTF-8 bytes.
+- Behind-live-window errors recover at the live edge on the same URL/session. A parsing failure on a
+  `.m3u8` URL permits one progressive MPEG-TS/container-sniffing fallback per session, but only before
+  any HLS manifest has loaded or playback has reached READY. Segment errors retain HLS; a failed
+  progressive attempt restores HLS only if it never reached READY. Once progressive playback succeeds,
+  subsequent retries retain that source mode for the session. Recovery stops the
+  old load and waits for all local HTTP connections to close before preparing again. A channel switch or
+  close cancels pending recovery. The connection gate and 400 ms grace remain unchanged; there are no probes.
 
 CI builds on every push (`.github/workflows/build.yml`). Locally you need JDK 17 and the Android SDK:
 

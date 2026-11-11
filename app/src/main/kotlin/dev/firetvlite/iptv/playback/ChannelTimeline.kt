@@ -46,7 +46,7 @@ object ChannelTimeline {
                 add(TimelineItem(it.start, it.stop, it, current = true))
             }
         }
-        ordered.firstOrNull { it.start > now }?.let {
+        ordered.filter { it.start > now }.distinctBy { it.start }.forEach {
             add(TimelineItem(it.start, it.stop, it, future = true))
         }
         add(TimelineItem(now, Long.MAX_VALUE, live = true))
@@ -61,7 +61,7 @@ object ChannelTimeline {
 
     fun history(items: List<TimelineItem>, rewindAvailable: Boolean = true): List<TimelineItem> {
         val current = items.firstOrNull { it.current }?.programme
-        return items.filterNot { it.future || (it.current && !rewindAvailable) }
+        return items.filterNot { it.current && !rewindAvailable }
             .map { when {
                 it.live -> it.copy(programme = current)
                 it.current -> it.copy(current = false)
@@ -70,7 +70,8 @@ object ChannelTimeline {
     }
 
     fun historyFocusIndex(items: List<TimelineItem>, time: Long): Int =
-        items.indexOfFirst { !it.live && time >= it.start && time < it.stop }.takeIf { it >= 0 }
+        items.indexOfFirst { !it.live && it.start == time }.takeIf { it >= 0 }
+            ?: items.indexOfFirst { !it.live && time >= it.start && time < it.stop }.takeIf { it >= 0 }
             ?: items.indexOfLast { it.start <= time }.coerceAtLeast(0)
 
     fun action(item: TimelineItem): TimelineAction = when {

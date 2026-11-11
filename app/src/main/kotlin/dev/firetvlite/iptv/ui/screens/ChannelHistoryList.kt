@@ -1,5 +1,6 @@
 package dev.firetvlite.iptv.ui.screens
 
+import android.widget.Toast
 import dev.firetvlite.iptv.ui.components.ImdbRating
 
 import androidx.compose.foundation.background
@@ -35,6 +36,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.playback.CatchupUrlBuilder
@@ -54,7 +56,7 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
     val earliest = ChannelTimeline.earliest(now, target.channel.catchupDays,
         CatchupUrlBuilder.isSupported(target.channel), target.liveWindowStart)
     val programmes by remember(target) {
-        library.programmes(listOf(target.channel.id), earliest ?: now, now + 3 * ChannelTimeline.DAY)
+        library.programmes(listOf(target.channel.id), earliest ?: now, Long.MAX_VALUE)
     }.collectAsState(initial = emptyList())
     val timeline = remember(programmes, target) { ChannelTimeline.items(programmes.map { it.programme }, now, earliest) }
     val items = remember(timeline) { ChannelTimeline.history(timeline, earliest != null) }
@@ -64,7 +66,9 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
     val index = focus.index(items)
     val focused = items[index]
     val dayLabel = HistoryNavigation.dayLabel(focused.start, now,
-        stringResource(R.string.channel_timeline_today), stringResource(R.string.channel_timeline_yesterday))
+        stringResource(R.string.channel_timeline_today), stringResource(R.string.channel_timeline_yesterday),
+        stringResource(R.string.channel_timeline_tomorrow))
+    val context = LocalContext.current
     val frame by player.frame.collectAsState()
     val playingIndex = if (target.playing) ChannelTimeline.historyFocusIndex(items, frame.watchedMs) else -1
     val requester = remember { FocusRequester() }
@@ -104,7 +108,9 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
                         true
                     }
                     Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
-                        if (event.nativeKeyEvent.repeatCount == 0) player.playTimeline(focused)
+                        if (event.nativeKeyEvent.repeatCount == 0) HistoryNavigation.select(focused, { time ->
+                            Toast.makeText(context, context.getString(R.string.channel_timeline_future, clockTime(time)), Toast.LENGTH_SHORT).show()
+                        }, player::playTimeline)
                         true
                     }
                     else -> false
@@ -118,13 +124,14 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
             FLText(dayLabel, style = FireLiteTheme.typography.title,
                 color = colors.accent)
             LazyColumn(state = listState, modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                itemsIndexed(items, key = { _, item -> if (item.live) "live" else "past:${item.start}" }) { itemIndex, item ->
+                itemsIndexed(items, key = { _, item -> if (item.live) "live" else "time:${item.start}" }) { itemIndex, item ->
                     Column(Modifier.fillMaxWidth()
                         .background(if (itemIndex == index) colors.surfaceHigh.copy(alpha = 0.75f) else Color.Transparent)
                         .border(2.dp, if (itemIndex == index) Color.White else Color.Transparent)
                         .padding(horizontal = 10.dp, vertical = 7.dp)) {
                         FLText((if (itemIndex == playingIndex) "▶ " else "") +
-                            (if (item.live) "" else "${clockTime(item.start)}  ") + timelineTitle(item),
+                            (if (item.future) stringResource(R.string.channel_timeline_upcoming, clockTime(item.start), timelineTitle(item))
+                            else (if (item.live) "" else "${clockTime(item.start)}  ") + timelineTitle(item)),
                             style = FireLiteTheme.typography.label, maxLines = 1,
                             color = if (item.future) colors.textSecondary.copy(alpha = 0.6f) else colors.textPrimary)
                     }

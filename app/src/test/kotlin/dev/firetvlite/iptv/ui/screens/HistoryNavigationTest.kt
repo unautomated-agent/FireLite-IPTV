@@ -4,6 +4,7 @@ import dev.firetvlite.iptv.playback.ChannelTimeline
 import dev.firetvlite.iptv.playback.TimelineItem
 import java.time.Instant
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HistoryNavigationTest {
@@ -47,14 +48,78 @@ class HistoryNavigationTest {
     }
 
     @Test fun headersUseWarsawDatesAndPolishNames() {
-        assertEquals("Dziś", HistoryNavigation.dayLabel(now, now, "Dziś", "Wczoraj"))
-        assertEquals("Wczoraj", HistoryNavigation.dayLabel(now - ChannelTimeline.DAY, now, "Dziś", "Wczoraj"))
-        assertEquals("Pon 9.11", HistoryNavigation.dayLabel(now - 2 * ChannelTimeline.DAY, now, "Dziś", "Wczoraj"))
-        assertEquals("Dziś", HistoryNavigation.dayLabel(time("2026-11-10T23:30:00Z"), time("2026-11-11T00:30:00Z"), "Dziś", "Wczoraj"))
+        assertEquals("Dziś", HistoryNavigation.dayLabel(now, now, "Dziś", "Wczoraj", "Jutro"))
+        assertEquals("Wczoraj", HistoryNavigation.dayLabel(now - ChannelTimeline.DAY, now, "Dziś", "Wczoraj", "Jutro"))
+        assertEquals("Jutro", HistoryNavigation.dayLabel(now + ChannelTimeline.DAY, now, "Dziś", "Wczoraj", "Jutro"))
+        assertEquals("Pon 9.11", HistoryNavigation.dayLabel(now - 2 * ChannelTimeline.DAY, now, "Dziś", "Wczoraj", "Jutro"))
+        assertEquals("Dziś", HistoryNavigation.dayLabel(time("2026-11-10T23:30:00Z"), time("2026-11-11T00:30:00Z"), "Dziś", "Wczoraj", "Jutro"))
     }
 
     @Test fun relativeHeadersUseResourceSuppliedLabels() {
-        assertEquals("today resource", HistoryNavigation.dayLabel(now, now, "today resource", "yesterday resource"))
-        assertEquals("yesterday resource", HistoryNavigation.dayLabel(now - ChannelTimeline.DAY, now, "today resource", "yesterday resource"))
+        assertEquals("today resource", HistoryNavigation.dayLabel(now, now, "today resource", "yesterday resource", "tomorrow resource"))
+        assertEquals("yesterday resource", HistoryNavigation.dayLabel(now - ChannelTimeline.DAY, now, "today resource", "yesterday resource", "tomorrow resource"))
+        assertEquals("tomorrow resource", HistoryNavigation.dayLabel(now + ChannelTimeline.DAY, now, "today resource", "yesterday resource", "tomorrow resource"))
+    }
+
+    @Test fun futureDayJumpsReachTheEpgEndSkipEmptyDaysAndClamp() {
+        val future = listOf("2026-11-12T20:00:00Z", "2026-11-13T20:00:00Z", "2026-11-15T20:00:00Z").map {
+            TimelineItem(time(it), time(it) + ChannelTimeline.HOUR, future = true)
+        }
+        val history = items + future
+        val tomorrow = HistoryNavigation.jumpDay(history, HistoryFocus(now, live = true), 1, now)
+        assertEquals(future[0].start, tomorrow.time)
+        val friday = HistoryNavigation.jumpDay(history, tomorrow, 1, now)
+        assertEquals(future[1].start, friday.time)
+        val end = HistoryNavigation.jumpDay(history, friday, 1, now)
+        assertEquals(future[2].start, end.time)
+        assertEquals(end, HistoryNavigation.jumpDay(history, end, 1, now))
+        assertEquals(friday, HistoryNavigation.jumpDay(history, end, -1, now))
+        assertEquals(tomorrow, HistoryNavigation.jumpDay(history, friday, -1, now))
+    }
+
+    @Test fun forwardDayJumpsPreserveWarsawTimeAcrossBothDstTransitions() {
+        for ((today, tomorrow) in listOf(
+            "2026-03-28T12:15:00Z" to "2026-03-29T11:15:00Z",
+            "2026-10-24T11:15:00Z" to "2026-10-25T12:15:00Z",
+        )) {
+            val start = time(today)
+            val future = time(tomorrow)
+            val history = listOf(TimelineItem(start, Long.MAX_VALUE, live = true),
+                TimelineItem(future, future + ChannelTimeline.HOUR, future = true))
+            assertEquals(future, HistoryNavigation.jumpDay(history, HistoryFocus(start, live = true), 1, start).time)
+        }
+    }
+
+    @Test fun liveRemainsInitiallySelectedWhenUpcomingRowsArrive() {
+        val focus = HistoryFocus(now, live = true)
+        val upcoming = TimelineItem(now + ChannelTimeline.HOUR, now + 2 * ChannelTimeline.HOUR, future = true)
+        val reloaded = items + upcoming
+        assertEquals(items.lastIndex, focus.index(reloaded))
+        assertTrue(reloaded[focus.index(reloaded)].live)
+    }
+
+    @Test fun upcomingFocusUsesItsExactStartEvenWithOverlapsAndReloads() {
+        val first = TimelineItem(now + ChannelTimeline.HOUR, now + 4 * ChannelTimeline.HOUR, future = true)
+        val second = TimelineItem(now + 2 * ChannelTimeline.HOUR, now + 3 * ChannelTimeline.HOUR, future = true)
+        val history = items + first + second
+        val focus = HistoryFocus(second.start)
+        assertEquals(history.lastIndex, focus.index(history))
+        val reloaded = listOf(TimelineItem(items.first().start - 1_000, items.first().start)) + history
+        assertEquals(reloaded.lastIndex, focus.index(reloaded))
+    }
+
+    @Test fun futureSelectionOnlyShowsTheStartTimeAndNeverDispatchesPlayback() {
+        val future = TimelineItem(now + ChannelTimeline.HOUR, now + 2 * ChannelTimeline.HOUR, future = true)
+        val hints = mutableListOf<Long>()
+        val played = mutableListOf<TimelineItem>()
+        HistoryNavigation.select(future, { hints.add(it) }, { played.add(it) })
+        assertEquals(listOf(future.start), hints)
+        assertTrue(played.isEmpty())
+        val past = items.first()
+        val live = items.last()
+        HistoryNavigation.select(past, { hints.add(it) }, { played.add(it) })
+        HistoryNavigation.select(live, { hints.add(it) }, { played.add(it) })
+        assertEquals(listOf(past, live), played)
+        assertEquals(listOf(future.start), hints)
     }
 }

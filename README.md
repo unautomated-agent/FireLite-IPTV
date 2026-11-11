@@ -109,12 +109,14 @@ with posters, seasons, history and resume.
   Long-press Left jumps to the current programme's start when catch-up is available. Archive seeks stay inside
   a seekable archive or re-request it after debounce; reaching the live edge returns to live.
 - **Programme history**: a translucent right-side list leaves video full-size behind it. Compact single-line
-  time/title rows run oldest first, with Na żywo at the bottom and initially focused. Rewind/FastForward jump
-  to the previous/next Warsaw calendar day, clamped to the archive range and today; a day header and details
+  time/title rows run oldest first, with Na żywo initially focused and upcoming programmes below it.
+  Future rows are dimmed and marked Wkrótce; OK shows their start time without changing playback.
+  Rewind/FastForward jump to the previous/next available Warsaw calendar day, clamped to the archive range
+  and the last known EPG programme; a day header and details
   follow the selection. Up/Down select; one OK starts the programme from its start (clipped to
   the archive/window limit), including the current programme when rewind is available. Na żywo returns live.
-  The next programme is shown dimmed above the list, not selectable. Without archive or a seekable window,
-  only Na żywo is selectable. Back or Menu closes without changing playback. Opening/browsing history never
+  Without archive or a seekable window, only Na żywo can start playback; upcoming programmes remain browsable.
+  Back or Menu closes without changing playback. Opening/browsing history never
   previews, prefetches or probes a stream; only final OK uses the existing gated playback path.
 - **Overlay remote**: Up/Down browse without zapping; Right on a channel opens its history;
   short OK plays and closes the panel; long OK opens the full guide on the highlighted channel.

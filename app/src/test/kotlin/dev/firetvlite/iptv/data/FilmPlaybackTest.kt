@@ -11,8 +11,8 @@ import org.junit.Test
 
 class FilmPlaybackTest {
     private fun channel(id: Long) = ChannelEntity(id = id, sourceId = 1, name = "Channel $id",
-        streamUrl = "http://fixture/$id", position = id.toInt(), groupTitle = null, logoUrl = null,
-        tvgId = null, tvgName = null)
+        streamUrl = "http://fixture/$id", position = id.toInt(), groupName = "Films", logoUrl = null,
+        tvgId = null, catchupType = null, catchupSource = null, catchupDays = 0)
 
     @Test fun filmSelectionRetainsAllChannelsAndItsActualPlaylistIndex() = runBlocking {
         val channels = listOf(channel(1), channel(2), channel(3))

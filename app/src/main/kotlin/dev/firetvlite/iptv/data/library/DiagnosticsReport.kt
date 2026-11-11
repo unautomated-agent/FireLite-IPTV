@@ -63,6 +63,7 @@ object DiagnosticRedactor {
                 if (credentialIndex != null) path = "/" + parts.mapIndexed { i, value ->
                     if (i == credentialIndex || i == credentialIndex + 1) "***" else value
                 }.joinToString("/")
+                else if (path.isNotEmpty() && path != "/") path = "/__path_hidden__"
                 val query = uri.rawQuery?.split('&')?.joinToString("&") { it.substringBefore('=') + "=***" }
                 val host = uri.host.let { if (it.contains(':') && !it.startsWith('[')) "[$it]" else it }
                 "${uri.scheme}://$host${if (uri.port >= 0) ":${uri.port}" else ""}$path" +
@@ -118,7 +119,9 @@ object DiagnosticsReport {
     }
 
     fun payload(text: String): String {
-        val masked = DiagnosticRedactor.mask(text)
+        val masked = DiagnosticRedactor.mask(text).replace(Regex("(?i)https?://")) {
+            it.value.replace("://", "[:]//")
+        }
         if (masked.toByteArray(Charsets.UTF_8).size <= QR_BYTES) return masked
         val suffix = "\n[…raport skrócony]"
         return utf8Limit(masked, QR_BYTES - suffix.toByteArray(Charsets.UTF_8).size) + suffix

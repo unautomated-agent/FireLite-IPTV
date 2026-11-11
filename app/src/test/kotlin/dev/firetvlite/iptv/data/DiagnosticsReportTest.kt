@@ -81,7 +81,7 @@ class DiagnosticsReportTest {
             assertFalse(result, result.contains(secret))
             assertFalse(DiagnosticRedactor.mask("$key=$secret").contains(secret))
         }
-        assertEquals("http://provider/path", DiagnosticRedactor.mask("http://private-user:private-pass@provider/path"))
+        assertEquals("http://provider/__path_hidden__", DiagnosticRedactor.mask("http://private-user:private-pass@provider/path"))
         for (path in listOf("live/private-user/private-pass/12.ts", "private-user/private-pass/12", "timeshift/private-user/private-pass/60/date/12.ts")) {
             val result = DiagnosticRedactor.mask("http://provider/$path")
             assertFalse(result.contains("private-user"))
@@ -134,5 +134,24 @@ class DiagnosticsReportTest {
         val pixels = IntArray(matrix.width * matrix.height) { i -> if (matrix[i % matrix.width, i / matrix.width]) 0xff000000.toInt() else -1 }
         val decoded = MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(matrix.width, matrix.height, pixels))))
         assertEquals(payload, decoded.text)
+    }
+
+    @Test fun providerUrlsRemainInlineInACompletePlainTextQrReport() {
+        val source = SourceEntity(name = "Provider", url = "https://provider/playlist/private-access-code", userAgent = "TV")
+        val report = DiagnosticsReport.text(source, EpgState.Failed("HTTP 403"), SourceDiagnostics(10, 8), null,
+            "Ostatni błąd odtwarzania:\nChannel: TVP Seriale\nURL: https://my.teleelevidenie.com/play/hls-custom-c123-private-code.m3u8")
+        val payload = DiagnosticsReport.payload(report)
+        assertTrue(payload.contains("https[:]//my.teleelevidenie.com/__path_hidden__"))
+        assertFalse(payload.contains("https://"))
+        assertFalse(payload.contains("private-code"))
+        assertFalse(payload.contains("private-access-code"))
+        for (label in listOf("FireLite", "TVP Seriale", "Lista:", "Kanały:", "EPG stan:", "HTTP 403", "Archiwum:", "Ostatni raport błędu:")) {
+            assertTrue(payload, payload.contains(label))
+        }
+        val matrix = DiagnosticsReport.qr(report)
+        val pixels = IntArray(matrix.width * matrix.height) { i -> if (matrix[i % matrix.width, i / matrix.width]) 0xff000000.toInt() else -1 }
+        val decoded = MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(matrix.width, matrix.height, pixels))))
+        assertEquals(payload, decoded.text)
+        assertEquals(payload, DiagnosticsReport.payload(payload))
     }
 }

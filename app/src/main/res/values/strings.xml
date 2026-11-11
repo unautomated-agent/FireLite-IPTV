@@ -1,6 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Default (and only) UI language: Polish. Resource names are English. -->
 <resources>
+    <string name="settings_appearance">Wygląd</string>
+    <string name="settings_clock_on">Zegar w lewym górnym rogu: włączony</string>
+    <string name="settings_clock_off">Zegar w lewym górnym rogu: wyłączony</string>
     <string name="nav_films">Najlepsze filmy</string>
     <string name="films_setup_hint">Ustaw klucz OMDb w Ustawieniach, aby zobaczyć oceny IMDb i ranking filmów.</string>
     <string name="films_first_window">Najbliższe 24 h</string>

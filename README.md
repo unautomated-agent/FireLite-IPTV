@@ -41,6 +41,9 @@ with posters, seasons, history and resume.
 
 ## Live TV
 
+Settings → Wygląd toggles the top-left Warsaw clock across the app and fullscreen playback. The setting
+is saved locally and defaults to on. Turning it off does not change programme/banner times or their zone.
+
 - **Provider compatibility**: M3U guide attributes `x-tvg-url`, `url-tvg`, `tvg-url` accept mixed case,
   double/single quotes or bare values, multiple comma/space-separated feeds and separate option headers.
   XMLTV feeds are streamed in bounded batches, merged by case-insensitive IDs (including `.pl` aliases),

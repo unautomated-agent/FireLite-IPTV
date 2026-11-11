@@ -4,6 +4,7 @@ import android.app.Application
 import android.app.Activity
 import android.os.Bundle
 import java.io.File
+import dev.firetvlite.iptv.data.ClockPreferences
 import dev.firetvlite.iptv.data.db.FireLiteDatabase
 import dev.firetvlite.iptv.data.epg.EpgRepository
 import dev.firetvlite.iptv.data.epg.ForegroundRefresh
@@ -26,6 +27,7 @@ class AppContainer(application: Application) {
     val database: FireLiteDatabase = FireLiteDatabase.create(application)
     val epg = EpgRepository(database, applicationScope)
     val films = FilmRepository(database, OmdbPreferences(application), applicationScope, epg)
+    val clockPreferences = ClockPreferences(application)
 
     val library = LibraryRepository(
         database = database,

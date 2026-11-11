@@ -4,12 +4,15 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import dev.firetvlite.iptv.FireLiteApplication
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 import kotlinx.coroutines.delay
 
@@ -24,6 +27,9 @@ internal fun minuteClock() = produceState(System.currentTimeMillis()) {
 
 @Composable
 internal fun WarsawClockBox(modifier: Modifier = Modifier) {
+    val preferences = (LocalContext.current.applicationContext as FireLiteApplication).container.clockPreferences
+    val visible by preferences.visible.collectAsState()
+    if (!visible) return
     val now by minuteClock()
     FLText(clockTime(now), style = FireLiteTheme.typography.title,
         color = FireLiteTheme.colors.textPrimary, maxLines = 1,

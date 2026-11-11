@@ -110,4 +110,10 @@ class EpgRepository(private val database: FireLiteDatabase, private val scope: C
 
     suspend fun programmeAt(channelId: Long, time: Long): ProgrammeEntity? =
         database.epgDao().programmeAt(channelId, time)
+
+    fun guideChannels(channelIds: List<Long>): Flow<Set<Long>> =
+        if (channelIds.isEmpty()) flowOf(emptySet())
+        else combine(channelIds.distinct().chunked(900).map { database.epgDao().observeGuideChannels(it) }) { batches ->
+            batches.flatMap { it }.toSet()
+        }
 }

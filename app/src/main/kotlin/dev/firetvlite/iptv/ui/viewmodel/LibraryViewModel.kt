@@ -137,6 +137,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     fun programmes(channelIds: List<Long>, from: Long, until: Long) = container.epg.programmes(channelIds, from, until)
 
+    fun guideChannels(channelIds: List<Long>) = container.epg.guideChannels(channelIds)
+
     fun guideLimits(key: GroupKey): Flow<Pair<Int, Long?>> = sourceId.flatMapLatest { id ->
         if (id == null) flowOf(0 to null) else {
             val group = (key as? GroupKey.Named)?.name

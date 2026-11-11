@@ -66,6 +66,7 @@ internal fun GuideHeader(start: Long) {
 internal fun ProgrammeGridRow(
     row: ChannelRow,
     programmes: List<ProgrammeEntity>,
+    hasGuide: Boolean,
     start: Long,
     now: Long,
     focusedTime: Long,
@@ -77,7 +78,7 @@ internal fun ProgrammeGridRow(
     onGroups: () -> Unit,
     onFocused: () -> Unit,
     onDetails: (ProgrammeEntity?) -> Unit,
-    onSelect: (ProgrammeEntity?) -> Unit,
+    onSelect: (GuideCell?) -> Unit,
     onMenu: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -110,7 +111,7 @@ internal fun ProgrammeGridRow(
                     true
                 }
                 Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
-                    if (event.nativeKeyEvent.repeatCount == 0) onSelect(if (programmeFocus) cells.getOrNull(index)?.programme else null)
+                    if (event.nativeKeyEvent.repeatCount == 0) onSelect(if (programmeFocus) cells.getOrNull(index) else null)
                     true
                 }
                 else -> false
@@ -128,7 +129,7 @@ internal fun ProgrammeGridRow(
                 val cellWidth = maxWidth * (GuideTimeline.fraction(cell.stop, start) - GuideTimeline.fraction(cell.start, start))
                 val selected = focused && programmeFocus && index == cellIndex
                 val playable = GuideTimeline.action(cell.programme, now, row.channel.catchupDays,
-                    CatchupUrlBuilder.isSupported(row.channel)) != GuideAction.Details
+                    CatchupUrlBuilder.isSupported(row.channel), focusedTime.coerceIn(cell.start, cell.stop - 1), hasGuide) != GuideAction.Details
                 Column(Modifier.offset(x = maxWidth * GuideTimeline.fraction(cell.start, start))
                     .width(cellWidth)
                     .fillMaxHeight().padding(horizontal = 1.dp)

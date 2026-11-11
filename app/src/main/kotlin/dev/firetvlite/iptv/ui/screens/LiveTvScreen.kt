@@ -196,6 +196,7 @@ private fun ChannelBrowser(
     val programmes by remember(visibleIds, queryFrom, queryUntil) { library.programmes(visibleIds, queryFrom, queryUntil) }
         .collectAsState(initial = emptyList())
     val programmesByChannel = remember(programmes) { programmes.groupBy { it.channelId }.mapValues { (_, entries) -> entries.map { it.programme } } }
+    val guideChannels by remember(visibleIds) { library.guideChannels(visibleIds) }.collectAsState(initial = emptySet())
     val groupRequesters = remember(groups.map { it.key }) { groups.associate { it.key to FocusRequester() } }
     val firstChannelFocus = remember(selected) { FocusRequester() }
     val restoreFocus = remember(selected) { FocusRequester() }
@@ -393,6 +394,7 @@ private fun ChannelBrowser(
                             if (!overlay) ProgrammeGridRow(
                                 row = row,
                                 programmes = programmesByChannel[row.channel.id].orEmpty(),
+                                hasGuide = row.channel.id in guideChannels,
                                 start = windowStart, now = now, focusedTime = focusedTime, programmeFocus = programmeFocus,
                                 onProgrammeFocus = { programmeFocus = it }, onTime = { focusedTime = it },
                                 onHorizontalEdge = { forward, target ->
@@ -407,9 +409,11 @@ private fun ChannelBrowser(
                                 onGroups = { focusSelectedGroup() },
                                 onFocused = { focusedChannel = row; focusedIndex = index },
                                 onDetails = { focusedProgramme = it },
-                                onSelect = { programme ->
+                                onSelect = { cell ->
                                     scope.launch {
-                                        val action = GuideTimeline.action(programme, now, row.channel.catchupDays, CatchupUrlBuilder.isSupported(row.channel))
+                                        val programme = cell?.programme
+                                        val action = GuideTimeline.action(programme, now, row.channel.catchupDays, CatchupUrlBuilder.isSupported(row.channel),
+                                            cell?.let { focusedTime.coerceIn(it.start, it.stop - 1) } ?: now, cell != null && row.channel.id in guideChannels)
                                         if (action != GuideAction.Details) library.zapContext(selected)?.let {
                                             if (action == GuideAction.Archive) player.openArchive(it, index, selected, programme!!.start)
                                             else player.open(it, index, selected)

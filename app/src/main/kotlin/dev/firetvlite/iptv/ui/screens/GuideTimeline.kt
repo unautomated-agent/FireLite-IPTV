@@ -56,7 +56,9 @@ object GuideTimeline {
         return windowStart(requested, bounds)
     }
 
-    fun action(programme: ProgrammeEntity?, now: Long, catchupDays: Int, supportsCatchup: Boolean): GuideAction = when {
+    fun action(programme: ProgrammeEntity?, now: Long, catchupDays: Int, supportsCatchup: Boolean,
+        focusedTime: Long = now, hasGuide: Boolean = programme != null): GuideAction = when {
+        programme == null && hasGuide && focusedTime > now -> GuideAction.Details
         programme == null -> GuideAction.Live
         programme.start <= now && programme.stop > now -> GuideAction.Live
         programme.stop <= now && supportsCatchup && catchupDays > 0 && programme.start >= now - catchupDays * DAY -> GuideAction.Archive

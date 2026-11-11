@@ -8,6 +8,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class GuideTimelineTest {
+    @Test fun futureGapsInAnExistingGuideAreNotPlayable() {
+        assertEquals(GuideAction.Details, GuideTimeline.action(null, 100, 1, true, focusedTime = 101, hasGuide = true))
+        assertEquals(GuideAction.Live, GuideTimeline.action(null, 100, 1, true, focusedTime = 100, hasGuide = true))
+    }
+
+    @Test fun channelsWithoutAnyGuideStillOpenLiveInFutureWindows() {
+        assertEquals(GuideAction.Live, GuideTimeline.action(null, 100, 0, false, focusedTime = 101, hasGuide = false))
+    }
     private val now = 1_800_000_000_000L
     private fun programme(start: Long, stop: Long) = ProgrammeEntity(
         sourceId = 1, generation = "test", epgKey = "channel", start = start, stop = stop,

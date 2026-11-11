@@ -15,6 +15,12 @@ private const val PROGRAMME_AT =
 
 @Dao
 interface EpgDao {
+    @Query("SELECT c.id FROM channel c JOIN source s ON s.id = c.sourceId " +
+        "JOIN channel_epg m ON m.sourceId = c.sourceId AND m.streamUrl = c.streamUrl AND m.generation = s.epgGeneration " +
+        "WHERE c.id IN (:channelIds) AND EXISTS(SELECT 1 FROM programme p WHERE p.sourceId = m.sourceId " +
+        "AND p.generation = m.generation AND p.epgKey = m.epgKey)")
+    fun observeGuideChannels(channelIds: List<Long>): Flow<List<Long>>
+
     @Query("SELECT MAX(p.stop) $MAPPED_PROGRAMMES WHERE c.sourceId=:sourceId " +
         "AND (:groupName IS NULL OR c.groupName=:groupName) " +
         "AND (:favorites=0 OR EXISTS(SELECT 1 FROM favorite f WHERE f.streamUrl=c.streamUrl)) " +

@@ -198,18 +198,12 @@ private fun ChannelBrowser(
     val programmesByChannel = remember(programmes) { programmes.groupBy { it.channelId }.mapValues { (_, entries) -> entries.map { it.programme } } }
     val guideChannels by remember(visibleIds) { library.guideChannels(visibleIds) }.collectAsState(initial = emptySet())
     val groupRequesters = remember(groups.map { it.key }) { groups.associate { it.key to FocusRequester() } }
-    val firstChannelFocus = remember(selected) { FocusRequester() }
-    val restoreFocus = remember(selected) { FocusRequester() }
     var restoreIndex by remember(selected) { mutableStateOf<Int?>(null) }
     var pendingRestore by remember { mutableStateOf<Pair<GroupKey, Int>?>(null) }
     var handledRestore by remember { mutableStateOf<Int?>(null) }
     var channelsHaveFocus by remember { mutableStateOf(false) }
     val rowRequesters = remember(selected) { HashMap<Int, FocusRequester>() }
-    fun rowRequester(index: Int): FocusRequester = when (index) {
-        restoreIndex -> restoreFocus
-        0 -> firstChannelFocus
-        else -> rowRequesters.getOrPut(index) { FocusRequester() }
-    }
+    fun rowRequester(index: Int): FocusRequester = rowRequesters.getOrPut(index) { FocusRequester() }
     fun focusRow(index: Int) {
         if (index !in 0 until pagingItems.itemCount) return
         scope.launch {
@@ -232,7 +226,7 @@ private fun ChannelBrowser(
         scope.launch {
             val index = restoreIndex ?: 0
             channelListState.scrollToItem(index)
-            if (index == restoreIndex) restoreFocus.requestFocusWhenReady() else firstChannelFocus.requestFocusWhenReady()
+            rowRequester(index).requestFocusWhenReady()
         }
     }
     fun focusSelectedGroup() {
@@ -255,7 +249,6 @@ private fun ChannelBrowser(
     LaunchedEffect(active, restore?.token) {
         val target = restore ?: return@LaunchedEffect
         if (!active || handledRestore == target.token) return@LaunchedEffect
-        focusedChannel = null
         programmeFocus = false
         focusedTime = now
         requestedStart = now / (GuideTimeline.HOUR / 2) * (GuideTimeline.HOUR / 2)
@@ -276,9 +269,15 @@ private fun ChannelBrowser(
         restoreIndex = index
         channelListState.scrollToItem(index)
         snapshotFlow { pagingItems.peek(index) }.filterNotNull().first()
-        restoreFocus.requestFocusWhenReady()
-        handledRestore = restore?.token
-        pendingRestore = null
+        repeat(20) {
+            rowRequester(index).requestFocusWhenReady()
+            if (channelsHaveFocus && focusedIndex == index &&
+                focusedChannel?.channel?.streamUrl == restore?.channel?.streamUrl) {
+                handledRestore = restore?.token
+                pendingRestore = null
+                return@LaunchedEffect
+            }
+        }
     }
     val initialGroup = remember { library.selectedGroup.value }
     var initialFocusRequested by remember { mutableStateOf(false) }
@@ -427,11 +426,7 @@ private fun ChannelBrowser(
                                 programme = programmesByChannel[row.channel.id]?.maxByOrNull { it.start },
                                 now = now,
                                 translucent = overlay,
-                                modifier = when (index) {
-                                    restoreIndex -> Modifier.focusRequester(restoreFocus)
-                                    0 -> Modifier.focusRequester(firstChannelFocus)
-                                    else -> Modifier
-                                },
+                                modifier = Modifier.focusRequester(rowRequester(index)),
                                 onFocused = { focusedChannel = row; focusedIndex = index },
                                 onClick = {
                                     scope.launch {

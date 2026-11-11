@@ -145,6 +145,20 @@ One press downloads the APK and opens Android's installer.
 
 ## Build
 
+### Playback compatibility and diagnostics
+
+- Audio selection prefers Polish (`pl`/`pol`), then the device language. Preview video limits remain unchanged.
+- Media3 decoder fallback remains enabled. No FFmpeg dependency or extension-renderer preference is included;
+  the separately licensed audio extension is pending approval and can be added independently.
+- Settings diagnostics retain the last handled playback error and the last successful playback snapshot,
+  including live/archive/preview mode, selected and available formats, and the audio decoder name.
+  Credentials and stream URL paths are hidden before writing either record to internal storage.
+  Both compact records precede the guide/crash details in the QR report, capped at 1800 UTF-8 bytes.
+- Behind-live-window errors recover at the live edge on the same URL/session. A parsing failure on a
+  `.m3u8` URL permits one progressive MPEG-TS/container-sniffing fallback per session. Recovery stops the
+  old load and waits for all local HTTP connections to close before preparing again. A channel switch or
+  close cancels pending recovery. The connection gate and 400 ms grace remain unchanged; there are no probes.
+
 CI builds on every push (`.github/workflows/build.yml`). Locally you need JDK 17 and the Android SDK:
 
 ```

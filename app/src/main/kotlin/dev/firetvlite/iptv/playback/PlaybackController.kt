@@ -7,6 +7,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Format
 import androidx.media3.common.Tracks
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
@@ -82,6 +83,9 @@ class PlaybackController internal constructor(
     private val mediaItem: (String) -> MediaItem = { MediaItem.fromUri(it) },
     private val setStream: (ExoPlayer, MediaItem, HttpDataSource.Factory) -> Unit = { player, item, _ -> player.setMediaItem(item) },
     private val recordPlayback: (Boolean, String) -> Unit = { _, _ -> },
+    private val progressiveItem: (String) -> MediaItem = {
+        MediaItem.Builder().setUri(it).setMimeType(MimeTypes.VIDEO_MP2T).build()
+    },
 ) {
     internal constructor(scope: CoroutineScope, createPlayer: (HttpDataSource.Factory) -> ExoPlayer) :
         this(scope, createPlayer, {})
@@ -104,6 +108,8 @@ class PlaybackController internal constructor(
     private var exo: ExoPlayer? = null
     private var startJob: Job? = null
     private var retries = 0
+    private var activeSession = 0L
+    private var fallbackUsed = false
     private var activeRequest: StreamRequest? = null
     private var suspendedRequest: StreamRequest? = null
     private var preview = false
@@ -219,6 +225,7 @@ class PlaybackController internal constructor(
         activeRequest = request
         successfulSignature = null
         retries = 0
+        fallbackUsed = false
         startJob?.cancel()
         httpFactory.setUserAgent(request.userAgent)
 
@@ -226,6 +233,7 @@ class PlaybackController internal constructor(
         player.stop() // first close the old connection ...
         player.clearMediaItems()
         val session = connectionGate.nextSession()
+        activeSession = session
         trace("STOP before switch")
         mutableStatus.value = PlaybackStatus.Connecting
 
@@ -372,12 +380,25 @@ class PlaybackController internal constructor(
         recordPlayback(true, diagnostic(error))
         if (retries < MAX_RETRIES) {
             retries++
+            val request = activeRequest ?: return
+            val session = activeSession
+            val action = PlaybackRecovery.action(error.errorCode, request.url, fallbackUsed, error.cause)
+            if (action == RecoveryAction.Progressive) fallbackUsed = true
             mutableStatus.value = PlaybackStatus.Connecting
             startJob?.cancel()
+            exo?.stop()
             startJob = scope.launch {
-                delay(RETRY_DELAY_MS * retries)
+                delay(if (action == RecoveryAction.Retry) RETRY_DELAY_MS * retries else CLOSE_GRACE_MS)
                 awaitConnectionClose()
-                exo?.prepare() // the failed connection is closed already; open a fresh one
+                val player = exo ?: return@launch
+                if (activeRequest !== request || activeSession != session) return@launch
+                when (action) {
+                    RecoveryAction.LiveEdge -> player.seekToDefaultPosition()
+                    RecoveryAction.Progressive -> setStream(player, progressiveItem(request.url), trackedFactory(session))
+                    RecoveryAction.Retry -> Unit
+                }
+                trace("RECOVER session=$session action=$action")
+                player.prepare()
             }
         } else {
             mutableStatus.value = PlaybackStatus.Failed(error.errorCodeName)

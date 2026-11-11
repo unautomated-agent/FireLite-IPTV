@@ -106,22 +106,22 @@ class FilmsTest {
             if (title == "Był sobie chłopiec" && year == 2001)
                 OmdbResult.Found(OmdbMovie("movie", 2001, 7.1, 125, "tt123")) else OmdbResult.Missing
         }
-        val lookup = FilmLookup(client, store) { waits++ }
+        val lookup = FilmLookup(client, store, { now }) { waits++ }
         assertNull(lookup.lookup(film(), "", now))
         val result = lookup.lookup(film(), "fixture-key", now)!!
         assertEquals(4, calls.size)
         assertEquals(calls.size, waits)
         assertEquals(7.1, result.imdbRating!!, 0.0)
-        assertEquals(result, FilmLookup(client, store) {}.lookup(film(), "fixture-key", now + 1000))
+        assertEquals(result, FilmLookup(client, store, { now }) {}.lookup(film(), "fixture-key", now + 1000))
         assertEquals(4, calls.size)
     }
     @Test fun failuresDoNotPoisonCacheAndMissingResultsAreNegativeCached() = runBlocking {
         val store = Store()
-        val failed = FilmLookup(OmdbClient { _, _, _ -> OmdbResult.Failed }, store) {}
+        val failed = FilmLookup(OmdbClient { _, _, _ -> OmdbResult.Failed }, store, { now }) {}
         assertNull(failed.lookup(film(), "fixture", now))
         assertTrue(store.rows.isEmpty())
         var calls = 0
-        val missing = FilmLookup(OmdbClient { _, _, _ -> calls++; OmdbResult.Missing }, store) {}
+        val missing = FilmLookup(OmdbClient { _, _, _ -> calls++; OmdbResult.Missing }, store, { now }) {}
         assertNull(missing.lookup(film(), "fixture", now)!!.imdbRating)
         assertEquals(6, calls)
         missing.lookup(film(), "fixture", now + Films.DAY)
@@ -133,12 +133,36 @@ class FilmsTest {
         store.used[day] = 399
         var requests = 0
         val client = OmdbClient { _, _, _ -> requests++; OmdbResult.Missing }
-        assertNull(FilmLookup(client, store) {}.lookup(film(), "fixture", now))
+        assertNull(FilmLookup(client, store, { now }) {}.lookup(film(), "fixture", now))
         assertEquals(400, store.used[day])
-        assertNull(FilmLookup(client, store) {}.lookup(film(), "fixture", now))
+        assertNull(FilmLookup(client, store, { now }) {}.lookup(film(), "fixture", now))
         assertEquals(1, requests)
-        FilmLookup(client, store) {}.lookup(film(), "fixture", now + Films.DAY)
+        FilmLookup(client, store, { now + Films.DAY }) {}.lookup(film(), "fixture", now + Films.DAY)
         assertEquals(7, requests)
+    }
+    @Test fun midnightFallbackUsesTheRequestDayAndCompletionTimestamp() = runBlocking {
+        var time = Instant.parse("2026-03-28T22:59:59.500Z").toEpochMilli()
+        val started = time
+        val store = Store()
+        var requests = 0
+        val client = OmdbClient { _, _, _ ->
+            if (++requests == 1) { time += 500; OmdbResult.Missing }
+            else OmdbResult.Found(OmdbMovie("movie", 2002, 7.1, 1, "tt123"))
+        }
+        val result = FilmLookup(client, store, { time }) { time += 250 }.lookup(film(), "fixture", started)!!
+        assertEquals(1, store.used[Films.day(started)])
+        assertEquals(1, store.used[Films.day(started) + 1])
+        assertEquals(time, result.fetchedAt)
+    }
+    @Test fun delayCrossingMidnightDoesNotChargeAnExhaustedPreviousDay() = runBlocking {
+        var time = Instant.parse("2026-03-28T22:59:59.900Z").toEpochMilli()
+        val started = time
+        val store = Store()
+        store.used[Films.day(started)] = 400
+        val client = OmdbClient { _, _, _ -> OmdbResult.Found(OmdbMovie("movie", 2002, 7.1, 1, "tt123")) }
+        assertNotNull(FilmLookup(client, store, { time }) { time += 250 }.lookup(film(), "fixture", started))
+        assertEquals(400, store.used[Films.day(started)])
+        assertEquals(1, store.used[Films.day(started) + 1])
     }
     @Test fun parsesRatingsVotesAndNonFatalResponses() {
         val result = OmdbHttpClient.decode("""{"Response":"True","Type":"movie","Year":"2002","imdbRating":"7.1","imdbVotes":"123,456","imdbID":"tt123"}""") as OmdbResult.Found

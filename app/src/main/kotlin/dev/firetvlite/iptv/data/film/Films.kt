@@ -68,23 +68,24 @@ fun observeFilmRatings(rows: Flow<List<FilmRatingEntity>>, keys: Flow<String>, t
     }
 
 class FilmLookup(private val client: OmdbClient, private val store: FilmStore,
+    private val clock: () -> Long = System::currentTimeMillis,
     private val wait: suspend () -> Unit = { kotlinx.coroutines.delay(250) }) {
     suspend fun lookup(p: ProgrammeEntity, key: String, now: Long): FilmRatingEntity? {
         if (key.isBlank() || !Films.candidate(p)) return null
         val identity = Films.key(p)
         store.cached(identity)?.takeIf { Films.fresh(it, now) }?.let { return it }
         for ((title, year) in Films.queries(p)) {
-            if (!store.reserve(Films.day(now))) return null
             wait()
+            if (!store.reserve(Films.day(clock()))) return null
             when (val result = client.lookup(key, title, year)) {
                 OmdbResult.Failed -> return null
                 OmdbResult.Missing -> Unit
                 is OmdbResult.Found -> if (result.movie.matches(p.year!!)) {
                     val movie = result.movie
-                    return FilmRatingEntity(identity, movie.rating, movie.votes, movie.id, now).also { store.save(it) }
+                    return FilmRatingEntity(identity, movie.rating, movie.votes, movie.id, clock()).also { store.save(it) }
                 }
             }
         }
-        return FilmRatingEntity(identity, null, 0, null, now).also { store.save(it) }
+        return FilmRatingEntity(identity, null, 0, null, clock()).also { store.save(it) }
     }
 }

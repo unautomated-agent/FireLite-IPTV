@@ -16,6 +16,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -29,8 +30,6 @@ import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.unit.dp
 import dev.firetvlite.iptv.data.film.Films
 import dev.firetvlite.iptv.data.film.rankedFilms
-import dev.firetvlite.iptv.data.library.GroupKey
-import dev.firetvlite.iptv.data.library.ListZapContext
 import dev.firetvlite.iptv.ui.components.ChannelLogo
 import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.FocusSurface
@@ -43,6 +42,7 @@ import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 import dev.firetvlite.iptv.ui.viewmodel.LibraryViewModel
 import dev.firetvlite.iptv.ui.viewmodel.PlayerViewModel
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 @Composable
 @OptIn(ExperimentalComposeUiApi::class)
@@ -52,6 +52,7 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
     val source by library.source.collectAsState()
     val now by minuteClock()
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
     val inputMode = LocalInputModeManager.current
     var tab by remember { mutableStateOf(0) }
     val tabFocus = remember { List(2) { FocusRequester() } }
@@ -87,7 +88,9 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
                     FocusSurface(onClick = {
                         val currentTime = System.currentTimeMillis()
                         if (p.start <= currentTime && p.stop > currentTime && film.channel.sourceId == source?.id) {
-                            player.open(ListZapContext(listOf(film.channel)), 0, GroupKey.All)
+                            scope.launch {
+                                openFilmChannel(film.channel, library::channelIndex, library::zapContext, player::open)
+                            }
                         } else Toast.makeText(context, "Zaczyna się o ${clockTime(p.start)}", Toast.LENGTH_SHORT).show()
                     }, modifier = Modifier.fillMaxWidth(), focusedScale = 1.01f) {
                         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically,

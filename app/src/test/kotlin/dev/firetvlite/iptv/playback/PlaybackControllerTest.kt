@@ -402,6 +402,46 @@ class PlaybackControllerTest {
         controller.stop()
     }
 
+    @Test fun startupDeadlineIdentifiesPreviousConnectionsWithoutOpeningTheRequestedStream(): Unit = runBlocking {
+        val fake = FakePlayer()
+        val records = mutableListOf<String>()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            recordPlayback = { failed, text -> if (failed) records += text }, startupTimeoutMs = 650)
+        val connections = PlaybackController::class.java.getDeclaredField("connections").let {
+            it.isAccessible = true
+            it.get(controller) as AtomicInteger
+        }
+        connections.set(1)
+        controller.play(request.copy(channelName = "requested channel"))
+        delay(750)
+        assertEquals(1, records.size)
+        for (value in listOf("START_TIMEOUT", "phase=WAITING_PREVIOUS_CONNECTION", "openHTTP=1",
+                "requested stream not prepared", "PREPARING_BUFFERING=0ms")) {
+            assertEquals(records.single(), true, records.single().contains(value))
+        }
+        assertEquals(0, fake.calls.count { it == "prepare" })
+        assertEquals(1, fake.calls.count { it == "stop" })
+        connections.decrementAndGet()
+        delay(100)
+        assertEquals(1, fake.calls.count { it == "prepare" })
+        assertEquals(1, records.size)
+        controller.stop()
+    }
+
+    @Test fun startupDeadlineAfterPreparationAttributesTheRequestedSession(): Unit = runBlocking {
+        val fake = FakePlayer()
+        val records = mutableListOf<String>()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            recordPlayback = { failed, text -> if (failed) records += text }, startupTimeoutMs = 650)
+        controller.play(request)
+        delay(750)
+        assertEquals(1, fake.calls.count { it == "prepare" })
+        assertEquals(1, records.size)
+        assertEquals(true, records.single().contains("phase=PREPARING_BUFFERING"))
+        assertEquals(true, records.single().contains("Ownership: requested stream session"))
+        controller.stop()
+    }
+
     @Test fun bufferingAndReadyWithoutAFrameStillReportDetectedVideoFormat(): Unit = runBlocking {
         for (state in listOf(Player.STATE_BUFFERING, Player.STATE_READY)) {
             val fake = FakePlayer()

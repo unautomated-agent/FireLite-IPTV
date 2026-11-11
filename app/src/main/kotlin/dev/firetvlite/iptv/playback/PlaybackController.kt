@@ -126,6 +126,7 @@ class PlaybackController internal constructor(
     private var exo: ExoPlayer? = null
     private var startJob: Job? = null
     private var startupJob: Job? = null
+    private var startupTiming: StartupTiming? = null
     private var retries = 0
     @Volatile private var activeSession = 0L
     @Volatile private var lastHttp: Pair<Long, String>? = null
@@ -275,11 +276,14 @@ class PlaybackController internal constructor(
     private fun clearStartupWatch() {
         startupJob?.cancel()
         startupJob = null
+        startupTiming = null
         mutableStartupDelayed.value = false
     }
 
     private fun watchStartup(request: StreamRequest) {
         clearStartupWatch()
+        val timing = StartupTiming()
+        startupTiming = timing
         startupJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             delay(startupTimeoutMs)
             if (activeRequest !== request) return@launch
@@ -292,6 +296,10 @@ class PlaybackController internal constructor(
             }
             recordPlayback(true, diagnostic(startupError, code = "START_TIMEOUT", details = listOf(
                 "Channel: ${request.channelName.ifBlank { "unknown" }}",
+                timing.detail(),
+                if (timing.waitingForPrevious)
+                    "Ownership: previous session connections/player/tracks; requested stream not prepared"
+                else "Ownership: requested stream session",
                 "Player: $state; pos=${player?.currentPosition}; buffered=${player?.bufferedPosition}; openHTTP=${connections.get()}",
                 "Source: $sourceType",
                 "HTTP: ${lastHttp?.takeIf { it.first == activeSession }?.second ?: "not available"}",
@@ -356,9 +364,13 @@ class PlaybackController internal constructor(
         trace("STOP before switch")
         mutableStatus.value = PlaybackStatus.Connecting
 
+        startupTiming?.enter(StartupTiming.Phase.CLOSE_GRACE)
+
         startJob = scope.launch {
             delay(CLOSE_GRACE_MS) // ... and give the server time to notice, only then open the new one
+            startupTiming?.enter(StartupTiming.Phase.WAITING_PREVIOUS_CONNECTION)
             awaitConnectionClose()
+            startupTiming?.enter(StartupTiming.Phase.PREPARING_BUFFERING)
             trace("PREPARE session=$session player=${System.identityHashCode(player)} stream=${request.url.hashCode()}")
             prepareSafely {
                 setStream(player, mediaItem(request.url), trackedFactory(session))
@@ -530,11 +542,14 @@ class PlaybackController internal constructor(
             mutableStatus.value = PlaybackStatus.Connecting
             startJob?.cancel()
             exo?.stop()
+            startupTiming?.enter(StartupTiming.Phase.RECOVERY_DELAY)
             startJob = scope.launch {
                 delay(if (action == RecoveryAction.Retry) RETRY_DELAY_MS * retries else CLOSE_GRACE_MS)
+                startupTiming?.enter(StartupTiming.Phase.WAITING_RECOVERY_CONNECTION)
                 awaitConnectionClose()
                 val player = exo ?: return@launch
                 if (activeRequest !== request || activeSession != session) return@launch
+                startupTiming?.enter(StartupTiming.Phase.PREPARING_BUFFERING)
                 prepareSafely {
                     recovery.onRecovery(action)
                     when (action) {

@@ -36,6 +36,24 @@ class WarsawTimeTest {
         }
     }
 
+    @Test fun firstFormatterInitializationInGmtStillUsesWarsaw() {
+        val original = TimeZone.getDefault()
+        try {
+            TimeZone.setDefault(TimeZone.getTimeZone("GMT"))
+            val name = "dev.firetvlite.iptv.ui.components.WarsawTimeKt"
+            val bytes = javaClass.getResourceAsStream("/" + name.replace('.', '/') + ".class")!!.use { it.readBytes() }
+            val fresh = object : ClassLoader(javaClass.classLoader) {
+                fun formatter() = defineClass(name, bytes, 0, bytes.size)
+            }.formatter()
+            val format = fresh.getMethod("clockTime", Long::class.javaPrimitiveType)
+            val startup = Instant.parse("2026-11-11T21:51:00Z").toEpochMilli()
+            assertEquals("22:51", format.invoke(null, startup))
+            assertEquals("22:52", format.invoke(null, startup + 60_000))
+        } finally {
+            TimeZone.setDefault(original)
+        }
+    }
+
     @Test fun schedulesAtTheNextMinuteWithoutZeroDelay() {
         assertEquals(60_000L, millisUntilNextMinute(0))
         assertEquals(1L, millisUntilNextMinute(59_999))

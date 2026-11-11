@@ -1,5 +1,13 @@
 package dev.firetvlite.iptv.playback
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
+
 enum class BannerState { Hidden, Compact, Expanded }
 enum class TvKey { Up, Down, Left, Right, Rewind, FastForward, PlayPause, Ok, LongOk, Menu, LongMenu, Back }
 enum class TvAction(val seekMs: Long? = null) {
@@ -58,6 +66,12 @@ class PreviousChannel<T>(private val identity: (T) -> String) {
 }
 
 object StartupResume {
+    @OptIn(ExperimentalCoroutinesApi::class)
+    suspend fun <T> awaitRecent(sources: Flow<Long?>, recent: (Long) -> Flow<List<T>>): Pair<Long, List<T>> =
+        sources.flatMapLatest { id ->
+            if (id == null) flowOf<Pair<Long, List<T>>?>(null) else recent(id).map { id to it }
+        }.filterNotNull().first { it.second.isNotEmpty() }
+
     fun allowed(hasSource: Boolean, hasChannel: Boolean, mode: PlayerMode, pending: Boolean) =
         hasSource && hasChannel && mode == PlayerMode.Closed && pending
 }

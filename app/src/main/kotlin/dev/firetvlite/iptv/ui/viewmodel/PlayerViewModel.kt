@@ -40,6 +40,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -92,6 +93,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val previous = PreviousChannel<ChannelEntity> { it.streamUrl }
     private var watchedSourceId: Long? = null
     private var startupPending = true
+    private var startupJob: Job? = null
 
     private val mutableChannel = MutableStateFlow<ChannelEntity?>(null)
     val channel: StateFlow<ChannelEntity?> = mutableChannel.asStateFlow()
@@ -116,17 +118,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 if (PlaybackSourcePolicy.shouldClose(mutableChannel.value?.sourceId, source?.id)) close()
             }
         }
-        viewModelScope.launch {
-            val source = sourceDao.active()
-            val recent = source?.let { channelDao.startupRecent(it.id) }.orEmpty()
+        startupJob = viewModelScope.launch {
+            val (sourceId, recent) = StartupResume.awaitRecent(
+                sourceDao.observeActive().map { it?.id }.distinctUntilChanged(), channelDao::startupRecent)
             val last = recent.firstOrNull()
-            val resume = StartupResume.allowed(source != null, last != null, mutableMode.value, startupPending)
-            if (resume && source != null && last != null) {
-                val index = channelDao.allIndex(source.id, last.streamUrl) ?: return@launch
-                if (startupPending && mutableMode.value == PlayerMode.Closed) {
+            val resume = StartupResume.allowed(true, last != null, mutableMode.value, startupPending)
+            if (resume && last != null) {
+                val index = channelDao.allIndex(sourceId, last.streamUrl) ?: return@launch
+                if (startupPending && mutableMode.value == PlayerMode.Closed && sourceDao.active()?.id == sourceId) {
                     previous.seedRecent(recent)
-                    watchedSourceId = source.id
-                    open(allChannels(source.id), index, GroupKey.All)
+                    watchedSourceId = sourceId
+                    open(allChannels(sourceId), index, GroupKey.All)
                 }
             }
             startupPending = false
@@ -235,7 +237,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         playback.setPreview(mode == PlayerMode.Preview || mode == PlayerMode.Guide || mode == PlayerMode.MainMenu)
     }
 
-    fun cancelStartupResume() { startupPending = false }
+    fun cancelStartupResume() { startupPending = false; startupJob?.cancel() }
 
     fun showMainMenu() {
         cancelPreview()

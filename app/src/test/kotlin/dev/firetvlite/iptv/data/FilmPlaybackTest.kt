@@ -19,9 +19,8 @@ class FilmPlaybackTest {
         val all = ListZapContext(channels)
         var opened: ZapContext? = null
         var index = -1
-        openFilmChannel(channels[1], { group, url ->
-            assertEquals(GroupKey.All, group)
-            channels.indexOfFirst { it.streamUrl == url }
+        openFilmChannel(channels[1], { id ->
+            channels.indexOfFirst { it.id == id }
         }, { group -> assertEquals(GroupKey.All, group); all }, { zap, start, group ->
             assertEquals(GroupKey.All, group); opened = zap; index = start
         })
@@ -35,10 +34,21 @@ class FilmPlaybackTest {
     @Test fun missingChannelOrChangingPlaylistCannotOpenAnotherStream() = runBlocking {
         val selected = channel(1)
         val open: (ZapContext, Int, GroupKey) -> Unit = { _, _, _ -> fail("Unexpected playback") }
-        openFilmChannel(selected, { _, _ -> null }, { ListZapContext(listOf(selected)) }, open)
-        openFilmChannel(selected, { _, _ -> 0 }, { null }, open)
-        openFilmChannel(selected, { _, _ -> 0 }, { ListZapContext(emptyList()) }, open)
-        openFilmChannel(selected, { _, _ -> 0 }, { ListZapContext(listOf(channel(2))) }, open)
-        openFilmChannel(selected, { _, _ -> 0 }, { ListZapContext(listOf(selected.copy(sourceId = 2))) }, open)
+        openFilmChannel(selected, { null }, { ListZapContext(listOf(selected)) }, open)
+        openFilmChannel(selected, { 0 }, { null }, open)
+        openFilmChannel(selected, { 0 }, { ListZapContext(emptyList()) }, open)
+        openFilmChannel(selected, { 0 }, { ListZapContext(listOf(channel(2))) }, open)
+        openFilmChannel(selected, { 0 }, { ListZapContext(listOf(selected.copy(sourceId = 2))) }, open)
+    }
+
+    @Test fun duplicateUrlsRetainTheSelectedStableChannelId() = runBlocking {
+        val first = channel(1)
+        val selected = channel(2).copy(streamUrl = first.streamUrl)
+        val channels = listOf(first, selected)
+        var opened = false
+        openFilmChannel(selected, { id -> channels.indexOfFirst { it.id == id } }, { ListZapContext(channels) },
+            { zap, index, _ -> assertEquals(1, index); assertEquals(selected, channels[index]); opened = true })
+        assertTrue(opened)
+        openFilmChannel(selected, { 0 }, { ListZapContext(channels) }, { _, _, _ -> fail("Opened URL duplicate") })
     }
 }

@@ -92,7 +92,7 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
                         val currentTime = System.currentTimeMillis()
                         if (p.start <= currentTime && p.stop > currentTime && film.channel.sourceId == source?.id) {
                             scope.launch {
-                                openFilmChannel(film.channel, library::channelIndex, library::zapContext, player::open)
+                                openFilmChannel(film.channel, library::allChannelIndex, library::zapContext, player::open)
                             }
                         } else Toast.makeText(context, context.getString(R.string.films_starts_at, clockTime(p.start)), Toast.LENGTH_SHORT).show()
                     }, modifier = Modifier.fillMaxWidth(), focusedScale = 1.01f) {

@@ -165,6 +165,11 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         viewModelScope.launch { userDao.removeFavorite(streamUrl) }
     }
 
+    suspend fun allChannelIndex(channelId: Long): Int? {
+        val id = source.value?.id ?: return null
+        return channelDao.allIndexById(id, channelId)
+    }
+
     suspend fun channelIndex(key: GroupKey, url: String): Int? {
         val id = source.value?.id ?: return null
         return when (key) {

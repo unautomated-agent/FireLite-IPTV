@@ -6,14 +6,14 @@ import dev.firetvlite.iptv.data.library.ZapContext
 
 internal suspend fun openFilmChannel(
     channel: ChannelEntity,
-    indexOf: suspend (GroupKey, String) -> Int?,
+    indexOf: suspend (Long) -> Int?,
     context: suspend (GroupKey) -> ZapContext?,
     open: (ZapContext, Int, GroupKey) -> Unit,
 ) {
     val zap = context(GroupKey.All) ?: return
-    val index = indexOf(GroupKey.All, channel.streamUrl) ?: return
+    val index = indexOf(channel.id) ?: return
     val target = zap.at(index) ?: return
-    if (target.sourceId == channel.sourceId && target.streamUrl == channel.streamUrl) {
+    if (target.id == channel.id && target.sourceId == channel.sourceId && target.streamUrl == channel.streamUrl) {
         open(zap, index, GroupKey.All)
     }
 }

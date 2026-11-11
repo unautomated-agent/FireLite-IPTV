@@ -5,6 +5,21 @@ Kotlin, Jetpack Compose, Media3. The UI language is Polish; code and documentati
 
 FireLite ships **no channels or content**. You connect sources you are allowed to use.
 
+## Playlist refresh and source compatibility
+
+- DASH, HLS and SmoothStreaming factories are bundled at the same Media3 version and retained for
+  reflective loading in release builds. Source construction/preparation failures become saved playback
+  errors instead of escaping the playback coroutine.
+- On startup (or activating a saved source), an app-version or parser-revision change triggers one
+  successful playlist re-import, regardless of the normal 24-hour cache. Failed imports retain the
+  previous channels/metadata and are retried on the next startup. Settings also offers manual refresh.
+- Re-import retains channel IDs for unchanged stream URLs, including duplicate entries; favourites and
+  recents remain keyed by stream URL. No playback request is made by the importer.
+- Diagnostics records the actual last-import User-Agent, provider `# DEVICE TYPE:` comment and number
+  of channels carrying raw catch-up attributes (including header defaults and explicit opt-outs).
+  Unknown old-import metadata is shown as `—`. Increment `PlaylistImporter.PARSER_REVISION` when
+  changing parser-dependent fields without changing the app version.
+
 ## License
 
 FireLite is distributed under GPL-3.0 (see [LICENSE](LICENSE)) because it includes the GPL-3.0

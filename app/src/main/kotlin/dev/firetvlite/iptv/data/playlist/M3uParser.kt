@@ -24,6 +24,13 @@ data class ParsedChannel(
  * defaults on the `#EXTM3U` header line. Everything else starting with `#` is ignored.
  */
 object M3uParser {
+    data class Metadata(val catchupChannels: Int = 0, val deviceType: String = "")
+
+    private val deviceType = Regex("^#\\s*DEVICE\\s+TYPE\\s*:\\s*(.*)$", RegexOption.IGNORE_CASE)
+    private val catchupAttributes = listOf("catchup", "catchup-type", "catchup-days", "catchup-source",
+        "tvg-rec", "timeshift", "catchup-time")
+
+    private fun hasCatchup(line: String) = catchupAttributes.any { attribute(line, it) != null }
 
     private class Pending(
         val name: String = "",
@@ -45,6 +52,7 @@ object M3uParser {
     fun parse(
         source: Reader,
         onEpgUrls: (List<String>) -> Unit = {},
+        onMetadata: (Metadata) -> Unit = {},
         onChannel: (ParsedChannel) -> Unit,
     ) {
         val reader = source as? BufferedReader ?: BufferedReader(source, 1 shl 16)
@@ -52,6 +60,10 @@ object M3uParser {
         var pending: Pending? = null
         var firstLine = true
         val epgUrls = linkedSetOf<String>()
+        var headerCatchup = false
+        var pendingCatchup = false
+        var rawCatchupChannels = 0
+        var device = ""
 
         while (true) {
             var line = reader.readLine() ?: break
@@ -63,6 +75,7 @@ object M3uParser {
             if (line.isEmpty()) continue
 
             if (line.startsWith("#")) {
+                deviceType.matchEntire(line)?.let { device = it.groupValues[1].trim().take(160) }
                 if (!line.startsWith("#EXTINF", true)) {
                     val values = listOf("x-tvg-url", "url-tvg", "tvg-url").mapNotNull { attribute(line.substring(1), it) }
                     if (values.isNotEmpty()) {
@@ -73,8 +86,14 @@ object M3uParser {
                 when {
                     line.startsWith("#EXTM3U", ignoreCase = true) -> {
                         defaults = readDefaults(line)
+                        headerCatchup = hasCatchup(line)
                     }
-                    line.startsWith("#EXTINF", ignoreCase = true) -> pending = readInfo(line)
+                    line.startsWith("#EXTINF", ignoreCase = true) -> {
+                        pending = readInfo(line)
+                        val rest = line.substringAfter(':', "")
+                        val comma = firstCommaOutsideQuotes(rest)
+                        pendingCatchup = hasCatchup(if (comma >= 0) rest.substring(0, comma) else rest)
+                    }
                     line.startsWith("#EXTGRP:", ignoreCase = true) -> {
                         val group = line.substring("#EXTGRP:".length).trim()
                         val current = pending
@@ -97,10 +116,13 @@ object M3uParser {
 
             // Not a comment: the stream address of the channel described by the last #EXTINF.
             if (looksLikeUrl(line)) {
+                if (headerCatchup || pendingCatchup) rawCatchupChannels++
                 onChannel(toChannel(pending ?: Pending(), line, defaults))
             }
             pending = null
+            pendingCatchup = false
         }
+        onMetadata(Metadata(rawCatchupChannels, device))
     }
 
     private fun readDefaults(line: String): Defaults {

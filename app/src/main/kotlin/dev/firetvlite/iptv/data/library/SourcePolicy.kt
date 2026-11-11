@@ -7,4 +7,7 @@ internal object SourcePolicy {
         channelCount == 0 || refreshedAt == 0L || now - refreshedAt > STALE_AFTER_MS
 
     fun nextUsedAt(previous: Long, now: Long): Long = maxOf(previous + 1, now)
+
+    fun needsReimport(importedVersion: Int, importedRevision: Int, version: Int, revision: Int): Boolean =
+        importedVersion != version || importedRevision != revision
 }

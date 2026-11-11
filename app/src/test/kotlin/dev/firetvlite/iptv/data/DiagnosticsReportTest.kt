@@ -16,6 +16,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DiagnosticsReportTest {
+    @Test fun providerResponseDiagnosticsShowActualImportUaAttributesAndDeviceType() {
+        val source = SourceEntity(name = "M3U", url = "https://h/list", userAgent = "edited-UA",
+            rawCatchupChannels = 334, playlistUserAgent = "FireLite/2.0", playlistDeviceType = "NONSPECIFIC")
+        val text = DiagnosticsReport.text(source, null, SourceDiagnostics(), null)
+        assertTrue(text.contains("M3U atrybuty archiwum: 334"))
+        assertTrue(text.contains("M3U User-Agent: FireLite/2.0"))
+        assertTrue(text.contains("M3U DEVICE TYPE: NONSPECIFIC"))
+        assertFalse(text.contains("edited-UA"))
+        val unknown = DiagnosticsReport.text(null, null, SourceDiagnostics(), null)
+        assertTrue(unknown.contains("M3U atrybuty archiwum: —"))
+        assertTrue(unknown.contains("M3U User-Agent: —"))
+    }
+
     @Test fun aggregateDiagnosticsNeedOnlyCountsAndOneCredentialSample() {
         val stats = SourceDiagnostics.from(12000, 11000, listOf(ArchiveTypeCount("xc", 9000)),
             "https://provider/live/private-user/private-pass/12.ts")

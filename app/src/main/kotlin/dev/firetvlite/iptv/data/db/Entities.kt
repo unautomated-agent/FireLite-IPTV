@@ -26,7 +26,14 @@ data class SourceEntity(
     @ColumnInfo(defaultValue = "''") val xtreamStatus: String = "",
     @ColumnInfo(defaultValue = "'UTC'") val xtreamTimezone: String = "UTC",
     @ColumnInfo(defaultValue = "0") val xtreamArchiveCount: Int = 0,
+    @ColumnInfo(defaultValue = "0") val importedVersionCode: Int = 0,
+    @ColumnInfo(defaultValue = "0") val importedParserRevision: Int = 0,
+    @ColumnInfo(defaultValue = "-1") val rawCatchupChannels: Int = -1,
+    @ColumnInfo(defaultValue = "''") val playlistUserAgent: String = "",
+    @ColumnInfo(defaultValue = "''") val playlistDeviceType: String = "",
 )
+
+data class ChannelIdentity(val id: Long, val streamUrl: String)
 
 data class SavedSource(
     @Embedded val source: SourceEntity,

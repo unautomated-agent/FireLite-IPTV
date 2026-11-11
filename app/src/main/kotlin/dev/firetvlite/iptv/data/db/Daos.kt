@@ -57,12 +57,17 @@ interface SourceDao {
         "WHERE id = :id")
     suspend fun publishEpg(id: Long, generation: String, time: Long, count: Int)
 
-    @Query("UPDATE source SET refreshedAt = :refreshedAt WHERE id = :id")
-    suspend fun markRefreshed(id: Long, refreshedAt: Long)
+    @Query("UPDATE source SET refreshedAt=:refreshedAt, importedVersionCode=:version, importedParserRevision=:revision, " +
+        "rawCatchupChannels=:rawCatchup, playlistUserAgent=:userAgent, playlistDeviceType=:deviceType WHERE id=:id")
+    suspend fun markImported(id: Long, refreshedAt: Long, version: Int, revision: Int, rawCatchup: Int,
+        userAgent: String, deviceType: String)
 }
 
 @Dao
 interface ChannelDao {
+    @Query("SELECT id, streamUrl FROM channel WHERE sourceId=:sourceId ORDER BY position")
+    suspend fun identities(sourceId: Long): List<ChannelIdentity>
+
     @Query("SELECT streamUrl FROM channel WHERE sourceId=:sourceId ORDER BY position LIMIT 1")
     fun observeDiagnosticSample(sourceId: Long): Flow<String?>
 

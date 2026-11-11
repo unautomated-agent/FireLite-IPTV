@@ -12,6 +12,7 @@ import dev.firetvlite.iptv.data.playlist.XtreamAddress
 import java.net.URI
 import java.net.URLDecoder
 import java.time.Instant
+import dev.firetvlite.iptv.playback.utf8Limit
 
 data class SourceDiagnostics(val channelCount: Int = 0, val matched: Int = 0,
     val archiveTypes: Map<String, Int> = emptyMap(), val secrets: Set<String> = emptySet()) {
@@ -78,7 +79,7 @@ object DiagnosticRedactor {
 object DiagnosticsReport {
     const val QR_BYTES = 1800
 
-    fun text(source: SourceEntity?, state: EpgState?, stats: SourceDiagnostics, crash: String?): String {
+    fun text(source: SourceEntity?, state: EpgState?, stats: SourceDiagnostics, crash: String?, playback: String = ""): String {
         val urls = source?.let { runCatching { EpgSources.urls(it.epgUrl, it.discoveredEpgUrls, it.url) }.getOrDefault(emptyList()) }.orEmpty()
         val status = when (state) {
             EpgState.Running -> "Wczytywanie"
@@ -88,6 +89,7 @@ object DiagnosticsReport {
         }
         val raw = buildString {
             appendLine("FireLite · Diagnostyka")
+            if (playback.isNotBlank()) appendLine(playback)
             appendLine("Lista: ${source?.name ?: "Brak aktywnej listy"}")
             appendLine("Kanały: ${stats.channelCount}")
             appendLine("EPG: ${urls.joinToString("\n").ifEmpty { "Nie wykryto adresu" }}")
@@ -111,9 +113,7 @@ object DiagnosticsReport {
         val masked = DiagnosticRedactor.mask(text)
         if (masked.toByteArray(Charsets.UTF_8).size <= QR_BYTES) return masked
         val suffix = "\n[…raport skrócony]"
-        var prefix = masked.take(QR_BYTES - suffix.toByteArray(Charsets.UTF_8).size)
-        while ((prefix + suffix).toByteArray(Charsets.UTF_8).size > QR_BYTES) prefix = prefix.dropLast(1)
-        return prefix + suffix
+        return utf8Limit(masked, QR_BYTES - suffix.toByteArray(Charsets.UTF_8).size) + suffix
     }
 
     fun qr(text: String): BitMatrix = QRCodeWriter().encode(payload(text), BarcodeFormat.QR_CODE, 600, 600,

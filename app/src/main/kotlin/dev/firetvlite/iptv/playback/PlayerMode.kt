@@ -6,6 +6,7 @@ enum class PlayerMode {
     val acceptsPreview: Boolean get() = this == Closed || this == Preview
     val fullFrame: Boolean get() = this == Fullscreen || this == Overlay
     val recordsWatch: Boolean get() = this == Fullscreen
+    val continuesPlayback: Boolean get() = this != Closed
 
     fun afterBack(previewAllowed: Boolean = true): PlayerMode = when (this) {
         Fullscreen -> if (previewAllowed) Preview else Closed

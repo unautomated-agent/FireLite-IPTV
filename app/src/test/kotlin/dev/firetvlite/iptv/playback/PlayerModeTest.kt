@@ -6,6 +6,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlayerModeTest {
+    @Test fun archiveContinuationDoesNotDependOnPresentationSize() {
+        PlayerMode.entries.filter { it != PlayerMode.Closed }.forEach {
+            assertTrue(it.continuesPlayback)
+        }
+        assertFalse(PlayerMode.Closed.continuesPlayback)
+        assertFalse(PlayerMode.Guide.fullFrame)
+        assertFalse(PlayerMode.MainMenu.fullFrame)
+    }
     @Test fun nonLiveTabsClosePlaybackRatherThanLeavingAnInvisiblePreview() {
         assertEquals(PlayerMode.Closed, PlayerMode.Fullscreen.afterBack(previewAllowed = false))
         assertEquals(PlayerMode.Fullscreen, PlayerMode.Overlay.afterBack(previewAllowed = false))

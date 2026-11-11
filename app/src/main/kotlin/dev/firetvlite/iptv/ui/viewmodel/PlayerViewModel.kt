@@ -135,7 +135,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             status.collect { state ->
                 val start = archiveStartMs
                 val channel = activeChannel
-                if (state == PlaybackStatus.Ended && start != null && channel != null && mutableMode.value.fullFrame) {
+                if (state == PlaybackStatus.Ended && start != null && channel != null && mutableMode.value.continuesPlayback) {
                     catchupJob?.cancel()
                     pendingSeekMs = null
                     when (val plan = PlaybackTime.archiveContinuation(updateFrame(), start)) {

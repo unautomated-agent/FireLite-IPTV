@@ -33,6 +33,15 @@ class FilmsTest {
         assertFalse(Films.candidate(film().copy(categories = "dramat\nSERIAL OBYCZAJOWY")))
         assertFalse(Films.candidate(film().copy(originalTitle = "Rawhide S4 E7")))
     }
+    @Test fun genericAndEnglishFilmCategoriesStillRequireFilmMetadata() {
+        for (category in listOf("Movie", "Film", "MOVIES", "films", "Feature Film", "TV Movie", "Animated Film", "Drama", "Comedy", "Action", "Crime", "Adventure", "War", "Romance")) {
+            assertTrue(category, Films.candidate(film().copy(category = category)))
+            assertFalse(category, Films.candidate(film().copy(category = category, episodeNum = "S1 E1")))
+            assertFalse(category, Films.candidate(film("TV series").copy(category = category)))
+            assertFalse(category, Films.candidate(film(year = null).copy(category = category)))
+        }
+        assertFalse(Films.candidate(film().copy(category = "Movie news")))
+    }
     @Test fun requiresYearDurationAndFilmCategory() {
         assertFalse(Films.candidate(film(year = null)))
         assertFalse(Films.candidate(film(year = 999)))

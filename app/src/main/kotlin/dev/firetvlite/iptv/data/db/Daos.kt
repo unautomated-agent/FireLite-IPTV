@@ -162,6 +162,10 @@ interface ChannelDao {
     )
     suspend fun recentChannels(sourceId: Long): List<ChannelEntity>
 
+    @Query("SELECT c.* FROM channel c INNER JOIN recent r ON r.streamUrl = c.streamUrl " +
+        "WHERE c.sourceId = :sourceId ORDER BY r.watchedAt DESC LIMIT 2")
+    suspend fun startupRecent(sourceId: Long): List<ChannelEntity>
+
     // ---- Import ----
 
     @Insert

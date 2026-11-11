@@ -7,6 +7,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Format
 import androidx.media3.common.Tracks
+import androidx.media3.common.TrackSelectionOverride
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -244,6 +245,26 @@ class PlaybackController internal constructor(
         recordPlayback(false, diagnostic())
     }
 
+    fun audioTracks(): List<AudioTrackChoice> = exo?.currentTracks?.groups.orEmpty().flatMapIndexed { groupIndex, group ->
+        if (group.type != C.TRACK_TYPE_AUDIO) emptyList() else (0 until group.length).mapNotNull { index ->
+            if (!group.isTrackSupported(index)) null else group.getTrackFormat(index).let { format ->
+                AudioTrackChoice(groupIndex, index, format.language, format.label,
+                    format.codecs ?: format.sampleMimeType, group.isTrackSelected(index))
+            }
+        }
+    }
+
+    fun selectAudioTrack(choice: AudioTrackChoice): Boolean {
+        val player = exo ?: return false
+        val group = player.currentTracks.groups.getOrNull(choice.group) ?: return false
+        if (!AudioTrackSelection.valid(group.type == C.TRACK_TYPE_AUDIO, group.length, choice.index,
+                choice.index in 0 until group.length && group.isTrackSupported(choice.index))) return false
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, listOf(choice.index)))
+            .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, false).build()
+        return true
+    }
+
     /** Plays [request]. A request for the stream that is already active does nothing. */
     fun play(request: StreamRequest) {
         if (gate.onRequest(request.url) == StreamGate.Action.Ignore) return
@@ -255,6 +276,8 @@ class PlaybackController internal constructor(
         httpFactory.setUserAgent(request.userAgent)
 
         val player = prepareSafely { ensurePlayer() } ?: return
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .clearOverridesOfType(C.TRACK_TYPE_AUDIO).build()
         player.stop() // first close the old connection ...
         player.clearMediaItems()
         val session = connectionGate.nextSession()

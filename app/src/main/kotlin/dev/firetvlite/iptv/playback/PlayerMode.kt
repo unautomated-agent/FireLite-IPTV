@@ -1,7 +1,7 @@
 package dev.firetvlite.iptv.playback
 
 enum class PlayerMode {
-    Closed, Fullscreen, Overlay, Preview;
+    Closed, Fullscreen, Overlay, Preview, Guide, MainMenu;
 
     val acceptsPreview: Boolean get() = this == Closed || this == Preview
     val fullFrame: Boolean get() = this == Fullscreen || this == Overlay

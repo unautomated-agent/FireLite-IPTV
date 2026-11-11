@@ -18,6 +18,31 @@ import org.junit.Test
 class PlaybackControllerTest {
     private val request = StreamRequest("https://example.org/live", "FireLite")
 
+    @Test fun startupAndPreviousChannelRequestsReuseThePlayerAndAlwaysStopBeforePrepare() = runBlocking {
+        val fake = FakePlayer()
+        val trace = mutableListOf<String>()
+        var creations = 0
+        val controller = PlaybackController(this, { creations++; fake.player }, { trace += it }, { MediaItem.EMPTY })
+        val previous = PreviousChannel<String> { it }
+        for (index in 0..3) {
+            val url = if (index == 0) request.url else if (index == 1) "https://example.org/second" else previous.previous!!
+            fake.calls.clear()
+            controller.play(request.copy(url = url))
+            previous.watched(url)
+            assertEquals(0, fake.calls.count { it == "prepare" })
+            delay(450)
+            assertEquals(1, fake.calls.count { it == "prepare" })
+            assertEquals(true, fake.calls.indexOf("stop") < fake.calls.indexOf("prepare"))
+        }
+        assertEquals(1, creations)
+        assertEquals(4, trace.count { it.startsWith("PREPARE") })
+        val calls = fake.calls.filter { it in listOf("stop", "setMediaItem", "prepare", "clearMediaItems") }
+        controller.setPreview(true)
+        controller.setPreview(false)
+        assertEquals(calls, fake.calls.filter { it in listOf("stop", "setMediaItem", "prepare", "clearMediaItems") })
+        controller.stop()
+    }
+
     @Test
     fun stopAllowsTheSameChannelToReopenOnTheExistingPlayer() = runBlocking {
         val fake = FakePlayer()

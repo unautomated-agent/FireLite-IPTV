@@ -37,7 +37,7 @@ class OmdbHttpClientTest {
         assertEquals(2, 10000 - input.available())
     }
 
-    @Test fun httpResponsesAreBoundedAndErrorsRemainNonFatal() = runBlocking {
+    @Test fun httpResponsesAreBoundedAndErrorsRemainNonFatal(): Unit = runBlocking {
         val server = ServerSocket().apply { bind(InetSocketAddress("127.0.0.1", 0)) }
         val response = AtomicReference(200 to """{"Response":"False","Error":"Movie not found!"}""".toByteArray())
         val serving = FutureTask<Unit> {

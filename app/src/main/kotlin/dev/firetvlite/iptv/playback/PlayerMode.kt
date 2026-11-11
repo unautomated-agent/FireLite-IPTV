@@ -8,6 +8,9 @@ enum class PlayerMode {
     val recordsWatch: Boolean get() = this == Fullscreen
     val continuesPlayback: Boolean get() = this != Closed
 
+    fun onNavigate(previewAllowed: Boolean): PlayerMode =
+        if (this == Preview && !previewAllowed) Closed else this
+
     fun afterBack(previewAllowed: Boolean = true): PlayerMode = when (this) {
         Fullscreen -> if (previewAllowed) Preview else Closed
         Overlay -> Fullscreen

@@ -6,6 +6,13 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlayerModeTest {
+    @Test fun leavingTheLiveBrowserClosesOnlyItsIncidentalPreview() {
+        assertEquals(PlayerMode.Closed, PlayerMode.Preview.onNavigate(previewAllowed = false))
+        assertEquals(PlayerMode.Preview, PlayerMode.Preview.onNavigate(previewAllowed = true))
+        assertEquals(PlayerMode.Closed, PlayerMode.Closed.onNavigate(previewAllowed = false))
+        assertEquals(PlayerMode.MainMenu, PlayerMode.MainMenu.onNavigate(previewAllowed = false))
+        assertEquals(PlayerMode.Fullscreen, PlayerMode.Fullscreen.onNavigate(previewAllowed = false))
+    }
     @Test fun archiveContinuationDoesNotDependOnPresentationSize() {
         PlayerMode.entries.filter { it != PlayerMode.Closed }.forEach {
             assertTrue(it.continuesPlayback)

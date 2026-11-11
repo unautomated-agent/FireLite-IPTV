@@ -77,6 +77,9 @@ private fun AppShell(
 
     fun navigate(destination: Destination) {
         playerViewModel.cancelStartupResume()
+        playerViewModel.cancelPreview()
+        if (mode.onNavigate(destination == Destination.Live) == PlayerMode.Closed && mode == PlayerMode.Preview)
+            playerViewModel.close()
         tabReturn = null
         current = destination
     }

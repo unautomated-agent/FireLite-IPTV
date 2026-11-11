@@ -87,16 +87,19 @@ object DiagnosticsReport {
             is EpgState.Done -> "Gotowy"
             null -> if ((source?.epgRefreshedAt ?: 0) > 0) "Gotowy (zapisany)" else "Brak importu"
         }
+        val hasImportMetadata = (source?.rawCatchupChannels ?: -1) >= 0
+        val missingMetadata = if (source == null) "—" else "Nieznany – brak importu po aktualizacji"
         val raw = buildString {
             appendLine("FireLite · Diagnostyka")
             if (playback.isNotBlank()) appendLine(playback)
             appendLine("Lista: ${source?.name ?: "Brak aktywnej listy"}")
             appendLine("Kanały: ${stats.channelCount}")
-            appendLine("M3U atrybuty archiwum: ${source?.rawCatchupChannels?.takeIf { it >= 0 } ?: "—"}")
-            appendLine("M3U User-Agent: ${source?.playlistUserAgent?.let {
+            appendLine("M3U atrybuty archiwum: ${if (hasImportMetadata) source?.rawCatchupChannels else missingMetadata}")
+            appendLine("M3U User-Agent: ${if (!hasImportMetadata) missingMetadata else source?.playlistUserAgent?.let {
                 if (it == LibraryRepository.DEFAULT_USER_AGENT) it else "własny (ukryty)"
             } ?: "—"}")
-            appendLine("M3U DEVICE TYPE: ${source?.playlistDeviceType?.ifEmpty { "Brak komentarza" } ?: "—"}")
+            appendLine("M3U DEVICE TYPE: ${if (hasImportMetadata) source?.playlistDeviceType.orEmpty()
+                .ifEmpty { "Brak komentarza" } else missingMetadata}")
             appendLine("EPG: ${urls.joinToString("\n").ifEmpty { "Nie wykryto adresu" }}")
             appendLine("EPG stan: $status")
             appendLine("EPG import: ${source?.epgRefreshedAt?.takeIf { it > 0 }?.let { Instant.ofEpochMilli(it) } ?: "—"}")

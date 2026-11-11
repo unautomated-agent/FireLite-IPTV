@@ -16,6 +16,28 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DiagnosticsReportTest {
+    @Test fun migratedSourcesHaveUnknownResponseMetadataUntilASuccessfulReimport() {
+        val source = SourceEntity(name = "M3U", url = "https://h/list", userAgent = "FireLite/2.0",
+            refreshedAt = 1234)
+        val text = DiagnosticsReport.text(source, null, SourceDiagnostics(), null)
+        for (label in listOf("M3U atrybuty archiwum", "M3U User-Agent", "M3U DEVICE TYPE")) {
+            assertTrue(text.contains("$label: Nieznany – brak importu po aktualizacji"))
+        }
+        assertFalse(text.contains("Brak komentarza"))
+        assertFalse(text.contains("M3U atrybuty archiwum: 0"))
+        assertFalse(text.contains("M3U User-Agent: własny"))
+    }
+
+    @Test fun successfulReimportWithoutAttributesOrCommentShowsRecordedAbsence() {
+        val source = SourceEntity(name = "M3U", url = "https://h/list", userAgent = "FireLite/2.0",
+            rawCatchupChannels = 0, playlistUserAgent = "FireLite/2.0", playlistDeviceType = "")
+        val text = DiagnosticsReport.text(source, null, SourceDiagnostics(), null)
+        assertTrue(text.contains("M3U atrybuty archiwum: 0"))
+        assertTrue(text.contains("M3U User-Agent: FireLite/2.0"))
+        assertTrue(text.contains("M3U DEVICE TYPE: Brak komentarza"))
+        assertFalse(text.contains("brak importu po aktualizacji"))
+    }
+
     @Test fun customPlaylistUserAgentsAreNeverIncludedInTextOrQrPayload() {
         for (agent in listOf("Bearer private-ua-value", "FireLite/2.0 private-ua-value", "firelite/2.0",
                 "Mozilla/5.0\nprivate-ua-value", "")) {

@@ -16,6 +16,19 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DiagnosticsReportTest {
+    @Test fun customPlaylistUserAgentsAreNeverIncludedInTextOrQrPayload() {
+        for (agent in listOf("Bearer private-ua-value", "FireLite/2.0 private-ua-value", "firelite/2.0",
+                "Mozilla/5.0\nprivate-ua-value", "")) {
+            val source = SourceEntity(name = "M3U", url = "https://h/list", userAgent = agent,
+                rawCatchupChannels = 0, playlistUserAgent = agent)
+            val text = DiagnosticsReport.text(source, null, SourceDiagnostics(), null)
+            assertTrue(text.contains("M3U User-Agent: własny (ukryty)"))
+            assertFalse(text.contains("private-ua-value"))
+            assertFalse(DiagnosticsReport.payload(text).contains("private-ua-value"))
+            if (agent.isNotEmpty()) assertFalse(text.contains(agent))
+        }
+    }
+
     @Test fun providerResponseDiagnosticsShowActualImportUaAttributesAndDeviceType() {
         val source = SourceEntity(name = "M3U", url = "https://h/list", userAgent = "edited-UA",
             rawCatchupChannels = 334, playlistUserAgent = "FireLite/2.0", playlistDeviceType = "NONSPECIFIC")

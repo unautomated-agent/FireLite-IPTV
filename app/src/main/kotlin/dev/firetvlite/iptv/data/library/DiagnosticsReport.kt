@@ -93,7 +93,9 @@ object DiagnosticsReport {
             appendLine("Lista: ${source?.name ?: "Brak aktywnej listy"}")
             appendLine("Kanały: ${stats.channelCount}")
             appendLine("M3U atrybuty archiwum: ${source?.rawCatchupChannels?.takeIf { it >= 0 } ?: "—"}")
-            appendLine("M3U User-Agent: ${source?.playlistUserAgent?.ifEmpty { "—" } ?: "—"}")
+            appendLine("M3U User-Agent: ${source?.playlistUserAgent?.let {
+                if (it == LibraryRepository.DEFAULT_USER_AGENT) it else "własny (ukryty)"
+            } ?: "—"}")
             appendLine("M3U DEVICE TYPE: ${source?.playlistDeviceType?.ifEmpty { "Brak komentarza" } ?: "—"}")
             appendLine("EPG: ${urls.joinToString("\n").ifEmpty { "Nie wykryto adresu" }}")
             appendLine("EPG stan: $status")

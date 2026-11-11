@@ -115,6 +115,15 @@ private fun ChannelBrowser(
     val channelListState = remember(selected) { LazyListState() }
     val groupRequesters = remember(groups.map { it.key }) { groups.associate { it.key to FocusRequester() } }
     val firstChannelFocus = remember(selected) { FocusRequester() }
+    fun focusGroup(index: Int) {
+        if (index !in groups.indices) return
+        scope.launch {
+            if (groupListState.layoutInfo.visibleItemsInfo.none { it.index == index }) {
+                groupListState.scrollToItem(index)
+            }
+            groupRequesters[groups[index].key]?.requestFocusWhenReady()
+        }
+    }
     fun focusChannels() {
         if (pagingItems.itemCount == 0) return
         scope.launch {
@@ -123,19 +132,15 @@ private fun ChannelBrowser(
         }
     }
     fun focusSelectedGroup() {
-        scope.launch {
-            val index = groups.indexOfFirst { it.key == selected }
-            if (index >= 0) {
-                groupListState.scrollToItem(index)
-                groupRequesters[selected]?.requestFocusWhenReady()
-            }
-        }
+        focusGroup(groups.indexOfFirst { it.key == selected })
     }
 
     var focusedChannel by remember(selected) { mutableStateOf<ChannelRow?>(null) }
     val initialGroup = remember { library.selectedGroup.value }
+    var initialFocusRequested by remember { mutableStateOf(false) }
     LaunchedEffect(groups.isNotEmpty()) {
-        if (groups.isNotEmpty()) {
+        if (groups.isNotEmpty() && !initialFocusRequested) {
+            initialFocusRequested = true
             val index = groups.indexOfFirst { it.key == initialGroup }
             if (index >= 0) {
                 groupListState.scrollToItem(index)
@@ -159,10 +164,13 @@ private fun ChannelBrowser(
             LazyColumn(
                 state = groupListState,
                 modifier = Modifier.onPreviewKeyEvent { event ->
-                    if (event.key == Key.DirectionRight) {
-                        if (event.type == KeyEventType.KeyDown) focusChannels()
-                        true
-                    } else false
+                    when (event.key) {
+                        Key.DirectionRight -> {
+                            if (event.type == KeyEventType.KeyDown) focusChannels()
+                            true
+                        }
+                        else -> false
+                    }
                 },
                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),

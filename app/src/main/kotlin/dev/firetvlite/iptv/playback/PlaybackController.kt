@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
 import java.io.Closeable
+import java.util.Locale
 
 /** What to play. */
 data class StreamRequest(
@@ -207,6 +208,7 @@ class PlaybackController internal constructor(
 
     private fun applyQuality(player: ExoPlayer) {
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setPreferredAudioLanguages(*AudioPreferences.languages(listOf(Locale.getDefault())).toTypedArray())
             .setMaxVideoSize(if (preview) 960 else Int.MAX_VALUE, if (preview) 540 else Int.MAX_VALUE)
             .setMaxVideoBitrate(if (preview) 1_500_000 else Int.MAX_VALUE)
             .build()

@@ -6,7 +6,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
-import androidx.paging.cachedIn
 import dev.firetvlite.iptv.FireLiteApplication
 import dev.firetvlite.iptv.data.db.ChannelRow
 import dev.firetvlite.iptv.data.db.FavoriteEntity
@@ -88,8 +87,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** The channels of the selected group, loaded page by page. */
-    val channels: Flow<PagingData<ChannelRow>> = combine(sourceId, mutableSelectedGroup) { id, key -> id to key }
-        .flatMapLatest { (id, key) ->
+    fun channels(key: GroupKey): Flow<PagingData<ChannelRow>> = sourceId
+        .flatMapLatest { id ->
             if (id == null) {
                 flowOf(PagingData.empty<ChannelRow>())
             } else {
@@ -103,7 +102,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 }.flow
             }
         }
-        .cachedIn(viewModelScope)
 
     fun toggleFavorite(streamUrl: String) {
         viewModelScope.launch {

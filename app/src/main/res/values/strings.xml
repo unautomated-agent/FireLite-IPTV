@@ -30,7 +30,7 @@
         <item quantity="one">%d kanał</item>
         <item quantity="few">%d kanały</item>
         <item quantity="many">%d kanałów</item>
-        <item quantity="other">%d kanału</item>
+        <item quantity="other">%d kanałów</item>
     </plurals>
 
     <!-- Settings and app updates -->
@@ -74,7 +74,7 @@
         <item quantity="one">%d dzień wstecz</item>
         <item quantity="few">%d dni wstecz</item>
         <item quantity="many">%d dni wstecz</item>
-        <item quantity="other">%d dnia wstecz</item>
+        <item quantity="other">%d dni wstecz</item>
     </plurals>
 
     <!-- Player -->

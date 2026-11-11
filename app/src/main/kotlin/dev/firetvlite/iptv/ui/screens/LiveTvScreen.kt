@@ -15,11 +15,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListState
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -27,15 +30,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
+import androidx.paging.LoadState
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.db.ChannelRow
 import dev.firetvlite.iptv.data.library.GroupKey
@@ -100,15 +107,41 @@ private fun ChannelBrowser(
 ) {
     val groups by library.groups.collectAsState()
     val selected by library.selectedGroup.collectAsState()
-    val pagingItems = library.channels.collectAsLazyPagingItems()
+    val pagingItems = key(selected) {
+        remember(selected) { library.channels(selected) }.collectAsLazyPagingItems()
+    }
     val scope = rememberCoroutineScope()
-    val focusManager = LocalFocusManager.current
+    val groupListState = rememberLazyListState()
+    val channelListState = remember(selected) { LazyListState() }
+    val groupRequesters = remember(groups.map { it.key }) { groups.associate { it.key to FocusRequester() } }
+    val firstChannelFocus = remember(selected) { FocusRequester() }
+    fun focusChannels() {
+        if (pagingItems.itemCount == 0) return
+        scope.launch {
+            channelListState.scrollToItem(0)
+            firstChannelFocus.requestFocusWhenReady()
+        }
+    }
+    fun focusSelectedGroup() {
+        scope.launch {
+            val index = groups.indexOfFirst { it.key == selected }
+            if (index >= 0) {
+                groupListState.scrollToItem(index)
+                groupRequesters[selected]?.requestFocusWhenReady()
+            }
+        }
+    }
 
-    var focusedChannel by remember { mutableStateOf<ChannelRow?>(null) }
+    var focusedChannel by remember(selected) { mutableStateOf<ChannelRow?>(null) }
     val initialGroup = remember { library.selectedGroup.value }
-    val initialFocus = remember { FocusRequester() }
     LaunchedEffect(groups.isNotEmpty()) {
-        if (groups.isNotEmpty()) initialFocus.requestFocusWhenReady()
+        if (groups.isNotEmpty()) {
+            val index = groups.indexOfFirst { it.key == initialGroup }
+            if (index >= 0) {
+                groupListState.scrollToItem(index)
+                groupRequesters[initialGroup]?.requestFocusWhenReady()
+            }
+        }
     }
 
     Row(
@@ -124,6 +157,13 @@ private fun ChannelBrowser(
                 modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
             )
             LazyColumn(
+                state = groupListState,
+                modifier = Modifier.onPreviewKeyEvent { event ->
+                    if (event.key == Key.DirectionRight) {
+                        if (event.type == KeyEventType.KeyDown) focusChannels()
+                        true
+                    } else false
+                },
                 contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
             ) {
@@ -132,8 +172,8 @@ private fun ChannelBrowser(
                         group = group,
                         selected = group.key == selected,
                         onFocused = { library.selectGroup(group.key) },
-                        onClick = { focusManager.moveFocus(FocusDirection.Right) },
-                        modifier = if (group.key == initialGroup) Modifier.focusRequester(initialFocus) else Modifier,
+                        onClick = { focusChannels() },
+                        modifier = Modifier.focusRequester(groupRequesters.getValue(group.key)),
                     )
                 }
             }
@@ -145,30 +185,40 @@ private fun ChannelBrowser(
                 style = FireLiteTheme.typography.headline,
                 modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
             )
-            if (pagingItems.itemCount == 0) {
-                FLText(
-                    text = stringResource(R.string.live_empty_group),
-                    style = FireLiteTheme.typography.body,
-                    modifier = Modifier.padding(start = 4.dp, top = 8.dp),
-                )
-            }
-            LazyColumn(
-                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-            ) {
-                items(count = pagingItems.itemCount, key = pagingItems.itemKey { it.channel.id }) { index ->
-                    val row = pagingItems[index]
-                    if (row != null) {
-                        ChannelRowItem(
-                            row = row,
-                            onFocused = { focusedChannel = row },
-                            onClick = {
-                                scope.launch {
-                                    library.zapContext(selected)?.let { player.open(it, index) }
-                                }
-                            },
-                            onMenu = { library.toggleFavorite(row.channel.streamUrl) },
-                        )
+            Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
+                if (pagingItems.itemCount == 0 && pagingItems.loadState.refresh is LoadState.NotLoading) {
+                    FLText(
+                        text = stringResource(R.string.live_empty_group),
+                        style = FireLiteTheme.typography.body,
+                        modifier = Modifier.padding(start = 4.dp, top = 8.dp),
+                    )
+                }
+                LazyColumn(
+                    state = channelListState,
+                    modifier = Modifier.fillMaxSize().onPreviewKeyEvent { event ->
+                        if (event.key == Key.DirectionLeft) {
+                            if (event.type == KeyEventType.KeyDown) focusSelectedGroup()
+                            true
+                        } else false
+                    },
+                    contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    items(count = pagingItems.itemCount, key = pagingItems.itemKey { it.channel.id }) { index ->
+                        val row = pagingItems[index]
+                        if (row != null) {
+                            ChannelRowItem(
+                                row = row,
+                                modifier = if (index == 0) Modifier.focusRequester(firstChannelFocus) else Modifier,
+                                onFocused = { focusedChannel = row },
+                                onClick = {
+                                    scope.launch {
+                                        library.zapContext(selected)?.let { player.open(it, index) }
+                                    }
+                                },
+                                onMenu = { library.toggleFavorite(row.channel.streamUrl) },
+                            )
+                        }
                     }
                 }
             }
@@ -216,13 +266,14 @@ private fun ChannelRowItem(
     onFocused: () -> Unit,
     onClick: () -> Unit,
     onMenu: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val channel = row.channel
     FocusSurface(
         onClick = onClick,
         onFocusChanged = { focused -> if (focused) onFocused() },
         onMenuKey = onMenu,
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(56.dp),
     ) {

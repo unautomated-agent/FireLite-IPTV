@@ -20,10 +20,12 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.dp
 import dev.firetvlite.iptv.ui.components.FLText
+import dev.firetvlite.iptv.ui.components.WarsawClockBox
 import dev.firetvlite.iptv.ui.navigation.AppNavigationRail
 import dev.firetvlite.iptv.ui.navigation.Destination
 import dev.firetvlite.iptv.ui.navigation.RailCollapsedWidth
@@ -103,7 +105,7 @@ private fun AppShell(
             targetState = current,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = RailCollapsedWidth, top = if (mode == PlayerMode.MainMenu) 148.dp else 0.dp),
+                .padding(start = RailCollapsedWidth, top = if (mode == PlayerMode.MainMenu) 148.dp else 56.dp),
             transitionSpec = {
                 (fadeIn(tween(durationMillis = 260, delayMillis = 60)) +
                     slideInVertically(tween(durationMillis = 300)) { fullHeight -> fullHeight / 28 }) togetherWith
@@ -171,5 +173,6 @@ private fun AppShell(
                 playerViewModel.showMainMenu()
                 navigate(if (settings) Destination.Settings else Destination.Home)
             })
+        WarsawClockBox(Modifier.align(Alignment.TopStart).padding(16.dp))
     }
 }

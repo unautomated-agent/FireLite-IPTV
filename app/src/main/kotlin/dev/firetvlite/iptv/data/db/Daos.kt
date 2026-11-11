@@ -143,11 +143,13 @@ interface ChannelDao {
 
 @Dao
 interface UserDao {
-    @Query("SELECT COUNT(*) FROM favorite")
-    fun observeFavoriteCount(): Flow<Int>
+    @Query("SELECT COUNT(*) FROM channel c INNER JOIN favorite f ON f.streamUrl = c.streamUrl " +
+        "WHERE c.sourceId = :sourceId")
+    fun observeFavoriteCount(sourceId: Long): Flow<Int>
 
-    @Query("SELECT COUNT(*) FROM recent")
-    fun observeRecentCount(): Flow<Int>
+    @Query("SELECT COUNT(*) FROM (SELECT c.id FROM channel c INNER JOIN recent r ON r.streamUrl = c.streamUrl " +
+        "WHERE c.sourceId = :sourceId ORDER BY r.watchedAt DESC LIMIT 30)")
+    fun observeRecentCount(sourceId: Long): Flow<Int>
 
     @Query("SELECT EXISTS(SELECT 1 FROM favorite WHERE streamUrl = :streamUrl)")
     fun observeIsFavorite(streamUrl: String): Flow<Boolean>

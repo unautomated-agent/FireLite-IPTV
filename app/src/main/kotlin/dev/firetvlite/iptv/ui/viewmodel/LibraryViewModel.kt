@@ -82,8 +82,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 combine(
                     channelDao.observeGroups(id),
                     channelDao.observeCount(id),
-                    userDao.observeFavoriteCount(),
-                    userDao.observeRecentCount(),
+                    userDao.observeFavoriteCount(id),
+                    userDao.observeRecentCount(id),
                 ) { named, all, favorites, recent ->
                     buildList {
                         add(GroupItem(GroupKey.Favorites, favorites))

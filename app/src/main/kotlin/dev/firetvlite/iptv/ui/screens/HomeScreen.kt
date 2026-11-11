@@ -23,6 +23,7 @@ import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.db.ChannelRow
 import dev.firetvlite.iptv.data.library.GroupKey
 import dev.firetvlite.iptv.data.library.ListZapContext
+import dev.firetvlite.iptv.data.library.ChannelTabPolicy
 import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.PrimaryButton
 import dev.firetvlite.iptv.ui.components.UpdateBanner
@@ -48,11 +49,9 @@ fun HomeScreen(
     val emptyFocus = remember { FocusRequester() }
     LaunchedEffect(active, returnTarget?.token, recent.isNotEmpty(), favorites.isNotEmpty(), source?.id) {
         if (!active) return@LaunchedEffect
-        val targetSection = sections.indexOfFirst { (group, rows) ->
-            group == returnTarget?.group && rows.any { it.channel.streamUrl == returnTarget?.channel?.streamUrl }
-        }.takeIf { it >= 0 } ?: sections.indexOfFirst { (_, rows) ->
-            rows.any { it.channel.streamUrl == returnTarget?.channel?.streamUrl }
-        }.takeIf { it >= 0 } ?: sections.indexOfFirst { it.second.isNotEmpty() }
+        val targetSection = ChannelTabPolicy.homeSection(
+            sections.map { (group, rows) -> group to rows.map { it.channel.streamUrl } },
+            returnTarget?.group, returnTarget?.channel?.streamUrl)
         if (targetSection < 0) emptyFocus.requestFocusWhenReady()
         else {
             listState.scrollToItem(targetSection)

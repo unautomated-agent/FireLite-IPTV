@@ -7,8 +7,8 @@ enum class PlayerMode {
     val fullFrame: Boolean get() = this == Fullscreen || this == Overlay
     val recordsWatch: Boolean get() = this == Fullscreen
 
-    fun afterBack(): PlayerMode = when (this) {
-        Fullscreen -> Preview
+    fun afterBack(previewAllowed: Boolean = true): PlayerMode = when (this) {
+        Fullscreen -> if (previewAllowed) Preview else Closed
         Overlay -> Fullscreen
         else -> this
     }

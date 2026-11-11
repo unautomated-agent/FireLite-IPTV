@@ -213,7 +213,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun openOverlay() {
-        closeTimeline()
         if (mutableMode.value != PlayerMode.Fullscreen) return
         settlePendingZap()
         setMode(PlayerMode.Overlay)

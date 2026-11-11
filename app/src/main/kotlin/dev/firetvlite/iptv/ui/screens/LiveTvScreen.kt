@@ -81,6 +81,7 @@ import dev.firetvlite.iptv.ui.viewmodel.GroupItem
 import dev.firetvlite.iptv.ui.viewmodel.LibraryViewModel
 import dev.firetvlite.iptv.ui.viewmodel.PlayerViewModel
 import dev.firetvlite.iptv.ui.viewmodel.BrowserTarget
+import dev.firetvlite.iptv.data.library.ChannelTabPolicy
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -268,6 +269,9 @@ private fun ChannelBrowser(
         if (index != null) {
             pendingRestore = group to index
             library.selectGroup(group)
+        } else {
+            pendingRestore = null
+            handledRestore = target.token
         }
     }
     LaunchedEffect(active, pendingRestore, selected, pagingItems.itemCount) {
@@ -358,7 +362,9 @@ private fun ChannelBrowser(
                     GroupRow(
                         group = group,
                         selected = group.key == selected,
-                        onFocused = { library.selectGroup(group.key) },
+                        onFocused = {
+                            if (ChannelTabPolicy.canSelectGroup(restore?.token, handledRestore)) library.selectGroup(group.key)
+                        },
                         onClick = { focusChannels() },
                         modifier = Modifier.focusRequester(groupRequesters.getValue(group.key)),
                         translucent = overlay,

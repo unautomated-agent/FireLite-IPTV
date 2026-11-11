@@ -35,6 +35,7 @@ import dev.firetvlite.iptv.ui.theme.ReferenceDensity
 import dev.firetvlite.iptv.ui.viewmodel.LibraryViewModel
 import dev.firetvlite.iptv.ui.viewmodel.PlayerViewModel
 import dev.firetvlite.iptv.ui.viewmodel.BrowserTarget
+import dev.firetvlite.iptv.playback.PlayerMode
 import dev.firetvlite.iptv.update.UpdateViewModel
 
 /** Root of the UI: normalised density, theme and the navigation shell. */
@@ -151,7 +152,7 @@ private fun AppShell(
         )
         PlayerLayer(viewModel = playerViewModel, library = libraryViewModel, previewBounds = previewBounds,
             onBackToBrowser = {
-                if (current == Destination.Live) playerViewModel.backToPreview()
+                if (mode.afterBack(current == Destination.Live) == PlayerMode.Preview) playerViewModel.backToPreview()
                 else tabReturn = playerViewModel.closeToTab()
             })
     }

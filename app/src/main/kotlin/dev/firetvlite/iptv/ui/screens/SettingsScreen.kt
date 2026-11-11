@@ -2,12 +2,14 @@ package dev.firetvlite.iptv.ui.screens
 
 import android.net.Uri
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -16,20 +18,29 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.firetvlite.iptv.R
+import dev.firetvlite.iptv.CrashReportStore
 import dev.firetvlite.iptv.data.db.SourceEntity
 import dev.firetvlite.iptv.data.library.ImportFailure
 import dev.firetvlite.iptv.data.library.ImportState
 import dev.firetvlite.iptv.data.library.LibraryRepository
 import dev.firetvlite.iptv.ui.components.FLText
+import dev.firetvlite.iptv.ui.components.FocusSurface
 import dev.firetvlite.iptv.ui.components.LabeledTextField
 import dev.firetvlite.iptv.ui.components.PrimaryButton
 import dev.firetvlite.iptv.ui.components.ProgressBar
@@ -44,6 +55,10 @@ import dev.firetvlite.iptv.update.pendingRelease
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val WarningColor = Color(0xFFFFB74D)
 
@@ -88,6 +103,50 @@ fun SettingsScreen(
             onInstall = onInstallUpdate,
             onOpenInstallSettings = onOpenInstallSettings,
         )
+        CrashSection()
+    }
+}
+
+@Composable
+private fun CrashSection() {
+    val context = LocalContext.current
+    val store = remember(context) { CrashReportStore(File(context.filesDir, "last-crash.txt")) }
+    var report by remember { mutableStateOf<String?>(null) }
+    val scroll = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(store) { report = withContext(Dispatchers.IO) { store.read() } }
+    val text = report ?: return
+    SettingsCard {
+        FLText(text = stringResource(R.string.crash_section), style = FireLiteTheme.typography.headline)
+        FLText(text = stringResource(R.string.crash_scroll_hint), style = FireLiteTheme.typography.label)
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            FocusSurface(
+                onClick = {},
+                focusedScale = 1f,
+                modifier = Modifier.weight(1f).height(180.dp).onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown &&
+                        (event.key == Key.DirectionDown || event.key == Key.DirectionUp)
+                    ) {
+                        scope.launch { scroll.animateScrollBy(if (event.key == Key.DirectionDown) 120f else -120f) }
+                        true
+                    } else false
+                },
+            ) {
+                FLText(
+                    text = text,
+                    style = FireLiteTheme.typography.body,
+                    modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(12.dp),
+                )
+            }
+            SecondaryButton(
+                text = stringResource(R.string.crash_clear),
+                onClick = {
+                    scope.launch {
+                        if (withContext(Dispatchers.IO) { store.clear() }) report = null
+                    }
+                },
+            )
+        }
     }
 }
 

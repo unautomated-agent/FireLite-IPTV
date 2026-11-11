@@ -1,6 +1,7 @@
 package dev.firetvlite.iptv
 
 import android.app.Application
+import java.io.File
 import dev.firetvlite.iptv.data.db.FireLiteDatabase
 import dev.firetvlite.iptv.data.library.LibraryRepository
 import dev.firetvlite.iptv.data.playlist.PlaylistImporter
@@ -35,6 +36,13 @@ class FireLiteApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        val reports = CrashReportStore(File(filesDir, "last-crash.txt"))
+        Thread.setDefaultUncaughtExceptionHandler(
+            reports.handler(
+                "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
+                Thread.getDefaultUncaughtExceptionHandler(),
+            ),
+        )
         container = AppContainer(this)
     }
 }

@@ -92,7 +92,9 @@ class PlaybackController internal constructor(
         this(scope, createPlayer, {})
 
     constructor(context: Context, scope: CoroutineScope) : this(scope, { httpFactory ->
-        val renderers = DefaultRenderersFactory(context).setEnableDecoderFallback(true)
+        val renderers = DefaultRenderersFactory(context)
+            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
+            .setEnableDecoderFallback(true)
         ExoPlayer.Builder(context, renderers)
             .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
             .build().apply {

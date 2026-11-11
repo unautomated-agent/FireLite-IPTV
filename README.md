@@ -5,6 +5,13 @@ Kotlin, Jetpack Compose, Media3. The UI language is Polish; code and documentati
 
 FireLite ships **no channels or content**. You connect sources you are allowed to use.
 
+## License
+
+FireLite is distributed under GPL-3.0 (see [LICENSE](LICENSE)) because it includes the GPL-3.0
+Jellyfin FFmpeg decoder. Keep the license and provide corresponding source, including the decoder,
+when distributing builds. Decoder source: https://github.com/jellyfin/jellyfin-androidx-media/tree/v1.5.0+1.
+Other bundled dependencies retain their respective licenses.
+
 ## Status
 
 `2.2.0-alpha.1`: live TV. An M3U playlist is imported into a local database, browsed by group (favourites,
@@ -148,8 +155,9 @@ One press downloads the APK and opens Android's installer.
 ### Playback compatibility and diagnostics
 
 - Audio selection prefers Polish (`pl`/`pol`), then the device language. Preview video limits remain unchanged.
-- Media3 decoder fallback remains enabled. No FFmpeg dependency or extension-renderer preference is included;
-  the separately licensed audio extension is pending approval and can be added independently.
+- Media3 1.5.1 uses the published Jellyfin FFmpeg extension `1.5.0+1`, with extension renderers preferred
+  and platform decoder fallback enabled. FFmpeg audio decodes supported formats to PCM in-app;
+  device/output capabilities and the provider's actual media formats still determine successful playback.
 - Settings diagnostics retain the last handled playback error and the last successful playback snapshot,
   including live/archive/preview mode, selected and available formats, and the audio decoder name.
   Credentials and stream URL paths are hidden before writing either record to internal storage.

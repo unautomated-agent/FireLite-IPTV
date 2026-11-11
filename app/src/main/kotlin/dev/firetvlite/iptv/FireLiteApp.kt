@@ -96,7 +96,7 @@ private fun AppShell(
             .fillMaxSize()
             .background(FireLiteTheme.colors.background),
     ) {
-        AnimatedContent(
+        if (mainMenuVisible) AnimatedContent(
             targetState = current,
             modifier = Modifier
                 .fillMaxSize()

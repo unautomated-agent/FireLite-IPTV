@@ -58,7 +58,7 @@ class XtreamApiTest {
             .single().copy(streamUrl = channel().streamUrl))
     }
 
-    @Test fun enrichmentIsScopedToTheQueriedCredentialsAndStreamId() {
+    @Test fun timezoneIsScopedToCredentialsAndArchiveMetadataToStreamId() {
         val result = XtreamApi(FakeReader(live, info)).refresh(source, address, emptyList())
         val outsiders = listOf(
             "https://provider:8443/live/another-user/test%2Bpassword/12.m3u8",
@@ -74,7 +74,9 @@ class XtreamApiTest {
         assertEquals(7, enriched.first().catchupDays)
         assertEquals("TVN.PL", enriched.first().tvgId)
         assertEquals("Europe/Warsaw", enriched.first().catchupTimezone)
-        assertEquals(outsiders, enriched.drop(1))
+        assertEquals(outsiders.mapIndexed { index, row ->
+            if (index in 4..5) row.copy(catchupTimezone = "Europe/Warsaw") else row
+        }, enriched.drop(1))
         assertTrue(result.enrich(emptyList(), address).isEmpty())
     }
 

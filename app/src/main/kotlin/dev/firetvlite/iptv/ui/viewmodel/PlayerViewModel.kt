@@ -179,6 +179,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 activeIndex = index
                 applyCatchup(first, archiveTime)
             } else if (!sameChannel || archiveStartMs != null || status.value is PlaybackStatus.Failed) startLive(first)
+            markWatched(first)
         }
     }
 
@@ -237,6 +238,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             show(next) // the info bar shows the new name at once
             delay(ZAP_DEBOUNCE_MS)
             startLive(next)
+            markWatched(next)
         }
     }
 
@@ -367,6 +369,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         fallbackStartMs = System.currentTimeMillis()
         playback.play(StreamRequest(channel.streamUrl, userAgent))
         updateFrame()
+    }
+
+    private fun markWatched(channel: ChannelEntity) {
+        if (!mutableMode.value.recordsWatch) return
         viewModelScope.launch {
             userDao.markWatched(RecentEntity(channel.streamUrl, System.currentTimeMillis()))
             userDao.trimRecent()

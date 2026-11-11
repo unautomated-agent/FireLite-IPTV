@@ -6,6 +6,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlayerModeTest {
+    @Test fun onlyExplicitFullscreenPlaybackRecordsWatchHistory() {
+        assertFalse(PlayerMode.Closed.recordsWatch)
+        assertFalse(PlayerMode.Preview.recordsWatch)
+        assertFalse(PlayerMode.Overlay.recordsWatch)
+        assertTrue(PlayerMode.Fullscreen.recordsWatch)
+    }
     @Test fun backKeepsTheStreamAndClosesOnlyTheTopLayer() {
         assertEquals(PlayerMode.Fullscreen, PlayerMode.Overlay.afterBack())
         assertEquals(PlayerMode.Preview, PlayerMode.Fullscreen.afterBack())

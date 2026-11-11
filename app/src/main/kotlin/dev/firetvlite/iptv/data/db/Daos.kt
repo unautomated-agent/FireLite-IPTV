@@ -7,10 +7,13 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import dev.firetvlite.iptv.data.library.SourcePolicy
+import dev.firetvlite.iptv.data.library.ChannelSearch
 import kotlinx.coroutines.flow.Flow
 
 private const val CHANNEL_ROW =
     "SELECT c.*, EXISTS(SELECT 1 FROM favorite f WHERE f.streamUrl = c.streamUrl) AS isFavorite FROM channel c"
+
+data class ArchiveTypeCount(val type: String, val count: Int)
 
 @Dao
 interface SourceDao {
@@ -60,6 +63,16 @@ interface SourceDao {
 
 @Dao
 interface ChannelDao {
+    @Query("SELECT streamUrl FROM channel WHERE sourceId=:sourceId ORDER BY position LIMIT 1")
+    fun observeDiagnosticSample(sourceId: Long): Flow<String?>
+
+    @Query("SELECT type, COUNT(*) AS count FROM (SELECT LOWER(TRIM(COALESCE(catchupType, " +
+        "CASE WHEN LENGTH(TRIM(COALESCE(catchupSource,'')))>0 THEN 'default' ELSE '' END))) AS type, catchupSource " +
+        "FROM channel WHERE sourceId=:sourceId AND catchupDays>0) " +
+        "WHERE type IN ('shift','timeshift','xc','flussonic','fs') OR " +
+        "(type IN ('default','append') AND LENGTH(TRIM(COALESCE(catchupSource,'')))>0) GROUP BY type")
+    fun observeArchiveTypes(sourceId: Long): Flow<List<ArchiveTypeCount>>
+
     @Query("SELECT COALESCE(MAX(c.catchupDays), 0) FROM channel c WHERE c.sourceId=:sourceId " +
         "AND (:groupName IS NULL OR c.groupName=:groupName) " +
         "AND (:favorites=0 OR EXISTS(SELECT 1 FROM favorite f WHERE f.streamUrl=c.streamUrl)) " +
@@ -97,6 +110,18 @@ interface ChannelDao {
             "WHERE c.sourceId = :sourceId ORDER BY rec.watchedAt DESC LIMIT 30",
     )
     fun pagingRecent(sourceId: Long): PagingSource<Int, ChannelRow>
+
+    @Query("$CHANNEL_ROW INNER JOIN recent rec ON rec.streamUrl=c.streamUrl " +
+        "WHERE c.sourceId=:sourceId ORDER BY rec.watchedAt DESC LIMIT 30")
+    fun observeRecentRows(sourceId: Long): Flow<List<ChannelRow>>
+
+    @Query("$CHANNEL_ROW INNER JOIN favorite fav ON fav.streamUrl=c.streamUrl " +
+        "WHERE c.sourceId=:sourceId ORDER BY fav.addedAt DESC LIMIT 30")
+    fun observeHomeFavorites(sourceId: Long): Flow<List<ChannelRow>>
+
+    @Query("$CHANNEL_ROW WHERE c.sourceId=:sourceId AND ${ChannelSearch.NAME_SQL} LIKE :pattern ESCAPE '\\' " +
+        "ORDER BY c.position LIMIT ${ChannelSearch.LIMIT}")
+    fun observeSearch(sourceId: Long, pattern: String): Flow<List<ChannelRow>>
 
     // ---- Neighbours for channel up/down while watching ----
 

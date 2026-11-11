@@ -14,6 +14,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class XmlTvParserTest {
+    @Test fun streamsLargeGuideAndCanonicalizesProgrammeChannelIdsForMatching() = runBlocking {
+        val xml = "<tv><channel id='TVN.PL'><display-name>TVN</display-name></channel>" +
+            "<programme channel='tvn.pl ' start='20261111193000' stop='20261111203000 +0000'><title>News</title></programme>".repeat(10_000) + "</tv>"
+        var count = 0
+        var key = ""
+        XmlTvParser.parse(ByteArrayInputStream(xml.toByteArray()), EpgWindow(Long.MIN_VALUE, Long.MAX_VALUE),
+            onChannel = { id, _ -> key = dev.firetvlite.iptv.data.epg.EpgMatching.id(id) },
+            onProgramme = { assertEquals(key, dev.firetvlite.iptv.data.epg.EpgMatching.id(it.channelId)); count++ })
+        assertEquals(10_000, count)
+    }
+
     private val now = Instant.parse("2026-11-11T19:30:00Z").toEpochMilli()
     private val window = EpgWindow.around(now, 7)
     private val sample = """

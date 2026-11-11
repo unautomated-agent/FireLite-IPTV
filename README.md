@@ -11,12 +11,55 @@ FireLite ships **no channels or content**. You connect sources you are allowed t
 recently watched, all channels), played with Media3, and can be rewound and fast-forwarded where the stream
 allows it. App updates are installed from inside the app.
 
-Planned (see the concept document): multiple sources (M3U, Xtream Codes, Stalker), a programme guide (XMLTV),
-search, movies and series with posters, seasons, history and resume.
+Start shows the active playlist's history and favourites. Programme Guide offers the XMLTV grid without preview;
+Search finds channels by name. Movies and Series are not exposed as placeholder destinations.
+
+Planned (see the concept document): additional source protocols (Xtream Codes, Stalker), movies and series
+with posters, seasons, history and resume.
 
 ## Live TV
 
+- **Provider compatibility**: M3U guide attributes `x-tvg-url`, `url-tvg`, `tvg-url` accept mixed case,
+  double/single quotes or bare values, multiple comma/space-separated feeds and separate option headers.
+  XMLTV feeds are streamed in bounded batches, merged by case-insensitive IDs (including `.pl` aliases),
+  and duplicate channel/time intervals keep the first feed's programme. Matching also uses saved `tvg-name`
+  and normalized display names. Offset-free XMLTV timestamps follow the specification's UTC default.
+  With no guide URL, Xtream `get.php` or live paths derive the metadata-only `xmltv.php` endpoint.
+- **Archive metadata**: `catchup-type`, header defaults, `tvg-rec`, `timeshift`, `catchup-time` and
+  `default/append/shift/flussonic/fs/xc` formats are recognized. `catchup-time` values of at least 86400
+  are interpreted as seconds; smaller values as days. A declared archive without retention uses 7 days;
+  explicit zero days disables it. Xtream paths use duration rounded up to minutes, the live extension
+  (`.ts`/`.m3u8`) and server-local `YYYY-MM-DD:HH-MM` (UTC fallback).
+  After parsing an Xtream playlist, including manual and normal daily playlist refreshes, `player_api.php`
+  metadata supplies archive retention by stream ID and missing EPG IDs. A working M3U archive wins ties
+  or longer retention; otherwise positive API retention enables XC. Explicit M3U zero can therefore be
+  upgraded by positive API entitlement. A successful API refresh replaces the cache, including removals;
+  failures retain the previous same-account metadata without failing the playlist import. Account changes
+  never reuse another account's cache. Both API calls use the ordinary metadata HTTP path, 5-second
+  connect/read timeouts, a 15-second deadline per response (plus at most one blocked read timeout),
+  a 32-million-character/200,000-row limit and no redirects. JSON is read one object at a time.
+  `server_info.timezone` supplies historical DST rules; missing/invalid zones fall back to UTC, while
+  a failed server-info request retains the last known timezone. Device or server clock drift is not added
+  to absolute programme timestamps. Diagnostics shows API outcomes, `tv_archive` count and the timezone.
+  Detection is not proof of provider entitlement. Diagnostic archive type counts aggregate declarations
+  with positive retention; they do not probe URLs or validate provider availability.
+- **Diagnostics**: Settings → Diagnostyka shows active-source guide URLs, import time/count/error,
+  matched channels, archive counts/types and the last crash. Usernames, passwords and query values are
+  masked before display/export. The QR contains UTF-8 text limited to 1800 bytes (the crash tail may be
+  truncated); scan and copy it with a phone. QR generation is local and never contacts a stream.
+- **Screen saver**: the shared PlayerView keeps the screen awake while visible playback is running or
+  buffering, including preview/overlay. Pausing, closing or disposing it releases that request.
+
 - **Playlist**: Settings, section "Lista kanalow". Users of FireLite 1.x keep their playlist address automatically.
+- **Start**: recent channels and up to 30 favourites from the active playlist; OK starts fullscreen playback.
+  No preview/autoplay runs on Start, Programme Guide, Favourites or Search. Back from their fullscreen player
+  stops the stream and restores the played row; only Live TV returns to a continuing preview.
+- **Programme Guide**: the full-width paged Live TV grid with group switching, but without preview.
+  Rewind/Fast-forward shift the window by one hour; Play/Pause jumps to now. Future/unavailable cells cannot play.
+- **Favourites**: active-playlist favourites, paged with current EPG; OK plays, long OK removes the favourite.
+- **Search**: OK edits the remote-first search field. Queries are debounced 300 ms, limited to 200 channels,
+  and scoped to the active playlist. ASCII case and Polish diacritics are normalized on both sides of LIKE;
+  SQL wildcard characters in names are literal. Other languages' Unicode case folding is not guaranteed.
 - **Browsing**: groups, favourites (Menu button), recently watched. Lists are paged from the database, so tens of
   thousands of channels stay fast.
 - **Watching**: OK starts a channel. Up/Down change the channel. Left/Right jump 10 s where the stream is seekable
@@ -27,12 +70,19 @@ search, movies and series with posters, seasons, history and resume.
 - **Live preview** reuses the single stream and the same PlayerView/ExoPlayer as fullscreen. Focus a channel
   for 800 ms to switch preview; OK expands it without reconnecting. Back shrinks fullscreen into the browser
   and restores focus to the playing channel. Leaving the Live tab stops playback.
-- **Fullscreen remote**: Menu opens the channel overlay; long-press OK toggles favourite (short OK shows info).
-  Back returns to preview. Up/Down zap; Left/Right seek 10 seconds; Rewind opens the channel timeline;
-  fast-forward seeks 30 seconds or returns to live.
+- **Fullscreen remote**: Menu or Rewind opens the current channel's programme history; short OK opens the
+  channel overlay; long-press OK toggles favourite without opening the overlay.
+  Back returns to preview. Up/Down or Channel Up/Down zap; Left/Right seek 10 seconds;
+  Play/Pause pauses/resumes live or archive playback; fast-forward seeks 30 seconds or returns to live.
   Long-press Left jumps to the current programme's start when catch-up is available. Archive seeks stay inside
   a seekable archive or re-request it after debounce; reaching the live edge returns to live.
-- **Overlay remote**: Up/Down browse without zapping; Right on a channel opens its timeline;
+- **Programme history**: a translucent right-side list leaves video full-size behind it. Na żywo is at the top,
+  followed by programmes newest first. Up/Down select; one OK starts the programme from its start (clipped to
+  the archive/window limit), including the current programme when rewind is available. Na żywo returns live.
+  The next programme is shown dimmed above the list, not selectable. Without archive or a seekable window,
+  only Na żywo is selectable. Back or Menu closes without changing playback. Opening/browsing history never
+  previews, prefetches or probes a stream; only final OK uses the existing gated playback path.
+- **Overlay remote**: Up/Down browse without zapping; Right on a channel opens its history;
   OK plays and closes the panel; Menu toggles the focused
   channel's favourite. Left reveals groups, Right returns to channels, Left from groups or Back closes the overlay.
 

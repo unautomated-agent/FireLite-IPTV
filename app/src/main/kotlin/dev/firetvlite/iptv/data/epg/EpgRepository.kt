@@ -27,7 +27,7 @@ import kotlinx.coroutines.sync.withLock
 sealed interface EpgState {
     data object Running : EpgState
     data class Done(val count: Int) : EpgState
-    data object Failed : EpgState
+    data class Failed(val detail: String) : EpgState
 }
 
 data class CurrentAndNext(val current: ProgrammeEntity?, val next: ProgrammeEntity?)
@@ -74,7 +74,7 @@ class EpgRepository(private val database: FireLiteDatabase, private val scope: C
                     throw e
                 } catch (e: Exception) {
                     currentCoroutineContext().ensureActive()
-                    mutableStates.update { it + (sourceId to EpgState.Failed) }
+                    mutableStates.update { it + (sourceId to EpgState.Failed("${e.javaClass.simpleName}: ${e.message.orEmpty()}")) }
                 }
             }
         }

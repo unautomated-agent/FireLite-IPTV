@@ -11,10 +11,14 @@ import dev.firetvlite.iptv.data.db.ChannelRow
 import dev.firetvlite.iptv.data.db.FavoriteEntity
 import dev.firetvlite.iptv.data.db.SourceEntity
 import dev.firetvlite.iptv.data.library.GroupKey
+import dev.firetvlite.iptv.data.library.ChannelSearch
 import dev.firetvlite.iptv.data.library.ImportState
 import dev.firetvlite.iptv.data.library.LibraryRepository
 import dev.firetvlite.iptv.data.library.ListZapContext
 import dev.firetvlite.iptv.data.library.QueryZapContext
+import dev.firetvlite.iptv.data.library.SourceDiagnostics
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOn
 import dev.firetvlite.iptv.data.library.ZapContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -30,6 +34,9 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.emitAll
 
 /** An entry of the group list: a [GroupKey] with the number of channels in it. */
 data class GroupItem(
@@ -55,6 +62,36 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     val sources = repository.sources.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val sourceId: Flow<Long?> = source.map { it?.id }.distinctUntilChanged()
+    val diagnostics: Flow<SourceDiagnostics> = sourceId.flatMapLatest { id ->
+        if (id == null) flowOf(SourceDiagnostics()) else combine(channelDao.observeCount(id), channelDao.observeArchiveTypes(id),
+            channelDao.observeDiagnosticSample(id), container.database.epgDao().observeMatchedCount(id)) { count, types, sample, matched ->
+            SourceDiagnostics.from(count, matched, types, sample)
+        }
+    }.flowOn(Dispatchers.Default)
+
+    val recentRows = sourceId.flatMapLatest { id ->
+        if (id == null) flowOf(emptyList()) else channelDao.observeRecentRows(id)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    val homeFavorites = sourceId.flatMapLatest { id ->
+        if (id == null) flowOf(emptyList()) else channelDao.observeHomeFavorites(id)
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    private val mutableSearchText = MutableStateFlow("")
+    val searchText = mutableSearchText.asStateFlow()
+    val searchRows = combine(sourceId, searchText.map { ChannelSearch.pattern(it) }.distinctUntilChanged()) { id, pattern ->
+        id to pattern
+    }.flatMapLatest { (id, pattern) ->
+        flow {
+            emit(emptyList<ChannelRow>())
+            if (id != null && pattern != null) {
+                delay(300)
+                emitAll(channelDao.observeSearch(id, pattern))
+            }
+        }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+
+    fun setSearchText(text: String) { mutableSearchText.value = text }
 
     val channelCount: StateFlow<Int> = sourceId
         .flatMapLatest { id -> if (id == null) flowOf(0) else channelDao.observeCount(id) }
@@ -121,6 +158,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 userDao.addFavorite(FavoriteEntity(streamUrl, System.currentTimeMillis()))
             }
         }
+    }
+
+    fun removeFavorite(streamUrl: String) {
+        viewModelScope.launch { userDao.removeFavorite(streamUrl) }
     }
 
     suspend fun channelIndex(key: GroupKey, url: String): Int? {

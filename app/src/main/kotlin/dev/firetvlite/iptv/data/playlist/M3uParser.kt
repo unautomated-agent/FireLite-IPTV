@@ -13,6 +13,7 @@ data class ParsedChannel(
     val catchupType: String?,
     val catchupSource: String?,
     val catchupDays: Int,
+    val tvgName: String? = null,
 )
 
 /**
@@ -29,15 +30,16 @@ object M3uParser {
         val group: String = "",
         val logoUrl: String? = null,
         val tvgId: String? = null,
+        val tvgName: String? = null,
         val catchupType: String? = null,
         val catchupSource: String? = null,
-        val catchupDays: Int = 0,
+        val catchupDays: Int? = null,
     )
 
     private class Defaults(
         val catchupType: String? = null,
         val catchupSource: String? = null,
-        val catchupDays: Int = 0,
+        val catchupDays: Int? = null,
     )
 
     fun parse(
@@ -49,6 +51,7 @@ object M3uParser {
         var defaults = Defaults()
         var pending: Pending? = null
         var firstLine = true
+        val epgUrls = linkedSetOf<String>()
 
         while (true) {
             var line = reader.readLine() ?: break
@@ -60,13 +63,16 @@ object M3uParser {
             if (line.isEmpty()) continue
 
             if (line.startsWith("#")) {
+                if (!line.startsWith("#EXTINF", true)) {
+                    val values = listOf("x-tvg-url", "url-tvg", "tvg-url").mapNotNull { attribute(line.substring(1), it) }
+                    if (values.isNotEmpty()) {
+                        values.flatMap { it.split(Regex("[,\\s]+")) }.filter { it.isNotBlank() }.forEach { epgUrls.add(it) }
+                        onEpgUrls(epgUrls.toList())
+                    }
+                }
                 when {
                     line.startsWith("#EXTM3U", ignoreCase = true) -> {
                         defaults = readDefaults(line)
-                        onEpgUrls(
-                            listOfNotNull(attribute(line, "x-tvg-url"), attribute(line, "url-tvg"))
-                                .flatMap { it.split(',') }.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
-                        )
                     }
                     line.startsWith("#EXTINF", ignoreCase = true) -> pending = readInfo(line)
                     line.startsWith("#EXTGRP:", ignoreCase = true) -> {
@@ -78,6 +84,7 @@ object M3uParser {
                                 group = group,
                                 logoUrl = current.logoUrl,
                                 tvgId = current.tvgId,
+                                tvgName = current.tvgName,
                                 catchupType = current.catchupType,
                                 catchupSource = current.catchupSource,
                                 catchupDays = current.catchupDays,
@@ -98,7 +105,7 @@ object M3uParser {
 
     private fun readDefaults(line: String): Defaults {
         val source = attribute(line, "catchup-source")
-        val type = attribute(line, "catchup") ?: if (source != null) "default" else null
+        val type = attribute(line, "catchup") ?: attribute(line, "catchup-type") ?: if (source != null) "default" else null
         return Defaults(type, source, readCatchupDays(line))
     }
 
@@ -113,7 +120,8 @@ object M3uParser {
             group = attribute(attrs, "group-title").orEmpty(),
             logoUrl = attribute(attrs, "tvg-logo")?.takeIf { it.isNotEmpty() },
             tvgId = attribute(attrs, "tvg-id")?.takeIf { it.isNotEmpty() },
-            catchupType = attribute(attrs, "catchup")?.takeIf { it.isNotEmpty() },
+            tvgName = attribute(attrs, "tvg-name")?.takeIf { it.isNotEmpty() },
+            catchupType = (attribute(attrs, "catchup") ?: attribute(attrs, "catchup-type"))?.takeIf { it.isNotEmpty() },
             catchupSource = attribute(attrs, "catchup-source")?.takeIf { it.isNotEmpty() },
             catchupDays = readCatchupDays(attrs),
         )
@@ -121,8 +129,16 @@ object M3uParser {
 
     private fun toChannel(info: Pending, url: String, defaults: Defaults): ParsedChannel {
         val source = info.catchupSource ?: defaults.catchupSource
-        val type = info.catchupType ?: defaults.catchupType ?: if (source != null) "default" else null
-        val days = if (info.catchupDays > 0) info.catchupDays else defaults.catchupDays
+        val declaredType = info.catchupType ?: defaults.catchupType
+        val days = info.catchupDays ?: defaults.catchupDays
+            ?: if (declaredType != null || source != null) 7 else 0
+        val type = declaredType?.takeUnless { it.equals("true", true) || it == "1" }
+            ?: when {
+                source != null -> "default"
+                days > 0 && XtreamAddress.stream(url) != null -> "xc"
+                days > 0 -> "shift"
+                else -> null
+            }
         return ParsedChannel(
             name = info.name.ifEmpty { url },
             group = info.group,
@@ -132,21 +148,26 @@ object M3uParser {
             catchupType = type,
             catchupSource = source,
             catchupDays = days,
+            tvgName = info.tvgName,
         )
     }
 
-    private fun readCatchupDays(attrs: String): Int =
-        (attribute(attrs, "catchup-days") ?: attribute(attrs, "tvg-rec") ?: attribute(attrs, "timeshift"))
-            ?.toIntOrNull() ?: 0
+    private fun readCatchupDays(attrs: String): Int? {
+        val days = attribute(attrs, "catchup-days") ?: attribute(attrs, "tvg-rec") ?: attribute(attrs, "timeshift")
+        val value = (days ?: attribute(attrs, "catchup-time"))?.toDoubleOrNull()?.takeIf { it.isFinite() } ?: return null
+        return (if (days == null && value >= 86_400) value / 86_400 else value).toInt().coerceIn(0, 365)
+    }
 
     /** Index of the first comma that is not inside quotes, or -1. */
     internal fun firstCommaOutsideQuotes(text: String): Int {
-        var quoted = false
+        var quote: Char? = null
         for (index in text.indices) {
             val c = text[index]
-            if (c == '"') {
-                quoted = !quoted
-            } else if (c == ',' && !quoted) {
+            if (c == quote) {
+                quote = null
+            } else if (quote == null && (c == '"' || c == '\'')) {
+                quote = c
+            } else if (c == ',' && quote == null) {
                 return index
             }
         }
@@ -155,20 +176,9 @@ object M3uParser {
 
     /** Value of key="..." (key is matched ignoring case, at the start of a word), or null. */
     internal fun attribute(attrs: String, key: String): String? {
-        val needle = "$key=\""
-        var from = 0
-        while (from <= attrs.length - needle.length) {
-            val index = attrs.indexOf(needle, from, ignoreCase = true)
-            if (index < 0) return null
-            val atWordStart = index == 0 || attrs[index - 1].isWhitespace()
-            if (atWordStart) {
-                val start = index + needle.length
-                val end = attrs.indexOf('"', start)
-                return if (end < 0) null else attrs.substring(start, end).trim()
-            }
-            from = index + 1
-        }
-        return null
+        val match = Regex("(?:^|[\\s:])${Regex.escape(key)}\\s*=\\s*(?:\"([^\"]*)\"|'([^']*)'|([^\\s]+))",
+            RegexOption.IGNORE_CASE).find(attrs) ?: return null
+        return match.groups[1]?.value?.trim() ?: match.groups[2]?.value?.trim() ?: match.groups[3]?.value?.trim()
     }
 
     /** True for "scheme://..." at the start of the line, e.g. http://, https://, udp://. */

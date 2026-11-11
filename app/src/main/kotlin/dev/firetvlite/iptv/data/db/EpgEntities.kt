@@ -13,7 +13,7 @@ import androidx.room.PrimaryKey
         entity = SourceEntity::class, parentColumns = ["id"], childColumns = ["sourceId"],
         onDelete = ForeignKey.CASCADE,
     )],
-    indices = [Index(value = ["sourceId", "generation", "epgKey", "start", "stop"])],
+    indices = [Index(value = ["sourceId", "generation", "epgKey", "start", "stop"], unique = true)],
 )
 data class ProgrammeEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -49,6 +49,7 @@ data class EpgChannel(
     val name: String,
     val tvgId: String?,
     val streamUrl: String,
+    val tvgName: String? = null,
 )
 
 data class ChannelProgramme(

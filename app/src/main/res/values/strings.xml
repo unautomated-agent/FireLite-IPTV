@@ -1,25 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Default (and only) UI language: Polish. Resource names are English. -->
 <resources>
+    <string name="diagnostics_title">Diagnostyka</string>
+    <string name="diagnostics_open">Pokaż raport i kod QR</string>
+    <string name="diagnostics_scan">Zeskanuj kod telefonem i prześlij tekst raportu. Dane logowania są ukryte. Góra/Dół przewijają raport.</string>
+    <string name="diagnostics_qr">Kod QR z raportem diagnostycznym</string>
+    <string name="diagnostics_close">Zamknij</string>
     <string name="app_name">FireLite</string>
 
     <!-- Navigation -->
     <string name="nav_home">Start</string>
     <string name="nav_live">TV na żywo</string>
     <string name="nav_guide">Program TV</string>
-    <string name="nav_movies">Filmy</string>
-    <string name="nav_series">Seriale</string>
     <string name="nav_search">Szukaj</string>
     <string name="nav_favorites">Ulubione</string>
     <string name="nav_settings">Ustawienia</string>
 
     <!-- Home -->
-    <string name="home_hero_eyebrow">KONTYNUUJ OGLĄDANIE</string>
-    <string name="home_hero_resume">Kontynuuj od %1$s</string>
-    <string name="home_hero_details">Szczegóły</string>
-    <string name="home_row_continue">Kontynuuj oglądanie</string>
-    <string name="home_row_recent_channels">Ostatnio oglądane kanały</string>
-    <string name="home_row_new_movies">Nowe filmy</string>
+    <string name="home_recent">Ostatnio oglądane</string>
+    <string name="search_label">Nazwa kanału</string>
+    <string name="search_prompt">Wpisz nazwę kanału z aktywnej listy.</string>
+    <string name="search_empty">Nie znaleziono kanałów.</string>
+    <string name="search_hint">OK w polu: klawiatura · Dół: wyniki · OK na kanale: oglądaj · Do 200 wyników</string>
+    <string name="favorites_empty">Brak ulubionych kanałów na aktywnej liście. Dodaj kanał przyciskiem Menu w TV na żywo.</string>
+    <string name="favorites_hint">OK: oglądaj · Przytrzymaj OK: usuń z ulubionych · Wstecz: menu</string>
+    <string name="home_empty">Nie oglądano jeszcze kanałów z tej listy. Otwórz TV na żywo lub dodaj listę w ustawieniach.</string>
 
     <!-- Live TV -->
     <string name="live_groups">Grupy</string>
@@ -92,8 +97,8 @@
     <string name="player_connecting">Łączenie…</string>
     <string name="player_error">Ten kanał nie działa (%1$s).\nGóra/Dół – inny kanał, Wstecz – lista.</string>
     <string name="player_ended">Transmisja się zakończyła.</string>
-    <string name="player_hint">Góra/Dół: kanał · Lewo/Prawo: ±10 s · ⏪: oś czasu · ⏩: +30 s\nPrzytrzymaj Lewo: początek audycji · Menu: lista · Przytrzymaj OK: ulubione</string>
-    <string name="channel_timeline_title">Oś czasu kanału · %1$s</string>
+    <string name="player_hint">Góra/Dół lub CH±: kanał · Lewo/Prawo: ±10 s · ⏩: +30 s · Play/Pause: pauza\nMenu/⏪: historia · OK: kanały · Przytrzymaj OK: ulubione · Przytrzymaj Lewo: początek audycji</string>
+    <string name="channel_timeline_title">Historia audycji · %1$s</string>
     <string name="channel_timeline_live">Na żywo</string>
     <string name="channel_timeline_hour">Przedział godzinowy</string>
     <string name="channel_timeline_today">Dziś</string>
@@ -101,8 +106,8 @@
     <string name="channel_timeline_start">Początek archiwum</string>
     <string name="channel_timeline_unavailable">Ten kanał nie ma dostępnego archiwum.</string>
     <string name="channel_timeline_future">Ten program jeszcze się nie rozpoczął.</string>
-    <string name="channel_timeline_hint">Lewo/Prawo: audycja · OK: oglądaj · Wstecz: zamknij</string>
-    <string name="channel_timeline_overlay_hint">Prawo: oś czasu kanału</string>
+    <string name="channel_timeline_hint">Góra/Dół: audycja · OK: oglądaj · Wstecz: zamknij</string>
+    <string name="channel_timeline_overlay_hint">Prawo: historia audycji</string>
     <string name="player_seek_unsupported">Przewijanie nie jest dostępne dla tego kanału.</string>
     <string name="player_catchup_unsupported">Archiwum nie działa dla tego kanału.</string>
 
@@ -143,21 +148,4 @@
     <string name="import_error_empty">Lista jest pusta albo to nie jest plik M3U.</string>
     <string name="import_error_no_source">Najpierw dodaj adres listy.</string>
 
-    <!-- Placeholder screens -->
-    <string name="coming_soon_text">Ten ekran pojawi się w jednej z kolejnych wersji.</string>
-
-    <!-- Demo content, only used until real sources are connected -->
-    <string name="sample_notice">Dane przykładowe</string>
-    <string name="sample_hero_title">Przykładowy film</string>
-    <string name="sample_hero_meta">2025 · 114 min · Film</string>
-    <string name="sample_hero_resume_time">34:12</string>
-    <string name="sample_movie_title">Przykładowy film %1$d</string>
-    <string name="sample_channel_name">Kanał %1$d</string>
-    <string name="sample_program_title">Program %1$d</string>
-    <string name="sample_group_all">Wszystkie</string>
-    <string name="sample_group_news">Informacje</string>
-    <string name="sample_group_sport">Sport</string>
-    <string name="sample_group_movies">Filmy</string>
-    <string name="sample_group_kids">Dla dzieci</string>
-    <string name="sample_group_music">Muzyka</string>
 </resources>

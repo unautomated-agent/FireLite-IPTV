@@ -6,6 +6,11 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlayerModeTest {
+    @Test fun nonLiveTabsClosePlaybackRatherThanLeavingAnInvisiblePreview() {
+        assertEquals(PlayerMode.Closed, PlayerMode.Fullscreen.afterBack(previewAllowed = false))
+        assertEquals(PlayerMode.Fullscreen, PlayerMode.Overlay.afterBack(previewAllowed = false))
+        assertEquals(PlayerMode.Preview, PlayerMode.Fullscreen.afterBack(previewAllowed = true))
+    }
     @Test fun onlyExplicitFullscreenPlaybackRecordsWatchHistory() {
         assertFalse(PlayerMode.Closed.recordsWatch)
         assertFalse(PlayerMode.Preview.recordsWatch)

@@ -223,6 +223,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         if (mutableMode.value == PlayerMode.Overlay) setMode(mutableMode.value.afterBack())
     }
 
+    fun closeToTab(): BrowserTarget? {
+        restoreChannel()
+        val target = mutableBrowserTarget.value
+        close()
+        return target
+    }
+
     fun openTimeline(
         zap: ZapContext? = zapContext,
         index: Int = activeIndex,

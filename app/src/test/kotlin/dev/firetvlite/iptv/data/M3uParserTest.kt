@@ -9,6 +9,54 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class M3uParserTest {
+    @Test fun explicitHeaderZeroDisablesArchiveAndChannelValuesOverrideIt() {
+        val channels = parse("#EXTM3U catchup=xc catchup-days=0\n" +
+            "#EXTINF:-1,Disabled\nhttp://h/live/u/p/1.ts\n" +
+            "#EXTINF:-1 catchup-days=3,Enabled\nhttp://h/live/u/p/2.ts\n")
+        assertEquals(0, channels[0].catchupDays)
+        assertEquals(3, channels[1].catchupDays)
+        assertEquals(7, parse("#EXTM3U catchup=xc\n#EXTINF:-1,Default\nhttp://h/live/u/p/3.ts\n")[0].catchupDays)
+        assertEquals(0, parse("#EXTM3U catchup=xc catchup-days=7\n#EXTINF:-1 catchup-days=0,Off\nhttp://h/live/u/p/3.ts\n")[0].catchupDays)
+    }
+
+    @Test fun detectsArchiveAliasesDefaultsExplicitOptOutAndXtreamPaths() {
+        val rows = parse("""
+            #EXTM3U catchup-type='append' catchup-days=3 catchup-source='?start=${'$'}{start}&end=${'$'}{end}'
+            #EXTINF:-1,Default
+            http://h/1
+            #EXTINF:-1 catchup-days=0,Disabled
+            http://h/live/u/p/2.ts
+            #EXTINF:-1 catchup-type=xc tvg-rec=7,XC
+            http://h/live/u/p/3.m3u8
+            #EXTINF:-1 catchup=shift catchup-time=172800,Seconds
+            http://h/4
+        """.trimIndent())
+        assertEquals("append", rows[0].catchupType)
+        assertEquals(3, rows[0].catchupDays)
+        assertEquals(0, rows[1].catchupDays)
+        assertEquals("xc", rows[2].catchupType)
+        assertEquals(7, rows[2].catchupDays)
+        assertEquals(2, rows[3].catchupDays)
+        assertEquals("xc", parse("#EXTINF:-1 timeshift=5,XC\nhttps://h/u/p/10.ts").single().catchupType)
+        assertEquals("shift", parse("#EXTINF:-1 tvg-rec=2,Shift\nhttps://h/channel").single().catchupType)
+    }
+
+    @Test fun discoversMixedCaseSingleQuotedBareAndSeparateHeaderUrls() {
+        var urls = emptyList<String>()
+        val rows = mutableListOf<ParsedChannel>()
+        M3uParser.parse(StringReader("""
+            #extm3u TVG-URL = 'http://a/epg http://b/epg,http://a/epg'
+            #extvlcopt:URL-TVG=http://c/epg
+            #X-TVG-URL="http://d/epg"
+            #EXTINF:-1 TVG-ID=' TVN.PL ' tvg-name='TVN, HD',TVN display
+            http://host/live/a/b/1.ts
+        """.trimIndent()), onEpgUrls = { urls = it }) { rows.add(it) }
+        assertEquals(listOf("http://a/epg", "http://b/epg", "http://c/epg", "http://d/epg"), urls)
+        assertEquals("TVN, HD", rows.single().tvgName)
+        assertEquals("TVN display", rows.single().name)
+        assertEquals("TVN.PL", rows.single().tvgId)
+    }
+
 
     private fun parse(text: String): List<ParsedChannel> {
         val channels = ArrayList<ParsedChannel>()

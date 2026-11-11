@@ -15,8 +15,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         RecentEntity::class,
         ProgrammeEntity::class,
         ChannelEpgEntity::class,
+        XtreamChannelEntity::class,
     ],
-    version = 3,
+    version = 5,
     exportSchema = false,
 )
 abstract class FireLiteDatabase : RoomDatabase() {
@@ -24,8 +25,33 @@ abstract class FireLiteDatabase : RoomDatabase() {
     abstract fun channelDao(): ChannelDao
     abstract fun userDao(): UserDao
     abstract fun epgDao(): EpgDao
+    abstract fun xtreamDao(): XtreamDao
 
     companion object {
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE source ADD COLUMN xtreamAccount TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE source ADD COLUMN xtreamStatus TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE source ADD COLUMN xtreamTimezone TEXT NOT NULL DEFAULT 'UTC'")
+                db.execSQL("ALTER TABLE source ADD COLUMN xtreamArchiveCount INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE channel ADD COLUMN catchupTimezone TEXT NOT NULL DEFAULT 'UTC'")
+                db.execSQL("CREATE TABLE IF NOT EXISTS xtream_channel (sourceId INTEGER NOT NULL, streamId TEXT NOT NULL, " +
+                    "archived INTEGER NOT NULL, days INTEGER NOT NULL, epgId TEXT, PRIMARY KEY(sourceId, streamId), " +
+                    "FOREIGN KEY(sourceId) REFERENCES source(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+            }
+        }
+
+        val MIGRATION_3_4 = object : Migration(3, 4) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE channel ADD COLUMN tvgName TEXT")
+                db.execSQL("DELETE FROM programme WHERE id NOT IN (SELECT MIN(id) FROM programme " +
+                    "GROUP BY sourceId, generation, epgKey, start, stop)")
+                db.execSQL("DROP INDEX index_programme_sourceId_generation_epgKey_start_stop")
+                db.execSQL("CREATE UNIQUE INDEX index_programme_sourceId_generation_epgKey_start_stop " +
+                    "ON programme(sourceId, generation, epgKey, start, stop)")
+            }
+        }
+
         val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE source ADD COLUMN lastUsedAt INTEGER NOT NULL DEFAULT 0")
@@ -59,7 +85,7 @@ abstract class FireLiteDatabase : RoomDatabase() {
 
         fun create(context: Context): FireLiteDatabase =
             Room.databaseBuilder(context, FireLiteDatabase::class.java, "firelite.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
     }
 }

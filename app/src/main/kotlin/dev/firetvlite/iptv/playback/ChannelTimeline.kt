@@ -59,6 +59,13 @@ object ChannelTimeline {
     fun move(index: Int, delta: Int, count: Int): Int =
         if (count == 0) 0 else (index + delta).coerceIn(0, count - 1)
 
+    fun history(items: List<TimelineItem>, rewindAvailable: Boolean = true): List<TimelineItem> =
+        items.filterNot { it.future || (it.current && !rewindAvailable) }
+            .map { if (it.current) it.copy(current = false) else it }.reversed()
+
+    fun historyFocusIndex(items: List<TimelineItem>, time: Long): Int =
+        if (items.isEmpty()) 0 else items.lastIndex - focusIndex(items.asReversed(), time)
+
     fun action(item: TimelineItem): TimelineAction = when {
         item.future -> TimelineAction.None
         item.live || item.current -> TimelineAction.Live

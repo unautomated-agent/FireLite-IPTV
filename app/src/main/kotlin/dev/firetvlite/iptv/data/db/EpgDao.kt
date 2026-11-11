@@ -2,6 +2,7 @@ package dev.firetvlite.iptv.data.db
 
 import androidx.room.Dao
 import androidx.room.Insert
+import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
 
@@ -15,6 +16,12 @@ private const val PROGRAMME_AT =
 
 @Dao
 interface EpgDao {
+    @Query("SELECT COUNT(*) FROM channel c JOIN source s ON s.id=c.sourceId " +
+        "JOIN channel_epg m ON m.sourceId=c.sourceId AND m.streamUrl=c.streamUrl AND m.generation=s.epgGeneration " +
+        "WHERE c.sourceId=:sourceId AND EXISTS(SELECT 1 FROM programme p WHERE p.sourceId=m.sourceId " +
+        "AND p.generation=m.generation AND p.epgKey=m.epgKey)")
+    fun observeMatchedCount(sourceId: Long): Flow<Int>
+
     @Query("SELECT c.id FROM channel c JOIN source s ON s.id = c.sourceId " +
         "JOIN channel_epg m ON m.sourceId = c.sourceId AND m.streamUrl = c.streamUrl AND m.generation = s.epgGeneration " +
         "WHERE c.id IN (:channelIds) AND EXISTS(SELECT 1 FROM programme p WHERE p.sourceId = m.sourceId " +
@@ -27,8 +34,8 @@ interface EpgDao {
         "AND (:recent=0 OR EXISTS(SELECT 1 FROM recent r WHERE r.streamUrl=c.streamUrl))")
     fun guideEnd(sourceId: Long, groupName: String?, favorites: Boolean, recent: Boolean): Flow<Long?>
 
-    @Insert
-    suspend fun insertProgrammes(programmes: List<ProgrammeEntity>)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertProgrammes(programmes: List<ProgrammeEntity>): List<Long>
 
     @Insert
     suspend fun insertMappings(mappings: List<ChannelEpgEntity>)
@@ -39,7 +46,7 @@ interface EpgDao {
     @Query("DELETE FROM channel_epg WHERE sourceId = :sourceId")
     suspend fun clearMappings(sourceId: Long)
 
-    @Query("SELECT id, name, tvgId, streamUrl FROM channel WHERE sourceId = :sourceId ORDER BY position")
+    @Query("SELECT id, name, tvgId, streamUrl, tvgName FROM channel WHERE sourceId = :sourceId ORDER BY position")
     suspend fun channels(sourceId: Long): List<EpgChannel>
 
     @Query("SELECT COALESCE(MAX(catchupDays), 0) FROM channel WHERE sourceId = :sourceId")

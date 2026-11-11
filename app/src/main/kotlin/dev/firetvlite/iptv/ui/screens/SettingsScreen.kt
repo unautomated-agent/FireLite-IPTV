@@ -3,14 +3,12 @@ package dev.firetvlite.iptv.ui.screens
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -28,23 +26,18 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.key.onPreviewKeyEvent
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import dev.firetvlite.iptv.R
-import dev.firetvlite.iptv.CrashReportStore
 import dev.firetvlite.iptv.data.db.SourceEntity
 import dev.firetvlite.iptv.data.db.SavedSource
 import dev.firetvlite.iptv.data.epg.EpgState
 import dev.firetvlite.iptv.data.library.ImportFailure
 import dev.firetvlite.iptv.data.library.ImportState
 import dev.firetvlite.iptv.data.library.LibraryRepository
+import dev.firetvlite.iptv.data.library.SourceDiagnostics
+import kotlinx.coroutines.flow.Flow
 import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.FocusSurface
 import dev.firetvlite.iptv.ui.components.LabeledTextField
@@ -61,10 +54,6 @@ import dev.firetvlite.iptv.update.pendingRelease
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
-import java.io.File
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 
 private val WarningColor = Color(0xFFFFB74D)
 
@@ -84,6 +73,7 @@ fun SettingsScreen(
     onActivateSource: (Long) -> Unit,
     onDeleteSource: (Long) -> Unit,
     onRefreshSource: () -> Unit,
+    diagnostics: Flow<SourceDiagnostics>,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -108,6 +98,7 @@ fun SettingsScreen(
             onActivate = onActivateSource,
             onDelete = onDeleteSource,
         )
+        SettingsCard { DiagnosticsSection(source, source?.id?.let { epgStates[it] }, diagnostics) }
         UpdateSection(
             installed = installed,
             state = updateState,
@@ -115,50 +106,6 @@ fun SettingsScreen(
             onInstall = onInstallUpdate,
             onOpenInstallSettings = onOpenInstallSettings,
         )
-        CrashSection()
-    }
-}
-
-@Composable
-private fun CrashSection() {
-    val context = LocalContext.current
-    val store = remember(context) { CrashReportStore(File(context.filesDir, "last-crash.txt")) }
-    var report by remember { mutableStateOf<String?>(null) }
-    val scroll = rememberScrollState()
-    val scope = rememberCoroutineScope()
-    LaunchedEffect(store) { report = withContext(Dispatchers.IO) { store.read() } }
-    val text = report ?: return
-    SettingsCard {
-        FLText(text = stringResource(R.string.crash_section), style = FireLiteTheme.typography.headline)
-        FLText(text = stringResource(R.string.crash_scroll_hint), style = FireLiteTheme.typography.label)
-        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-            FocusSurface(
-                onClick = {},
-                focusedScale = 1f,
-                modifier = Modifier.weight(1f).height(180.dp).onPreviewKeyEvent { event ->
-                    if (event.type == KeyEventType.KeyDown &&
-                        (event.key == Key.DirectionDown || event.key == Key.DirectionUp)
-                    ) {
-                        scope.launch { scroll.animateScrollBy(if (event.key == Key.DirectionDown) 120f else -120f) }
-                        true
-                    } else false
-                },
-            ) {
-                FLText(
-                    text = text,
-                    style = FireLiteTheme.typography.body,
-                    modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(12.dp),
-                )
-            }
-            SecondaryButton(
-                text = stringResource(R.string.crash_clear),
-                onClick = {
-                    scope.launch {
-                        if (withContext(Dispatchers.IO) { store.clear() }) report = null
-                    }
-                },
-            )
-        }
     }
 }
 
@@ -353,7 +300,7 @@ private fun SourceSection(
                                 FLText(
                                     text = epgStatusText(entry, epgStates[entry.id]),
                                     style = typography.body,
-                                    color = if (epgStates[entry.id] == EpgState.Failed) WarningColor else colors.textSecondary,
+                                    color = if (epgStates[entry.id] is EpgState.Failed) WarningColor else colors.textSecondary,
                                 )
                             }
                         }
@@ -396,7 +343,7 @@ private fun SourceSection(
 @Composable
 private fun epgStatusText(source: SourceEntity, state: EpgState?): String = when {
     state == EpgState.Running -> stringResource(R.string.epg_running)
-    state == EpgState.Failed -> stringResource(R.string.epg_failed)
+    state is EpgState.Failed -> stringResource(R.string.epg_failed)
     source.epgRefreshedAt > 0 -> stringResource(
         R.string.epg_stats,
         pluralString(R.plurals.programme_count, source.epgProgrammeCount),

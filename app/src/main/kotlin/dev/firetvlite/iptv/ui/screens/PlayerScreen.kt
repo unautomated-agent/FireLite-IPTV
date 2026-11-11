@@ -59,6 +59,8 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import androidx.media3.common.Player
+import dev.firetvlite.iptv.playback.ScreenAwakePolicy
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.db.ChannelEntity
 import dev.firetvlite.iptv.playback.PlaybackSnapshot
@@ -78,6 +80,7 @@ import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 import dev.firetvlite.iptv.ui.viewmodel.PlayerMessage
 import dev.firetvlite.iptv.ui.viewmodel.PlayerViewModel
 import dev.firetvlite.iptv.playback.PlayerMode
+import dev.firetvlite.iptv.playback.RemotePress
 import dev.firetvlite.iptv.ui.viewmodel.LibraryViewModel
 import dev.firetvlite.iptv.ui.viewmodel.ZapPosition
 import kotlinx.coroutines.delay
@@ -88,11 +91,20 @@ private const val OVERLAY_VISIBLE_MS = 5_000L
 private const val SEEK_STEP_MS = 10_000L
 
 @Composable
-fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBounds: Rect?) {
+fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBounds: Rect?, onBackToBrowser: () -> Unit) {
     val mode by viewModel.mode.collectAsState()
     val player by viewModel.player.collectAsState()
     val status by viewModel.status.collectAsState()
     val timeline by viewModel.timeline.collectAsState()
+    var playWhenReady by remember(player) { mutableStateOf(player?.playWhenReady == true) }
+    DisposableEffect(player) {
+        val listener = object : Player.Listener {
+            override fun onPlayWhenReadyChanged(ready: Boolean, reason: Int) { playWhenReady = ready }
+        }
+        player?.addListener(listener)
+        onDispose { player?.removeListener(listener) }
+    }
+    val keepAwake = ScreenAwakePolicy.keepAwake(mode, status, playWhenReady)
     val density = LocalDensity.current
     val full = mode.fullFrame
     val video = when {
@@ -104,7 +116,7 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
     }
     BackHandler(enabled = full) {
         if (timeline != null) viewModel.closeTimeline()
-        else if (mode == PlayerMode.Overlay) viewModel.closeOverlay() else viewModel.backToPreview()
+        else if (mode == PlayerMode.Overlay) viewModel.closeOverlay() else onBackToBrowser()
     }
     Box(Modifier.fillMaxSize()) {
         // The SurfaceView stays in this single AndroidView slot; only its bounds change.
@@ -119,14 +131,17 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
                     setKeepContentOnPlayerReset(true)
                 }
             },
-            update = { view -> if (view.player !== player) view.player = player },
-            onRelease = { view -> view.player = null },
+            update = { view ->
+                if (view.player !== player) view.player = player
+                view.keepScreenOn = keepAwake
+            },
+            onRelease = { view -> view.keepScreenOn = false; view.player = null },
             modifier = if (full) Modifier.matchParentSize() else video,
         )
         if (mode == PlayerMode.Preview) Box(video) { StatusLayer(status) }
         if (mode == PlayerMode.Fullscreen && timeline == null) PlayerContent(viewModel)
         if (mode == PlayerMode.Overlay) PlayerChannelOverlay(library, viewModel)
-        timeline?.let { ChannelTimelineStrip(it, viewModel, library) }
+        timeline?.let { ChannelHistoryList(it, viewModel, library) }
     }
 }
 
@@ -145,7 +160,7 @@ private fun PlayerContent(viewModel: PlayerViewModel) {
     val rootFocus = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
     var okJob by remember { mutableStateOf<Job?>(null) }
-    var okFired by remember { mutableStateOf(false) }
+    val okPress = remember { RemotePress() }
     var leftJob by remember { mutableStateOf<Job?>(null) }
     var leftFired by remember { mutableStateOf(false) }
     DisposableEffect(Unit) { onDispose { okJob?.cancel(); leftJob?.cancel() } }
@@ -183,25 +198,25 @@ private fun PlayerContent(viewModel: PlayerViewModel) {
                     return@onPreviewKeyEvent true
                 }
                 if (event.key == Key.Menu) {
-                    if (event.type == KeyEventType.KeyUp) viewModel.openOverlay()
+                    if (event.type == KeyEventType.KeyUp) viewModel.openTimeline()
                     return@onPreviewKeyEvent true
                 }
                 if (event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter) {
                     if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0) {
                         overlayToken++
                         okJob?.cancel()
-                        okFired = false
+                        okPress.begin()
                         okJob = scope.launch {
                             delay(600)
-                            if (!okFired) { okFired = true; viewModel.toggleFavorite() }
+                            if (okPress.longPress()) viewModel.toggleFavorite()
                         }
-                    } else if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.isLongPress && !okFired) {
-                        okFired = true
+                    } else if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.isLongPress) {
                         okJob?.cancel()
-                        viewModel.toggleFavorite()
+                        if (okPress.longPress()) viewModel.toggleFavorite()
                     } else if (event.type == KeyEventType.KeyUp) {
                         okJob?.cancel()
                         okJob = null
+                        if (okPress.release()) viewModel.openOverlay()
                     }
                     return@onPreviewKeyEvent true
                 }
@@ -224,7 +239,7 @@ private fun PlayerContent(viewModel: PlayerViewModel) {
                         true
                     }
                     Key.MediaPlayPause -> {
-                        viewModel.togglePause()
+                        if (firstPress) viewModel.togglePause()
                         overlayToken++
                         true
                     }

@@ -13,7 +13,7 @@ import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
 
 /** The icons of the navigation rail. They are drawn in code on a 24 x 24 grid, so no assets are needed. */
-enum class NavIconKind { Home, Live, Guide, Movies, Series, Search, Favorites, Settings }
+enum class NavIconKind { Home, Live, Guide, Search, Favorites, Settings }
 
 @Composable
 fun NavIcon(
@@ -77,38 +77,6 @@ fun NavIcon(
                 drawLine(tint, at(8.5f, 9.5f), at(8.5f, 20f), strokeWidth = 1.9f * s, cap = StrokeCap.Round)
                 drawLine(tint, at(8f, 2.5f), at(8f, 6f), strokeWidth = 1.9f * s, cap = StrokeCap.Round)
                 drawLine(tint, at(16f, 2.5f), at(16f, 6f), strokeWidth = 1.9f * s, cap = StrokeCap.Round)
-            }
-
-            NavIconKind.Movies -> {
-                drawRoundRect(
-                    color = tint,
-                    topLeft = at(4f, 3.5f),
-                    size = Size(16f * s, 17f * s),
-                    cornerRadius = CornerRadius(2.5f * s),
-                    style = stroke,
-                )
-                drawLine(tint, at(8.5f, 3.5f), at(8.5f, 20.5f), strokeWidth = 1.9f * s, cap = StrokeCap.Round)
-                drawLine(tint, at(15.5f, 3.5f), at(15.5f, 20.5f), strokeWidth = 1.9f * s, cap = StrokeCap.Round)
-                for (y in listOf(8f, 12f, 16f)) {
-                    drawLine(tint, at(4f, y), at(8.5f, y), strokeWidth = 1.9f * s, cap = StrokeCap.Round)
-                    drawLine(tint, at(15.5f, y), at(20f, y), strokeWidth = 1.9f * s, cap = StrokeCap.Round)
-                }
-            }
-
-            NavIconKind.Series -> {
-                drawRoundRect(
-                    color = tint,
-                    topLeft = at(3f, 8.5f),
-                    size = Size(15f * s, 12f * s),
-                    cornerRadius = CornerRadius(2.5f * s),
-                    style = stroke,
-                )
-                val back = Path().apply {
-                    moveTo(6f * s, 5f * s)
-                    lineTo(21f * s, 5f * s)
-                    lineTo(21f * s, 16.5f * s)
-                }
-                drawPath(back, tint, style = stroke)
             }
 
             NavIconKind.Search -> {

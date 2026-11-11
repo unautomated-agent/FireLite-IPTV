@@ -11,6 +11,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EpgMatchingTest {
+    @Test fun matchesPolishIdSuffixesTvgNamesAndCountryQualityVariants() {
+        val index = EpgMatching.Index(listOf(XmlTvChannel("tvn", "TVN.PL ", listOf("TVN HD"))))
+        assertEquals("tvn", index.match(" tvn ", "Other"))
+        assertEquals("tvn", index.match("TVN.pl", "Other"))
+        assertEquals("tvn", index.match(null, "Other", "PL: TVN UHD"))
+        assertEquals("tvn", index.match(null, "TVN FHD"))
+        assertNull(index.match("missing", "Other", "Unknown"))
+    }
+
+    @Test fun xtreamFallbackIsUsedOnlyWhenNoGuideWasSpecified() {
+        val playlist = "https://host:8443/get.php?username=user&password=p%26w&type=m3u_plus"
+        assertEquals(listOf("https://host:8443/xmltv.php?username=user&password=p%26w"), EpgSources.urls("", "", playlist))
+        assertEquals(listOf("https://host:8443/a", "https://host:8443/b"), EpgSources.urls("", "a b,a", playlist))
+    }
+
     @Test fun normalizesAccentsPunctuationWhitespaceAndQualitySuffixes() {
         assertEquals("lodz tv", EpgMatching.name("  ŁÓDŹ--TV   FHD / UHD (4K)  "))
         assertEquals("canal sport", EpgMatching.name("CANAL+ Sport HD"))

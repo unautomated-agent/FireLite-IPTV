@@ -49,6 +49,7 @@ class PlaylistImporter(
                             streamUrl = parsed.url,
                             logoUrl = parsed.logoUrl,
                             tvgId = parsed.tvgId,
+                            tvgName = parsed.tvgName,
                             catchupType = parsed.catchupType,
                             catchupSource = parsed.catchupSource,
                             catchupDays = parsed.catchupDays,
@@ -57,11 +58,34 @@ class PlaylistImporter(
                 }
             }
             if (channels.isEmpty()) throw EmptyPlaylistException()
+            val address = XtreamAddress.playlist(source.url)
+                ?: channels.firstNotNullOfOrNull { XtreamAddress.stream(it.streamUrl) }
+            if (epgUrls.isEmpty()) {
+                epgUrls = listOfNotNull(address?.epgUrl())
+            }
+            val xtream = address?.let {
+                XtreamApi(HttpXtreamMetadataReader { context.ensureActive() })
+                    .refresh(source, it, database.xtreamDao().channels(source.id))
+            }
+            val enriched = if (xtream != null && address != null) xtream.enrich(channels, address) else channels
+            context.ensureActive()
 
             database.withTransaction {
                 val dao = database.channelDao()
                 dao.deleteForSource(source.id)
-                channels.chunked(1_000).forEach { dao.insertAll(it) }
+                enriched.chunked(1_000).forEach { dao.insertAll(it) }
+                val metadata = database.xtreamDao()
+                if (xtream == null) {
+                    metadata.clear(source.id)
+                    metadata.publish(source.id, "", "", "UTC", 0)
+                } else {
+                    if (xtream.refreshed || source.xtreamAccount != xtream.account) {
+                        metadata.clear(source.id)
+                        xtream.rows.chunked(1_000).forEach { metadata.insert(it) }
+                    }
+                    metadata.publish(source.id, xtream.account, xtream.status, xtream.timezone,
+                        xtream.rows.count { it.archived })
+                }
                 database.sourceDao().markRefreshed(source.id, System.currentTimeMillis())
                 database.sourceDao().updateDiscoveredEpg(source.id, epgUrls.joinToString("\n"))
             }

@@ -25,6 +25,7 @@ import dev.firetvlite.iptv.playback.TimelineAction
 import dev.firetvlite.iptv.playback.TimelineItem
 import dev.firetvlite.iptv.playback.PreviousChannel
 import dev.firetvlite.iptv.playback.StartupResume
+import dev.firetvlite.iptv.playback.PlaybackSourcePolicy
 import dev.firetvlite.iptv.playback.AudioTrackChoice
 import dev.firetvlite.iptv.data.library.QueryZapContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -110,6 +111,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CurrentAndNext(null, null))
 
     init {
+        viewModelScope.launch {
+            sourceDao.observeActive().collect { source ->
+                if (PlaybackSourcePolicy.shouldClose(mutableChannel.value?.sourceId, source?.id)) close()
+            }
+        }
         viewModelScope.launch {
             val source = sourceDao.active()
             val recent = source?.let { channelDao.startupRecent(it.id) }.orEmpty()
@@ -201,7 +207,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             if (count == 0) return@launch
             val index = startIndex.coerceIn(0, count - 1)
             val first = zap.at(index) ?: return@launch
-            userAgent = sourceDao.active()?.userAgent ?: LibraryRepository.DEFAULT_USER_AGENT
+            val source = sourceDao.active()
+            if (source?.id != first.sourceId) return@launch
+            userAgent = source.userAgent
             zapContext = zap
             zapCount = count
             zapIndex = index

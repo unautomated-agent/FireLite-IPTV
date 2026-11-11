@@ -3,6 +3,9 @@ package dev.firetvlite.iptv.ui.screens
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.relocation.BringIntoViewRequester
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -126,6 +129,7 @@ private fun SettingsCard(content: @Composable () -> Unit) {
 // ------------------------------------------------------------------------------------ channel list
 
 @Composable
+@OptIn(ExperimentalFoundationApi::class)
 private fun SourceSection(
     source: SourceEntity?,
     sources: List<SavedSource>,
@@ -151,12 +155,33 @@ private fun SourceSection(
     val agentFocus = remember { FocusRequester() }
     val epgFocus = remember { FocusRequester() }
     val saveFocus = remember { FocusRequester() }
-    LaunchedEffect(editing, deleting) {
+    val firstBounds = remember { BringIntoViewRequester() }
+    val rowFocus = remember { mutableMapOf<Long, FocusRequester>() }
+    val rowBounds = remember { mutableMapOf<Long, BringIntoViewRequester>() }
+    var pendingFocus by remember { mutableStateOf<SavedSourceFocusRequest?>(null) }
+    val sourceIds = sources.map { it.source.id }
+    LaunchedEffect(editing) {
         if (deleting == null) firstFocus.requestFocusWhenReady()
+    }
+    LaunchedEffect(pendingFocus, sourceIds, source?.id, editing, deleting) {
+        if (editing || deleting != null) return@LaunchedEffect
+        when (val target = pendingFocus?.target(sourceIds, source?.id)) {
+            is SavedSourceFocusTarget.Row -> {
+                rowFocus.getValue(target.id).requestFocusWhenReady()
+                rowBounds.getValue(target.id).bringIntoView()
+            }
+            SavedSourceFocusTarget.Add -> {
+                firstFocus.requestFocusWhenReady()
+                firstBounds.bringIntoView()
+            }
+            null -> return@LaunchedEffect
+        }
+        pendingFocus = null
     }
     BackHandler(enabled = editing) { editing = false }
 
     fun openForm(existing: SourceEntity?) {
+        pendingFocus = null
         editingId = existing?.id
         url = existing?.url.orEmpty()
         agent = existing?.userAgent ?: LibraryRepository.DEFAULT_USER_AGENT
@@ -168,7 +193,11 @@ private fun SourceSection(
 
     deleting?.let { entry ->
         val confirmFocus = remember { FocusRequester() }
-        Dialog(onDismissRequest = { deleting = null }) {
+        fun dismissDelete() {
+            pendingFocus = SavedSourceFocusRequest.Return(entry.id)
+            deleting = null
+        }
+        Dialog(onDismissRequest = { dismissDelete() }) {
             LaunchedEffect(Unit) { confirmFocus.requestFocusWhenReady() }
             SettingsCard {
                 FLText(
@@ -178,12 +207,19 @@ private fun SourceSection(
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     PrimaryButton(
                         text = stringResource(R.string.source_delete),
-                        onClick = { onDelete(entry.id); deleting = null },
+                        onClick = {
+                            val index = sourceIds.indexOf(entry.id)
+                            val neighbours = if (index < 0) sourceIds
+                                else sourceIds.drop(index + 1) + sourceIds.take(index).asReversed()
+                            pendingFocus = SavedSourceFocusRequest.Remove(entry.id, neighbours)
+                            onDelete(entry.id)
+                            deleting = null
+                        },
                         modifier = Modifier.focusRequester(confirmFocus),
                     )
                     SecondaryButton(
                         text = stringResource(R.string.source_cancel),
-                        onClick = { deleting = null },
+                        onClick = { dismissDelete() },
                     )
                 }
             }
@@ -268,8 +304,13 @@ private fun SourceSection(
                     val entry = saved.source
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         FocusSurface(
-                            onClick = { onActivate(entry.id) },
-                            modifier = Modifier.weight(1f),
+                            onClick = {
+                                pendingFocus = SavedSourceFocusRequest.Activate(entry.id)
+                                onActivate(entry.id)
+                            },
+                            modifier = Modifier.weight(1f)
+                                .focusRequester(rowFocus.getOrPut(entry.id) { FocusRequester() })
+                                .bringIntoViewRequester(rowBounds.getOrPut(entry.id) { BringIntoViewRequester() }),
                             focusedScale = 1f,
                         ) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -323,7 +364,7 @@ private fun SourceSection(
                 SecondaryButton(
                     text = stringResource(R.string.source_add),
                     onClick = { openForm(null) },
-                    modifier = Modifier.focusRequester(firstFocus),
+                    modifier = Modifier.focusRequester(firstFocus).bringIntoViewRequester(firstBounds),
                 )
                 if (source != null) {
                     SecondaryButton(

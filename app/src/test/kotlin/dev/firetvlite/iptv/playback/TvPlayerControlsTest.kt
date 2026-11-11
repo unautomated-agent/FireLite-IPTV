@@ -104,6 +104,14 @@ class TvPlayerControlsTest {
         assertNull(history.previous)
     }
 
+    @Test fun duplicateRecentRowsDoNotDisplaceThePreviousDistinctUrl() {
+        val history = PreviousChannel<String> { it.substringBefore(':') }
+        history.seedRecent(listOf("a:first", "a:duplicate", "b:previous", "c:older"))
+        assertEquals("b:previous", history.previous)
+        history.watched(history.previous!!)
+        assertEquals("a:first", history.previous)
+    }
+
     @Test fun categorySwitchWrapsAndHandlesEmptyOrMissingCurrent() {
         assertNull(CategorySwitch.next(emptyList<String>(), "a", 1))
         assertEquals("a", CategorySwitch.next(listOf("a"), "a", -1))

@@ -61,7 +61,7 @@ class PreviousChannel<T>(private val identity: (T) -> String) {
     fun clear() { current = null; previous = null }
     fun seedRecent(newestFirst: List<T>) {
         clear()
-        newestFirst.take(2).asReversed().forEach(::watched)
+        newestFirst.distinctBy(identity).take(2).asReversed().forEach(::watched)
     }
 }
 

@@ -163,7 +163,9 @@ interface ChannelDao {
     suspend fun recentChannels(sourceId: Long): List<ChannelEntity>
 
     @Query("SELECT c.* FROM channel c INNER JOIN recent r ON r.streamUrl = c.streamUrl " +
-        "WHERE c.sourceId = :sourceId ORDER BY r.watchedAt DESC LIMIT 2")
+        "WHERE c.sourceId = :sourceId AND c.id = (SELECT x.id FROM channel x " +
+        "WHERE x.sourceId = c.sourceId AND x.streamUrl = c.streamUrl ORDER BY x.position, x.id LIMIT 1) " +
+        "ORDER BY r.watchedAt DESC, c.position, c.id LIMIT 2")
     fun startupRecent(sourceId: Long): Flow<List<ChannelEntity>>
 
     // ---- Import ----

@@ -13,6 +13,8 @@
 
     <!-- Home -->
     <string name="home_recent">Ostatnio oglądane</string>
+    <string name="favorites_empty">Brak ulubionych kanałów na aktywnej liście. Dodaj kanał przyciskiem Menu w TV na żywo.</string>
+    <string name="favorites_hint">OK: oglądaj · Przytrzymaj OK: usuń z ulubionych · Wstecz: menu</string>
     <string name="home_empty">Nie oglądano jeszcze kanałów z tej listy. Otwórz TV na żywo lub dodaj listę w ustawieniach.</string>
 
     <!-- Live TV -->

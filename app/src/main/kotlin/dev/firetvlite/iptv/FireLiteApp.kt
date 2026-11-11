@@ -26,6 +26,7 @@ import dev.firetvlite.iptv.ui.navigation.Destination
 import dev.firetvlite.iptv.ui.navigation.RailCollapsedWidth
 import dev.firetvlite.iptv.ui.screens.ComingSoonScreen
 import dev.firetvlite.iptv.ui.screens.HomeScreen
+import dev.firetvlite.iptv.ui.screens.FavoritesScreen
 import dev.firetvlite.iptv.ui.screens.LiveTvScreen
 import dev.firetvlite.iptv.ui.screens.PlayerLayer
 import dev.firetvlite.iptv.ui.screens.SettingsScreen
@@ -135,6 +136,8 @@ private fun AppShell(
                     onDeleteSource = libraryViewModel::deleteSource,
                     onRefreshSource = libraryViewModel::refreshSource,
                 )
+                Destination.Favorites -> FavoritesScreen(libraryViewModel, playerViewModel,
+                    current == Destination.Favorites && !mode.fullFrame, tabReturn, { navigate(Destination.Live) })
                 else -> ComingSoonScreen(destination)
             }
         }

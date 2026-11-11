@@ -131,6 +131,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun removeFavorite(streamUrl: String) {
+        viewModelScope.launch { userDao.removeFavorite(streamUrl) }
+    }
+
     suspend fun channelIndex(key: GroupKey, url: String): Int? {
         val id = source.value?.id ?: return null
         return when (key) {

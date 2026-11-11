@@ -23,7 +23,7 @@ internal class StartupTiming(private val clock: () -> Long = { System.nanoTime()
 
     fun detail(): String {
         val now = clock()
-        return "Startup: phase=$phase; totalMs=${now - started}; " + Phase.entries.joinToString("; ") {
+        return "Startup: phase=$phase; totalMs=${now - started}\n" + Phase.entries.joinToString("\n") {
             val duration = (elapsed[it] ?: 0) + if (it == phase) now - phaseStarted else 0
             "$it=${duration}ms"
         }

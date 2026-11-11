@@ -65,7 +65,11 @@ internal class PlaybackDiagnosticsStore(private val directory: File) {
 
     @Synchronized fun summary(): String = listOf(true, false).joinToString("\n") { failed ->
         val record = runCatching { file(failed).takeIf { it.exists() }?.readText(Charsets.UTF_8) }.getOrNull()
-        val compact = record?.lineSequence()?.map { line ->
+        val compact = record?.lineSequence()?.flatMap { line ->
+            if (line.startsWith("Startup: "))
+                line.split(Regex("; (?=[A-Z_]+=[0-9]+ms(?:; |$))")).asSequence()
+            else sequenceOf(line)
+        }?.map { line ->
             utf8Limit(line, when {
                 line.startsWith("Wybrane:") || line.startsWith("Dostępne:") -> 120
                 line.startsWith("Przyczyny:") -> 140

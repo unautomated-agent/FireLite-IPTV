@@ -296,7 +296,7 @@ class PlaybackController internal constructor(
             }
             recordPlayback(true, diagnostic(startupError, code = "START_TIMEOUT", details = listOf(
                 "Channel: ${request.channelName.ifBlank { "unknown" }}",
-                timing.detail(),
+                *timing.detail().lines().toTypedArray(),
                 if (timing.waitingForPrevious)
                     "Ownership: previous session connections/player/tracks; requested stream not prepared"
                 else "Ownership: requested stream session",

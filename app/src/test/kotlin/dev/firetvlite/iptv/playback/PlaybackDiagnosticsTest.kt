@@ -1,5 +1,9 @@
 package dev.firetvlite.iptv.playback
 
+import com.google.zxing.BinaryBitmap
+import com.google.zxing.MultiFormatReader
+import com.google.zxing.RGBLuminanceSource
+import com.google.zxing.common.HybridBinarizer
 import dev.firetvlite.iptv.data.library.DiagnosticsReport
 import dev.firetvlite.iptv.data.library.SourceDiagnostics
 import java.io.File
@@ -84,6 +88,56 @@ class PlaybackDiagnosticsTest {
             assertTrue(payload, payload.contains(value))
         }
         assertFalse(payload.contains("private-code"))
+    }
+
+    @Test fun allStartupPhaseDurationsSurviveSummaryReportAndBoundedQrEncoding() {
+        var now = 0L
+        val timing = StartupTiming { now }
+        now = 3
+        timing.enter(StartupTiming.Phase.CLOSE_GRACE)
+        now = 449
+        timing.enter(StartupTiming.Phase.WAITING_PREVIOUS_CONNECTION)
+        now = 549
+        timing.enter(StartupTiming.Phase.PREPARING_BUFFERING)
+        now = 600
+        timing.enter(StartupTiming.Phase.RECOVERY_DELAY)
+        now = 1000
+        timing.enter(StartupTiming.Phase.WAITING_RECOVERY_CONNECTION)
+        now = 1100
+        timing.enter(StartupTiming.Phase.PREPARING_BUFFERING)
+        now = 10080
+        val text = PlaybackDiagnosticRecord.text("https://provider/play/private-code.m3u8", "live",
+            "START_TIMEOUT", null, "video/hevc hvc1", "video/hevc [nieobsługiwany]", null, Instant.EPOCH,
+            listOf("Channel: Stall 10s", *timing.detail().lines().toTypedArray(),
+                "Ownership: requested stream session", "Player: BUFFERING; pos=0; buffered=0; openHTTP=1",
+                "Source: HLS", "HTTP: HTTP=200; Content-Type=video/mp2t"))
+        val store = PlaybackDiagnosticsStore(temporary.root)
+        val legacy = text.replace(timing.detail(), timing.detail().replace("\n", "; "))
+        assertFalse(text == legacy)
+        for (saved in listOf(text, legacy)) {
+            store.write(true, saved)
+            store.write(false, record())
+            val summary = store.summary()
+            val report = DiagnosticsReport.text(null, null, SourceDiagnostics(), "Żółć 🎬 ".repeat(3000), summary)
+            val payload = DiagnosticsReport.payload(report)
+            assertTrue(payload.toByteArray(Charsets.UTF_8).size <= DiagnosticsReport.QR_BYTES)
+            assertTrue(payload.endsWith("[…raport skrócony]"))
+            val matrix = DiagnosticsReport.qr(report)
+            val pixels = IntArray(matrix.width * matrix.height) { i ->
+                if (matrix[i % matrix.width, i / matrix.width]) 0xff000000.toInt() else -1
+            }
+            val decoded = MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(
+                RGBLuminanceSource(matrix.width, matrix.height, pixels)))).text
+            assertEquals(payload, decoded)
+            for (output in listOf(saved, summary, report, payload, decoded)) {
+                for (value in listOf("phase=PREPARING_BUFFERING; totalMs=10080", "STOPPING_PREVIOUS=3ms",
+                        "CLOSE_GRACE=446ms", "WAITING_PREVIOUS_CONNECTION=100ms", "PREPARING_BUFFERING=9031ms",
+                        "RECOVERY_DELAY=400ms", "WAITING_RECOVERY_CONNECTION=100ms")) {
+                    assertTrue(output, output.contains(value))
+                }
+                assertFalse(output.contains("private-code"))
+            }
+        }
     }
 
     @Test(expected = java.io.IOException::class)

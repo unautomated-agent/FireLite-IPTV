@@ -151,6 +151,11 @@ overlay remains a simple channel list.
 
 ## IMDb film ratings
 
+Najlepsze filmy includes a third tab, Z archiwum, for ended films whose start remains inside the
+channel's supported catch-up window. It uses the same IMDb cache and daily lookup budget (upcoming
+films take priority), sorts by rating/votes, shows remaining availability and opens the normal archive
+playback path at the programme start. Each tab keeps its list state; changing tabs leaves focus on the tab.
+
 Settings accepts a locally stored, masked OMDb key (free keys: omdbapi.com/apikey.aspx).
 Diagnostics exposes only whether it is configured. Without a key, badges are hidden and
 Najlepsze filmy explains how to enable them. The main menu rail and Home card open this ranking.

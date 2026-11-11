@@ -1,10 +1,14 @@
 package dev.firetvlite.iptv.data
 
 import dev.firetvlite.iptv.data.db.ChannelEntity
+import dev.firetvlite.iptv.data.db.ProgrammeEntity
+import dev.firetvlite.iptv.data.film.FilmShowing
+import dev.firetvlite.iptv.data.film.Films
 import dev.firetvlite.iptv.data.library.GroupKey
 import dev.firetvlite.iptv.data.library.ListZapContext
 import dev.firetvlite.iptv.data.library.ZapContext
 import dev.firetvlite.iptv.ui.screens.openFilmChannel
+import dev.firetvlite.iptv.ui.screens.openArchivedFilm
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
@@ -50,5 +54,43 @@ class FilmPlaybackTest {
             { zap, index, _ -> assertEquals(1, index); assertEquals(selected, channels[index]); opened = true })
         assertTrue(opened)
         openFilmChannel(selected, { 0 }, { ListZapContext(channels) }, { _, _, _ -> fail("Opened URL duplicate") })
+    }
+
+    private val now = 10 * Films.DAY
+    private fun archive() = FilmShowing(channel(2).copy(catchupType = "shift", catchupDays = 2),
+        ProgrammeEntity(sourceId = 1, generation = "g", epgKey = "c", start = now - Films.DAY,
+            stop = now - Films.DAY + 7_200_000, title = "Film", description = null, category = "Film"), null)
+
+    @Test fun archiveSelectionRetainsZapContextAndStartsAtTheProgrammeStart() = runBlocking {
+        val selected = archive()
+        val all = ListZapContext(listOf(channel(1), selected.channel, channel(3)))
+        var opened = false
+        openArchivedFilm(selected, { 1 }, { all }, { zap, index, group, start ->
+            assertSame(all, zap)
+            assertEquals(1, index)
+            assertEquals(GroupKey.All, group)
+            assertEquals(selected.programme.start, start)
+            opened = true
+        }, { now })
+        assertTrue(opened)
+    }
+
+    @Test fun expiredFutureUnsupportedOrChangedPlaylistArchivesCannotOpen() = runBlocking {
+        val film = archive()
+        val open: (ZapContext, Int, GroupKey, Long) -> Unit = { _, _, _, _ -> fail("Unexpected archive playback") }
+        for (invalid in listOf(film.copy(channel = film.channel.copy(catchupDays = 0)),
+            film.copy(programme = film.programme.copy(start = now - 3 * Films.DAY)),
+            film.copy(programme = film.programme.copy(start = now + 1, stop = now + 7_200_000)))) {
+            openArchivedFilm(invalid, { 0 }, { ListZapContext(listOf(invalid.channel)) }, open, { now })
+        }
+        openArchivedFilm(film, { 0 }, { ListZapContext(listOf(film.channel.copy(sourceId = 2))) }, open, { now })
+        openArchivedFilm(film, { null }, { ListZapContext(emptyList()) }, open, { now })
+    }
+
+    @Test fun expiryWhileResolvingTheChannelDoesNotOpenAnArchive() = runBlocking {
+        val film = archive()
+        var current = film.programme.start + 2 * Films.DAY
+        openArchivedFilm(film, { current++; 0 }, { ListZapContext(listOf(film.channel)) },
+            { _, _, _, _ -> fail("Opened expired archive") }, { current })
     }
 }

@@ -57,9 +57,9 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
     val scope = rememberCoroutineScope()
     val inputMode = LocalInputModeManager.current
     var tab by remember { mutableStateOf(0) }
-    val tabFocus = remember { List(2) { FocusRequester() } }
+    val tabFocus = remember { List(3) { FocusRequester() } }
     val settingsFocus = remember { FocusRequester() }
-    val states = remember { List(2) { LazyListState() } }
+    val states = remember { List(3) { LazyListState() } }
     val rows = remember(films, tab, now) { rankedFilms(films, now, tab) }
     val colors = FireLiteTheme.colors
     LaunchedEffect(active, key.isNotBlank()) {
@@ -76,7 +76,7 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
             PrimaryButton(stringResource(R.string.nav_settings), onSettings, Modifier.focusRequester(settingsFocus))
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                listOf(R.string.films_first_window, R.string.films_second_window).forEachIndexed { index, resource ->
+                listOf(R.string.films_first_window, R.string.films_second_window, R.string.films_archive).forEachIndexed { index, resource ->
                     val title = stringResource(resource)
                     PrimaryButton(if (tab == index) stringResource(R.string.films_selected_tab, title) else title, { tab = index },
                         Modifier.focusRequester(tabFocus[index]))
@@ -88,13 +88,21 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
                     val p = film.programme
                     val score = film.rating?.imdbRating
                     val airing = p.start <= now && p.stop > now
+                    val archiveUntil = Films.archiveUntil(film.channel, p)?.takeIf { p.stop <= now }
                     FocusSurface(onClick = {
                         val currentTime = System.currentTimeMillis()
-                        if (p.start <= currentTime && p.stop > currentTime && film.channel.sourceId == source?.id) {
+                        if (film.channel.sourceId != source?.id) Unit
+                        else if (Films.archived(film.channel, p, currentTime)) {
+                            scope.launch {
+                                openArchivedFilm(film, library::allChannelIndex, library::zapContext, player::openArchive)
+                            }
+                        } else if (p.start <= currentTime && p.stop > currentTime) {
                             scope.launch {
                                 openFilmChannel(film.channel, library::allChannelIndex, library::zapContext, player::open)
                             }
-                        } else Toast.makeText(context, context.getString(R.string.films_starts_at, clockTime(p.start)), Toast.LENGTH_SHORT).show()
+                        } else Toast.makeText(context, if (p.start > currentTime)
+                            context.getString(R.string.films_starts_at, clockTime(p.start))
+                            else context.getString(R.string.films_archive_expired), Toast.LENGTH_SHORT).show()
                     }, modifier = Modifier.fillMaxWidth(), focusedScale = 1.01f) {
                         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(18.dp)) {
@@ -109,6 +117,11 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
                                 FLText(if (airing) stringResource(R.string.films_airing_time, Films.time(p.start)) else Films.time(p.start),
                                     style = FireLiteTheme.typography.label, color = colors.accent)
                                 if (airing) ProgressBar(((now - p.start).toFloat() / (p.stop - p.start)).coerceIn(0f, 1f))
+                                archiveUntil?.let {
+                                    val minutes = ((it - now).coerceAtLeast(0) + 59_999) / 60_000
+                                    FLText(stringResource(R.string.films_archive_remaining, minutes / 60, minutes % 60),
+                                        style = FireLiteTheme.typography.label, color = colors.textSecondary)
+                                }
                             }
                             ChannelLogo(film.channel.name, film.channel.logoUrl, size = 44.dp)
                             FLText(film.channel.name, style = FireLiteTheme.typography.label, maxLines = 1)

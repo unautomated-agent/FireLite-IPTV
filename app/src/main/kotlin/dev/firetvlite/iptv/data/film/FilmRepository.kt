@@ -28,12 +28,17 @@ data class FilmShowing(val channel: ChannelEntity, val programme: ProgrammeEntit
     val identity: String get() = "${channel.id}:${programme.start}"
 }
 
-fun ratingCandidates(programmes: List<ProgrammeEntity>, now: Long): List<ProgrammeEntity> = programmes
-    .filter { Films.candidate(it) && it.stop > now && it.start < now + 2 * Films.DAY }
+fun ratingCandidates(showings: List<FilmShowing>, now: Long): List<ProgrammeEntity> = showings
+    .filter { Films.candidate(it.programme) &&
+        ((it.programme.stop > now && it.programme.start < now + 2 * Films.DAY) || Films.archived(it.channel, it.programme, now)) }
+    .sortedBy { if (it.programme.stop > now) 0 else 1 }
+    .map { it.programme }
     .distinctBy(Films::key)
 
 fun rankedFilms(films: List<FilmShowing>, now: Long, tab: Int): List<FilmShowing> = films
-    .filter { Films.candidate(it.programme) && Films.inWindow(it.programme, now, tab) }
+    .filter { Films.candidate(it.programme) && if (tab == Films.ARCHIVE_TAB) Films.archived(it.channel, it.programme, now)
+        else Films.inWindow(it.programme, now, tab) }
+    .distinctBy { it.identity }
     .sortedWith(compareByDescending<FilmShowing> { it.rating?.imdbRating ?: -1.0 }
         .thenByDescending { it.rating?.imdbVotes ?: 0 }.thenBy { it.programme.start }.thenBy { it.channel.id })
 
@@ -54,9 +59,11 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
         .stateIn(scope, SharingStarted.Eagerly, emptyMap())
 
     val showings = database.sourceDao().observeActive().flatMapLatest { source ->
-        if (source == null) flowOf(emptyList()) else clock.flatMapLatest { now ->
-            combine(database.epgDao().filmWindow(source.id, now, now + 2 * Films.DAY),
-                database.epgDao().filmChannels(source.id), ratings) { programmes, channels, scores ->
+        if (source == null) flowOf(emptyList()) else combine(clock, database.epgDao().filmChannels(source.id)) { now, channels ->
+            now to channels
+        }.flatMapLatest { (now, channels) ->
+            combine(database.epgDao().filmWindow(source.id, Films.archiveWindowStart(channels, now), now + 2 * Films.DAY),
+                ratings) { programmes, scores ->
                 val byId = channels.associateBy { it.id }
                 programmes.filter { Films.candidate(it.programme) }.mapNotNull { p ->
                     byId[p.channelId]?.let { FilmShowing(it, p.programme, scores[Films.key(p.programme)]) }
@@ -73,8 +80,12 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
                     while (true) {
                         try {
                             val now = System.currentTimeMillis()
+                            val channels = database.epgDao().filmChannels(source.id).first()
+                            val byId = channels.associateBy { it.id }
                             val candidates = ratingCandidates(database.epgDao()
-                                .filmWindow(source.id, now, now + 2 * Films.DAY).first().map { it.programme }, now)
+                                .filmWindow(source.id, Films.archiveWindowStart(channels, now), now + 2 * Films.DAY).first().mapNotNull { p ->
+                                    byId[p.channelId]?.let { FilmShowing(it, p.programme, null) }
+                                }, now)
                             for (p in candidates) {
                                 currentCoroutineContext().ensureActive()
                                 if (database.sourceDao().active()?.id != source.id || preferences.key.value != key) break

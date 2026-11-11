@@ -163,7 +163,9 @@ One press downloads the APK and opens Android's installer.
   Credentials and stream URL paths are hidden before writing either record to internal storage.
   Both compact records precede the guide/crash details in the QR report, capped at 1800 UTF-8 bytes.
 - Behind-live-window errors recover at the live edge on the same URL/session. A parsing failure on a
-  `.m3u8` URL permits one progressive MPEG-TS/container-sniffing fallback per session. Recovery stops the
+  `.m3u8` URL permits one progressive MPEG-TS/container-sniffing fallback per session, but only before
+  any HLS manifest has loaded or playback has reached READY. Segment errors retain HLS; a failed
+  progressive attempt restores HLS for subsequent retries. Recovery stops the
   old load and waits for all local HTTP connections to close before preparing again. A channel switch or
   close cancels pending recovery. The connection gate and 400 ms grace remain unchanged; there are no probes.
 

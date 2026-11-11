@@ -165,8 +165,9 @@ class PlaybackControllerTest {
         val fake = FakePlayer()
         val trace = mutableListOf<String>()
         val urls = mutableListOf<String>()
+        val hlsUrls = mutableListOf<String>()
         var sources = 0
-        val controller = PlaybackController(this, { fake.player }, { trace += it }, { MediaItem.EMPTY },
+        val controller = PlaybackController(this, { fake.player }, { trace += it }, { hlsUrls += it; MediaItem.EMPTY },
             setStream = { _, _, _ -> sources++ }, progressiveItem = { urls += it; MediaItem.EMPTY })
         val hls = request.copy(url = "https://example.org/live.m3u8")
         controller.play(hls)
@@ -177,8 +178,44 @@ class PlaybackControllerTest {
         assertEquals(2, sources)
         assertEquals(1, trace.count { it == "RECOVER session=1 action=Progressive" })
         fake.listener!!.onPlayerError(TestError(3002))
+        val connections = PlaybackController::class.java.getDeclaredField("connections").let {
+            it.isAccessible = true
+            it.get(controller) as AtomicInteger
+        }
+        connections.set(1)
         delay(450)
+        assertEquals(2, sources)
+        connections.decrementAndGet()
+        delay(50)
+        assertEquals(3, sources)
+        assertEquals(listOf(hls.url, hls.url), hlsUrls)
         assertEquals(listOf(hls.url), urls)
+        assertEquals(1, trace.count { it == "RECOVER session=1 action=RestoreHls" })
+        fake.listener!!.onPlayerError(TestError(3002))
+        delay(450)
+        assertEquals(3, sources)
+        assertEquals(listOf(hls.url), urls)
+        controller.stop()
+    }
+
+    @Test fun segmentErrorsAfterReadyKeepTheHlsSourceEvenAfterBufferingAgain() = runBlocking {
+        val fake = FakePlayer()
+        val trace = mutableListOf<String>()
+        var progressive = 0
+        var sources = 0
+        val controller = PlaybackController(this, { fake.player }, { trace += it }, { MediaItem.EMPTY },
+            setStream = { _, _, _ -> sources++ }, progressiveItem = { progressive++; MediaItem.EMPTY })
+        controller.play(request.copy(url = "https://example.org/live.m3u8"))
+        delay(450)
+        fake.state = Player.STATE_READY
+        fake.listener!!.onPlaybackStateChanged(fake.state)
+        fake.state = Player.STATE_BUFFERING
+        fake.listener!!.onPlaybackStateChanged(fake.state)
+        fake.listener!!.onPlayerError(TestError(3001))
+        delay(1600)
+        assertEquals(0, progressive)
+        assertEquals(1, sources)
+        assertEquals(1, trace.count { it == "RECOVER session=1 action=Retry" })
         controller.stop()
     }
 
@@ -233,6 +270,7 @@ class PlaybackControllerTest {
         val calls = mutableListOf<String>()
         var parameters = TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT
         var listener: Player.Listener? = null
+        var state = Player.STATE_IDLE
         val player = Proxy.newProxyInstance(
             ExoPlayer::class.java.classLoader,
             arrayOf(ExoPlayer::class.java),
@@ -244,6 +282,7 @@ class PlaybackControllerTest {
                 "getTrackSelectionParameters" -> parameters
                 "setTrackSelectionParameters" -> { parameters = args!![0] as TrackSelectionParameters; null }
                 "addListener" -> { listener = args!![0] as Player.Listener; null }
+                "getPlaybackState" -> state
                 else -> {
                     calls += method.name
                     when (method.returnType) {

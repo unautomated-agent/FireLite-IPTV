@@ -19,6 +19,8 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
+import androidx.media3.exoplayer.source.LoadEventInfo
+import androidx.media3.exoplayer.source.MediaLoadData
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
@@ -117,6 +119,8 @@ class PlaybackController internal constructor(
     private var retries = 0
     private var activeSession = 0L
     private var fallbackUsed = false
+    private var hlsEstablished = false
+    private var progressiveActive = false
     private var activeRequest: StreamRequest? = null
     private var suspendedRequest: StreamRequest? = null
     private var preview = false
@@ -185,6 +189,12 @@ class PlaybackController internal constructor(
     }
 
     private val analytics = object : AnalyticsListener {
+        override fun onLoadCompleted(eventTime: AnalyticsListener.EventTime, loadEventInfo: LoadEventInfo,
+            mediaLoadData: MediaLoadData) {
+            if (activeRequest != null && !progressiveActive && mediaLoadData.dataType == C.DATA_TYPE_MANIFEST)
+                hlsEstablished = true
+        }
+
         override fun onAudioDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String,
             initializedTimestampMs: Long, initializationDurationMs: Long) {
             audioDecoder = decoderName
@@ -239,6 +249,8 @@ class PlaybackController internal constructor(
         successfulSignature = null
         retries = 0
         fallbackUsed = false
+        hlsEstablished = false
+        progressiveActive = false
         startJob?.cancel()
         httpFactory.setUserAgent(request.userAgent)
 
@@ -378,6 +390,7 @@ class PlaybackController internal constructor(
         when (player.playbackState) {
             Player.STATE_BUFFERING -> mutableStatus.value = PlaybackStatus.Buffering
             Player.STATE_READY -> {
+                if (!progressiveActive) hlsEstablished = true
                 retries = 0
                 mutableStatus.value =
                     if (player.playWhenReady) PlaybackStatus.Playing else PlaybackStatus.Paused
@@ -394,7 +407,8 @@ class PlaybackController internal constructor(
             retries++
             val request = activeRequest ?: return
             val session = activeSession
-            val action = PlaybackRecovery.action(error.errorCode, request.url, fallbackUsed, error.cause)
+            val action = PlaybackRecovery.action(error.errorCode, request.url, fallbackUsed, error.cause,
+                hlsEstablished, progressiveActive)
             if (action == RecoveryAction.Progressive) fallbackUsed = true
             mutableStatus.value = PlaybackStatus.Connecting
             startJob?.cancel()
@@ -406,7 +420,14 @@ class PlaybackController internal constructor(
                 if (activeRequest !== request || activeSession != session) return@launch
                 when (action) {
                     RecoveryAction.LiveEdge -> player.seekToDefaultPosition()
-                    RecoveryAction.Progressive -> setStream(player, progressiveItem(request.url), trackedFactory(session))
+                    RecoveryAction.Progressive -> {
+                        progressiveActive = true
+                        setStream(player, progressiveItem(request.url), trackedFactory(session))
+                    }
+                    RecoveryAction.RestoreHls -> {
+                        progressiveActive = false
+                        setStream(player, mediaItem(request.url), trackedFactory(session))
+                    }
                     RecoveryAction.Retry -> Unit
                 }
                 trace("RECOVER session=$session action=$action")

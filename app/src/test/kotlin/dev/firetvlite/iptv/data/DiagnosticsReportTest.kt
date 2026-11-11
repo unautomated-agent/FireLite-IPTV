@@ -15,6 +15,22 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DiagnosticsReportTest {
+    @Test fun masksAllCredentialAliasesInQueriesAndPlainCrashMessages() {
+        for (key in listOf("token", "key", "api_key", "apikey", "auth", "pass", "password", "user", "username", "login", "secret", "sig", "signature")) {
+            val secret = "private-$key-value"
+            val url = "https://provider/xmltv.php?${key.uppercase()}=$secret"
+            val result = DiagnosticRedactor.mask("$url\nException: $secret\n$key='$secret'")
+            assertFalse(result, result.contains(secret))
+            assertFalse(DiagnosticRedactor.mask("$key=$secret").contains(secret))
+        }
+        assertEquals("http://provider/path", DiagnosticRedactor.mask("http://private-user:private-pass@provider/path"))
+        for (path in listOf("live/private-user/private-pass/12.ts", "private-user/private-pass/12", "timeshift/private-user/private-pass/60/date/12.ts")) {
+            val result = DiagnosticRedactor.mask("http://provider/$path")
+            assertFalse(result.contains("private-user"))
+            assertFalse(result.contains("private-pass"))
+        }
+    }
+
     @Test fun masksCredentialsInUrlsPathsPlainErrorsAndEncodedQueryValues() {
         val input = """
             http://provider/get.php?username=private-user&password=p%40ssword

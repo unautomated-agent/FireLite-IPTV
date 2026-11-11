@@ -29,7 +29,8 @@ data class SourceDiagnostics(val channelCount: Int = 0, val matched: Int = 0,
 
 object DiagnosticRedactor {
     private val urlPattern = Regex("https?://[^\\s<>\"']+", RegexOption.IGNORE_CASE)
-    private val sensitive = setOf("user", "username", "password", "pass", "token", "key", "auth", "authorization")
+    private val sensitive = setOf("token", "key", "api_key", "apikey", "auth", "authorization", "pass", "password",
+        "user", "username", "login", "secret", "sig", "signature")
     private fun decoded(value: String) = runCatching { URLDecoder.decode(value, "UTF-8") }.getOrDefault(value)
 
     fun secrets(urls: List<String>): Set<String> = buildSet {
@@ -72,7 +73,7 @@ object DiagnosticRedactor {
                     (query?.let { "?$it" } ?: "")
             }
         }
-        result = Regex("(?i)(username|password|user|pass|token|authorization)[\"']?\\s*[:=]\\s*(?:\"[^\"]*\"|'[^']*'|[^\\s&,;]+)")
+        result = Regex("(?i)\\b(${sensitive.joinToString("|")})[\"']?\\s*[:=]\\s*(?:\"[^\"]*\"|'[^']*'|[^\\s&,;]+)")
             .replace(result) { "${it.groupValues[1]}=***" }
         credentials.sortedByDescending { it.length }.forEach { result = result.replace(it, "***") }
         return result

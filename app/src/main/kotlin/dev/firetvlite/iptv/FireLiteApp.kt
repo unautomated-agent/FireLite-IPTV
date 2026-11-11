@@ -56,7 +56,7 @@ private fun AppShell(
 ) {
     val updateState by updateViewModel.state.collectAsState()
     val source by libraryViewModel.source.collectAsState()
-    val channelCount by libraryViewModel.channelCount.collectAsState()
+    val sources by libraryViewModel.sources.collectAsState()
     val importState by libraryViewModel.importState.collectAsState()
     var current by rememberSaveable { mutableStateOf(Destination.Home) }
     var railHasFocus by remember { mutableStateOf(false) }
@@ -105,9 +105,11 @@ private fun AppShell(
                     onInstallUpdate = updateViewModel::downloadAndInstall,
                     onOpenInstallSettings = updateViewModel::openInstallSettings,
                     source = source,
-                    channelCount = channelCount,
+                    sources = sources,
                     importState = importState,
                     onSaveSource = libraryViewModel::saveSource,
+                    onActivateSource = libraryViewModel::activateSource,
+                    onDeleteSource = libraryViewModel::deleteSource,
                     onRefreshSource = libraryViewModel::refreshSource,
                 )
                 else -> ComingSoonScreen(destination)

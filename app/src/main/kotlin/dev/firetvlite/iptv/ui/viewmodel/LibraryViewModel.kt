@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -50,6 +51,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     val importState: StateFlow<ImportState> = repository.importState
 
+    val sources = repository.sources.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+
     private val sourceId: Flow<Long?> = source.map { it?.id }.distinctUntilChanged()
 
     val channelCount: StateFlow<Int> = sourceId
@@ -58,6 +61,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     private val mutableSelectedGroup = MutableStateFlow<GroupKey>(GroupKey.All)
     val selectedGroup: StateFlow<GroupKey> = mutableSelectedGroup.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            sourceId.collect { mutableSelectedGroup.value = GroupKey.All }
+        }
+    }
 
     fun selectGroup(key: GroupKey) {
         mutableSelectedGroup.value = key
@@ -130,7 +139,11 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun saveSource(url: String, userAgent: String) = repository.saveSource(url, userAgent)
+    fun saveSource(url: String, userAgent: String, id: Long?) = repository.saveSource(url, userAgent, id)
+
+    fun activateSource(id: Long) = repository.activateSource(id)
+
+    fun deleteSource(id: Long) = repository.deleteSource(id)
 
     fun refreshSource() = repository.refresh()
 }

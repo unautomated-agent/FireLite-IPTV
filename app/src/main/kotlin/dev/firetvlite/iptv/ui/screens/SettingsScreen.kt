@@ -1,6 +1,7 @@
 package dev.firetvlite.iptv.ui.screens
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
@@ -16,6 +17,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -24,6 +26,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -33,9 +36,11 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.CrashReportStore
 import dev.firetvlite.iptv.data.db.SourceEntity
+import dev.firetvlite.iptv.data.db.SavedSource
 import dev.firetvlite.iptv.data.library.ImportFailure
 import dev.firetvlite.iptv.data.library.ImportState
 import dev.firetvlite.iptv.data.library.LibraryRepository
@@ -71,9 +76,11 @@ fun SettingsScreen(
     onInstallUpdate: () -> Unit,
     onOpenInstallSettings: () -> Unit,
     source: SourceEntity?,
-    channelCount: Int,
+    sources: List<SavedSource>,
     importState: ImportState,
-    onSaveSource: (url: String, userAgent: String) -> Unit,
+    onSaveSource: (url: String, userAgent: String, id: Long?) -> Unit,
+    onActivateSource: (Long) -> Unit,
+    onDeleteSource: (Long) -> Unit,
     onRefreshSource: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -91,10 +98,12 @@ fun SettingsScreen(
         )
         SourceSection(
             source = source,
-            channelCount = channelCount,
+            sources = sources,
             importState = importState,
             onSave = onSaveSource,
             onRefresh = onRefreshSource,
+            onActivate = onActivateSource,
+            onDelete = onDeleteSource,
         )
         UpdateSection(
             installed = installed,
@@ -169,20 +178,61 @@ private fun SettingsCard(content: @Composable () -> Unit) {
 @Composable
 private fun SourceSection(
     source: SourceEntity?,
-    channelCount: Int,
+    sources: List<SavedSource>,
     importState: ImportState,
-    onSave: (url: String, userAgent: String) -> Unit,
+    onSave: (url: String, userAgent: String, id: Long?) -> Unit,
     onRefresh: () -> Unit,
+    onActivate: (Long) -> Unit,
+    onDelete: (Long) -> Unit,
 ) {
     val colors = FireLiteTheme.colors
     val typography = FireLiteTheme.typography
 
     var editing by remember { mutableStateOf(false) }
-    var url by remember { mutableStateOf(source?.url.orEmpty()) }
-    var agent by remember { mutableStateOf(source?.userAgent ?: LibraryRepository.DEFAULT_USER_AGENT) }
+    var editingId by remember { mutableStateOf<Long?>(null) }
+    var deleting by remember { mutableStateOf<SourceEntity?>(null) }
+    var url by remember { mutableStateOf("") }
+    var agent by remember { mutableStateOf(LibraryRepository.DEFAULT_USER_AGENT) }
     var invalid by remember { mutableStateOf(false) }
     val firstFocus = remember { FocusRequester() }
-    LaunchedEffect(editing) { firstFocus.requestFocusWhenReady() }
+    val agentFocus = remember { FocusRequester() }
+    val saveFocus = remember { FocusRequester() }
+    LaunchedEffect(editing, deleting) {
+        if (deleting == null) firstFocus.requestFocusWhenReady()
+    }
+    BackHandler(enabled = editing) { editing = false }
+
+    fun openForm(existing: SourceEntity?) {
+        editingId = existing?.id
+        url = existing?.url.orEmpty()
+        agent = existing?.userAgent ?: LibraryRepository.DEFAULT_USER_AGENT
+        invalid = false
+        editing = true
+    }
+
+    deleting?.let { entry ->
+        val confirmFocus = remember { FocusRequester() }
+        Dialog(onDismissRequest = { deleting = null }) {
+            LaunchedEffect(Unit) { confirmFocus.requestFocusWhenReady() }
+            SettingsCard {
+                FLText(
+                    text = stringResource(R.string.source_delete_confirm, entry.name, entry.id),
+                    style = typography.headline,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    PrimaryButton(
+                        text = stringResource(R.string.source_delete),
+                        onClick = { onDelete(entry.id); deleting = null },
+                        modifier = Modifier.focusRequester(confirmFocus),
+                    )
+                    SecondaryButton(
+                        text = stringResource(R.string.source_cancel),
+                        onClick = { deleting = null },
+                    )
+                }
+            }
+        }
+    }
 
     SettingsCard {
         FLText(text = stringResource(R.string.source_section), style = typography.headline)
@@ -195,12 +245,16 @@ private fun SourceSection(
                     url = it
                     invalid = false
                 },
-                modifier = Modifier.focusRequester(firstFocus),
+                modifier = Modifier.focusRequester(firstFocus).focusProperties { down = agentFocus },
             )
             LabeledTextField(
                 label = stringResource(R.string.source_agent_label),
                 value = agent,
                 onValueChange = { agent = it },
+                modifier = Modifier.focusRequester(agentFocus).focusProperties {
+                    up = firstFocus
+                    down = saveFocus
+                },
             )
             if (invalid) {
                 FLText(
@@ -214,51 +268,68 @@ private fun SourceSection(
                     text = stringResource(R.string.source_save),
                     onClick = {
                         val trimmed = url.trim()
-                        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-                            onSave(trimmed, agent.trim().ifEmpty { LibraryRepository.DEFAULT_USER_AGENT })
+                        val uri = Uri.parse(trimmed)
+                        if (uri.scheme in listOf("http", "https") && !uri.host.isNullOrEmpty()) {
+                            onSave(trimmed, agent.trim().ifEmpty { LibraryRepository.DEFAULT_USER_AGENT }, editingId)
                             editing = false
                         } else {
                             invalid = true
                         }
                     },
+                    modifier = Modifier.focusRequester(saveFocus).focusProperties { up = agentFocus },
                 )
-                if (source != null) {
-                    SecondaryButton(
-                        text = stringResource(R.string.source_cancel),
-                        onClick = {
-                            url = source.url
-                            agent = source.userAgent
-                            invalid = false
-                            editing = false
-                        },
-                    )
-                }
+                SecondaryButton(
+                    text = stringResource(R.string.source_cancel),
+                    onClick = { editing = false },
+                    modifier = Modifier.focusProperties { up = agentFocus },
+                )
             }
         } else {
-            // Only the server name is shown: playlist addresses often contain a user name and password.
-            FLText(
-                text = if (source == null) {
-                    stringResource(R.string.source_none)
-                } else {
-                    stringResource(R.string.source_server, Uri.parse(source.url).host ?: "?")
-                },
-                style = typography.body,
-            )
-            if (source != null) {
-                val updated = if (source.refreshedAt > 0) {
-                    DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT, Locale("pl", "PL"))
-                        .format(Date(source.refreshedAt))
-                } else {
-                    stringResource(R.string.source_never_refreshed)
+            if (sources.isEmpty()) {
+                FLText(text = stringResource(R.string.source_none), style = typography.body)
+            }
+            sources.forEach { saved ->
+                key(saved.source.id) {
+                    val entry = saved.source
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        FocusSurface(
+                            onClick = { onActivate(entry.id) },
+                            modifier = Modifier.weight(1f),
+                            focusedScale = 1f,
+                        ) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                FLText(
+                                    text = stringResource(
+                                        R.string.source_entry, entry.name, entry.id, Uri.parse(entry.url).host ?: "?",
+                                    ),
+                                    style = typography.title,
+                                    maxLines = 1,
+                                )
+                                if (entry.id == source?.id) {
+                                    FLText(
+                                        text = stringResource(R.string.source_active),
+                                        style = typography.label,
+                                        color = colors.accent,
+                                    )
+                                }
+                                val updated = if (entry.refreshedAt > 0) {
+                                    DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT, Locale("pl", "PL"))
+                                        .format(Date(entry.refreshedAt))
+                                } else stringResource(R.string.source_never_refreshed)
+                                FLText(
+                                    text = stringResource(
+                                        R.string.source_stats, pluralString(R.plurals.channel_count, saved.channelCount), updated,
+                                    ),
+                                    style = typography.body,
+                                )
+                            }
+                        }
+                        SecondaryButton(
+                            text = stringResource(R.string.source_delete),
+                            onClick = { deleting = entry },
+                        )
+                    }
                 }
-                FLText(
-                    text = stringResource(
-                        R.string.source_stats,
-                        pluralString(R.plurals.channel_count, channelCount),
-                        updated,
-                    ),
-                    style = typography.body,
-                )
             }
             val status = importStatusText(importState)
             if (status.isNotEmpty()) {
@@ -270,16 +341,15 @@ private fun SourceSection(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 SecondaryButton(
-                    text = stringResource(if (source == null) R.string.source_add else R.string.source_change),
-                    onClick = {
-                        url = source?.url.orEmpty()
-                        agent = source?.userAgent ?: LibraryRepository.DEFAULT_USER_AGENT
-                        invalid = false
-                        editing = true
-                    },
+                    text = stringResource(R.string.source_add),
+                    onClick = { openForm(null) },
                     modifier = Modifier.focusRequester(firstFocus),
                 )
                 if (source != null) {
+                    SecondaryButton(
+                        text = stringResource(R.string.source_change),
+                        onClick = { openForm(source) },
+                    )
                     SecondaryButton(
                         text = stringResource(R.string.source_refresh),
                         onClick = onRefresh,

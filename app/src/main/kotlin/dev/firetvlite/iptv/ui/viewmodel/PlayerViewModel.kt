@@ -87,7 +87,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             if (count == 0) return@launch
             val index = startIndex.coerceIn(0, count - 1)
             val first = zap.at(index) ?: return@launch
-            userAgent = sourceDao.first()?.userAgent ?: LibraryRepository.DEFAULT_USER_AGENT
+            userAgent = sourceDao.active()?.userAgent ?: LibraryRepository.DEFAULT_USER_AGENT
             zapContext = zap
             zapCount = count
             zapIndex = index

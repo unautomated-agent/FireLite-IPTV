@@ -5,6 +5,8 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
+import dev.firetvlite.iptv.data.library.SourcePolicy
 import kotlinx.coroutines.flow.Flow
 
 private const val CHANNEL_ROW =
@@ -12,11 +14,32 @@ private const val CHANNEL_ROW =
 
 @Dao
 interface SourceDao {
-    @Query("SELECT * FROM source ORDER BY id LIMIT 1")
-    fun observeFirst(): Flow<SourceEntity?>
+    @Query("SELECT * FROM source ORDER BY lastUsedAt DESC, id DESC LIMIT 1")
+    fun observeActive(): Flow<SourceEntity?>
 
-    @Query("SELECT * FROM source ORDER BY id LIMIT 1")
-    suspend fun first(): SourceEntity?
+    @Query("SELECT * FROM source ORDER BY lastUsedAt DESC, id DESC LIMIT 1")
+    suspend fun active(): SourceEntity?
+
+    @Query("SELECT source.*, (SELECT COUNT(*) FROM channel WHERE sourceId = source.id) AS channelCount " +
+        "FROM source ORDER BY lastUsedAt DESC, id DESC")
+    fun observeAll(): Flow<List<SavedSource>>
+
+    @Query("SELECT * FROM source WHERE id = :id")
+    suspend fun byId(id: Long): SourceEntity?
+
+    @Query("SELECT COALESCE(MAX(lastUsedAt), 0) FROM source")
+    suspend fun mostRecentUse(): Long
+
+    @Query("UPDATE source SET lastUsedAt = :usedAt WHERE id = :id")
+    suspend fun markUsed(id: Long, usedAt: Long)
+
+    @Transaction
+    suspend fun activate(id: Long, now: Long) {
+        markUsed(id, SourcePolicy.nextUsedAt(mostRecentUse(), now))
+    }
+
+    @Query("DELETE FROM source WHERE id = :id")
+    suspend fun delete(id: Long)
 
     @Insert
     suspend fun insert(source: SourceEntity): Long

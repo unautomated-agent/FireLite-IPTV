@@ -91,12 +91,16 @@
     <string name="player_catchup_unsupported">Archiwum nie działa dla tego kanału.</string>
 
     <!-- Settings: channel list -->
-    <string name="source_section">Lista kanałów (M3U)</string>
+    <string name="source_section">Listy kanałów</string>
     <string name="source_none">Nie dodano jeszcze listy.</string>
     <string name="source_server">Serwer: %1$s</string>
     <string name="source_stats">%1$s · zaktualizowano %2$s</string>
     <string name="source_never_refreshed">jeszcze nie wczytano</string>
-    <string name="source_add">Dodaj adres</string>
+    <string name="source_add">Dodaj nową listę</string>
+    <string name="source_active">Aktywna</string>
+    <string name="source_entry">%1$s %2$d · %3$s</string>
+    <string name="source_delete">Usuń</string>
+    <string name="source_delete_confirm">Usunąć listę %1$s %2$d? Jej kanały zostaną usunięte.</string>
     <string name="source_change">Zmień adres</string>
     <string name="source_refresh">Odśwież listę</string>
     <string name="source_url_label">Adres listy M3U</string>

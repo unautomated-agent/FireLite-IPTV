@@ -1,12 +1,16 @@
 package dev.firetvlite.iptv.data
 
-import com.sun.net.httpserver.HttpServer
 import dev.firetvlite.iptv.data.film.OmdbHttpClient
 import dev.firetvlite.iptv.data.film.OmdbResult
 import java.io.ByteArrayInputStream
 import java.io.IOException
 import java.net.InetSocketAddress
+import java.net.ServerSocket
 import java.net.SocketTimeoutException
+import java.util.concurrent.FutureTask
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+import kotlin.concurrent.thread
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
@@ -34,23 +38,34 @@ class OmdbHttpClientTest {
     }
 
     @Test fun httpResponsesAreBoundedAndErrorsRemainNonFatal() = runBlocking {
-        val server = HttpServer.create(InetSocketAddress("127.0.0.1", 0), 0)
-        var body = """{"Response":"False","Error":"Movie not found!"}""".toByteArray()
-        var status = 200
-        server.createContext("/") { exchange ->
-            exchange.sendResponseHeaders(status, 0)
-            exchange.responseBody.use { it.write(body) }
+        val server = ServerSocket().apply { bind(InetSocketAddress("127.0.0.1", 0)) }
+        val response = AtomicReference(200 to """{"Response":"False","Error":"Movie not found!"}""".toByteArray())
+        val serving = FutureTask<Unit> {
+            repeat(4) {
+                server.accept().use { socket ->
+                    socket.soTimeout = 5000
+                    val reader = socket.getInputStream().bufferedReader()
+                    while (!reader.readLine().isNullOrEmpty()) { }
+                    val (status, body) = response.get()
+                    socket.getOutputStream().apply {
+                        write("HTTP/1.1 $status Response\r\nConnection: close\r\n\r\n".toByteArray())
+                        write(body)
+                        flush()
+                    }
+                }
+            }
         }
-        server.start()
+        thread(isDaemon = true) { serving.run() }
         try {
-            val client = OmdbHttpClient { "http://127.0.0.1:${server.address.port}/" }
+            val client = OmdbHttpClient { "http://127.0.0.1:${server.localPort}/" }
             assertEquals(OmdbResult.Missing, client.lookup("fixture", "Film", 2002))
-            body = ByteArray(OmdbHttpClient.MAX_BODY_BYTES + 1) { 32 }
+            response.set(200 to ByteArray(OmdbHttpClient.MAX_BODY_BYTES + 1) { 32 })
             assertEquals(OmdbResult.Failed, client.lookup("fixture", "Film", 2002))
-            body = byteArrayOf()
+            response.set(200 to byteArrayOf())
             assertEquals(OmdbResult.Failed, client.lookup("fixture", "Film", 2002))
-            status = 503
+            response.set(503 to byteArrayOf())
             assertEquals(OmdbResult.Failed, client.lookup("fixture", "Film", 2002))
-        } finally { server.stop(0) }
+            serving.get(10, TimeUnit.SECONDS)
+        } finally { server.close() }
     }
 }

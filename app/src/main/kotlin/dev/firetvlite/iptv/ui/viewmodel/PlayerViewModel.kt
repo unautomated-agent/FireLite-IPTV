@@ -133,7 +133,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         previewJob = null
     }
 
-    private fun select(zap: ZapContext, startIndex: Int, group: GroupKey, mode: PlayerMode) {
+    fun openArchive(zap: ZapContext, startIndex: Int, group: GroupKey, time: Long) {
+        cancelPreview()
+        select(zap, startIndex, group, PlayerMode.Fullscreen, time)
+    }
+
+    private fun select(zap: ZapContext, startIndex: Int, group: GroupKey, mode: PlayerMode, archiveTime: Long? = null) {
         openJob?.cancel()
         zapJob?.cancel()
         catchupJob?.cancel()
@@ -155,7 +160,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 activeChannel = first
                 activeIndex = index
             }
-            if (!sameChannel || status.value is PlaybackStatus.Failed) startLive(first)
+            if (archiveTime != null) {
+                activeChannel = first
+                activeIndex = index
+                applyCatchup(first, archiveTime)
+            } else if (!sameChannel || archiveStartMs != null || status.value is PlaybackStatus.Failed) startLive(first)
         }
     }
 
@@ -169,6 +178,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         cancelPreview()
         settlePendingZap()
         setMode(mutableMode.value.afterBack())
+        if (archiveStartMs != null) activeChannel?.let(::startLive)
         restoreChannel()
     }
 

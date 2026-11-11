@@ -57,7 +57,7 @@ data class PlaybackSnapshot(
 
 /**
  * The only place in the app that opens a stream. It owns exactly one [ExoPlayer] and therefore at most one
- * connection to the provider.
+ * streaming session with the provider. HTTP requests within that session may overlap.
  *
  * How the rule "never two streams" is kept:
  * 1. [StreamGate] drops a request for the stream that is already active.
@@ -73,6 +73,7 @@ class PlaybackController internal constructor(
     private val createPlayer: (HttpDataSource.Factory) -> ExoPlayer,
     private val trace: (String) -> Unit,
     private val mediaItem: (String) -> MediaItem = { MediaItem.fromUri(it) },
+    private val setStream: (ExoPlayer, MediaItem, HttpDataSource.Factory) -> Unit = { player, item, _ -> player.setMediaItem(item) },
 ) {
     internal constructor(scope: CoroutineScope, createPlayer: (HttpDataSource.Factory) -> ExoPlayer) :
         this(scope, createPlayer, {})
@@ -82,7 +83,9 @@ class PlaybackController internal constructor(
         ExoPlayer.Builder(context, renderers)
             .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
             .build()
-    }, { Log.d("FireLiteStream", it) })
+    }, { Log.d("FireLiteStream", it) }, setStream = { player, item, factory ->
+        player.setMediaSource(DefaultMediaSourceFactory(factory).createMediaSource(item))
+    })
 
     private val gate = StreamGate()
     private val httpFactory = DefaultHttpDataSource.Factory()
@@ -98,7 +101,7 @@ class PlaybackController internal constructor(
     private var preview = false
     private val connections = AtomicInteger()
     private val connectionGate = HttpConnectionGate()
-    private val trackedFactory = object : HttpDataSource.Factory {
+    private fun trackedFactory(session: Long) = object : HttpDataSource.Factory {
         override fun setDefaultRequestProperties(properties: Map<String, String>): HttpDataSource.Factory {
             httpFactory.setDefaultRequestProperties(properties)
             return this
@@ -112,10 +115,10 @@ class PlaybackController internal constructor(
                 private var connection: Closeable? = null
 
                 override fun open(dataSpec: DataSpec): Long {
-                    connection = connectionGate.acquire()
+                    connection = connectionGate.acquire(session)
                     stream = dataSpec.uri.toString().hashCode()
                     connected = true
-                    trace("HTTP_OPEN stream=$stream active=${connections.incrementAndGet()}")
+                    trace("HTTP_OPEN session=$session stream=$stream active=${connections.incrementAndGet()}")
                     return try {
                         delegate.open(dataSpec)
                     } catch (error: Exception) {
@@ -130,7 +133,7 @@ class PlaybackController internal constructor(
                     } finally {
                         if (connected) {
                             connected = false
-                            trace("HTTP_CLOSE stream=$stream active=${connections.decrementAndGet()}")
+                            trace("HTTP_CLOSE session=$session stream=$stream active=${connections.decrementAndGet()}")
                             connection?.close()
                             connection = null
                         }
@@ -165,14 +168,15 @@ class PlaybackController internal constructor(
         val player = ensurePlayer()
         player.stop() // first close the old connection ...
         player.clearMediaItems()
+        val session = connectionGate.nextSession()
         trace("STOP before switch")
         mutableStatus.value = PlaybackStatus.Connecting
 
         startJob = scope.launch {
             delay(CLOSE_GRACE_MS) // ... and give the server time to notice, only then open the new one
             awaitConnectionClose()
-            trace("PREPARE player=${System.identityHashCode(player)} stream=${request.url.hashCode()}")
-            player.setMediaItem(mediaItem(request.url))
+            trace("PREPARE session=$session player=${System.identityHashCode(player)} stream=${request.url.hashCode()}")
+            setStream(player, mediaItem(request.url), trackedFactory(session))
             player.playWhenReady = true
             player.prepare()
         }
@@ -185,6 +189,7 @@ class PlaybackController internal constructor(
         activeRequest = null
         suspendedRequest = null
         gate.onStopped()
+        connectionGate.nextSession()
         exo?.let {
             it.stop()
             it.clearMediaItems()
@@ -277,7 +282,7 @@ class PlaybackController internal constructor(
 
     private fun ensurePlayer(): ExoPlayer {
         exo?.let { return it }
-        val player = createPlayer(trackedFactory)
+        val player = createPlayer(trackedFactory(0))
         applyQuality(player)
         player.setAudioAttributes(AudioAttributes.DEFAULT, true)
         player.addListener(listener)

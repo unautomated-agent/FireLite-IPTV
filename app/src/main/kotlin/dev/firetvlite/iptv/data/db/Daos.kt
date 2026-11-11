@@ -60,6 +60,12 @@ interface SourceDao {
 
 @Dao
 interface ChannelDao {
+    @Query("SELECT COALESCE(MAX(c.catchupDays), 0) FROM channel c WHERE c.sourceId=:sourceId " +
+        "AND (:groupName IS NULL OR c.groupName=:groupName) " +
+        "AND (:favorites=0 OR EXISTS(SELECT 1 FROM favorite f WHERE f.streamUrl=c.streamUrl)) " +
+        "AND (:recent=0 OR EXISTS(SELECT 1 FROM recent r WHERE r.streamUrl=c.streamUrl))")
+    fun guideCatchupDays(sourceId: Long, groupName: String?, favorites: Boolean, recent: Boolean): Flow<Int>
+
     @Query(
         "SELECT groupName, COUNT(*) AS channelCount FROM channel " +
             "WHERE sourceId = :sourceId GROUP BY groupName ORDER BY MIN(position)",

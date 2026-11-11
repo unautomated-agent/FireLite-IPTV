@@ -46,15 +46,26 @@ cost of TextureView for 4K on the Fire TV 4K Max. The view detaches from the pla
 960x540 / 1.5 Mbps maximum tracks; fullscreen lifts these limits. Providers without lower-resolution variants
 may still deliver their sole track: track selection cannot transcode or reduce the bitrate of a fixed stream.
 
+## Live programme grid
+
+The Live browser uses a paged 2.5-hour programme grid. Up/Down preserve the selected absolute time;
+Left/Right move between programmes, and Left from a channel name returns to its group. Rewind/fast-forward
+shift the window by an hour; Play/Pause returns to now. Menu toggles the row's favourite. OK plays a current
+programme live or a retained catch-up programme from its start; future/unavailable cells only show details.
+The group determines history bounds (at most seven days); future browsing ends at the guide's end, capped
+at three days. Focusing a row always previews live, including after leaving archive playback. The fullscreen
+overlay remains a simple channel list.
+
 ## Hard rule: one stream at a time
 
-The provider allows exactly **one** simultaneous connection and blocks the account on a second one.
+The provider allows exactly **one streaming session** (account/IP), not one HTTP request. HLS playlist
+refreshes and segment downloads within that session may overlap, but a second channel must never overlap it.
 `PlaybackController` is the only code that opens a stream:
 
-- a single player instance owns the only stream connection;
+- a single player instance owns the only streaming session;
 - the old connection is closed *before* a new one opens, and a short grace period lets the server notice;
-- HTTP requests are serialized, including HLS playlist reloads and media segments; cancellation interrupts
-  waiting loaders and a permit is released only after the data source closes;
+- requests within one streaming session may overlap (HLS playlists and segments); a new session waits for
+  every old request to close, and late requests from superseded media sources are rejected;
 - a new prepare waits for all previous HTTP data sources to close; `FireLiteStream` logs open/close ordering
   using opaque URI hashes (never provider URLs or credentials);
 - rapid channel changes are merged, only the channel the user stops on connects (`StreamGate` is unit tested);

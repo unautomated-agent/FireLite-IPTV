@@ -135,6 +135,18 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     fun currentProgrammes(channelIds: List<Long>, time: Long) = container.epg.programmes(channelIds, time, time + 1)
 
+    fun programmes(channelIds: List<Long>, from: Long, until: Long) = container.epg.programmes(channelIds, from, until)
+
+    fun guideLimits(key: GroupKey): Flow<Pair<Int, Long?>> = sourceId.flatMapLatest { id ->
+        if (id == null) flowOf(0 to null) else {
+            val group = (key as? GroupKey.Named)?.name
+            combine(
+                channelDao.guideCatchupDays(id, group, key == GroupKey.Favorites, key == GroupKey.Recent),
+                container.database.epgDao().guideEnd(id, group, key == GroupKey.Favorites, key == GroupKey.Recent),
+            ) { days, end -> days to end }
+        }
+    }
+
     fun guide(channelId: Long, time: Long) = container.epg.observeCurrentAndNextAt(channelId, time)
 
     /** The list to walk through with channel up/down when a channel of [key] is opened. */

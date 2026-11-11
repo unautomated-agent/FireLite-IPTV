@@ -8,20 +8,25 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HttpConnectionGateTest {
-    @Test fun playlistAndSegmentConnectionsCannotOverlapAndCloseIsIdempotent() {
+    @Test fun requestsWithinOneSessionOverlapButANewChannelWaitsForAllOfThem() {
         val gate = HttpConnectionGate()
-        val first = gate.acquire()
+        val session = gate.nextSession()
+        val first = gate.acquire(session)
+        val segment = gate.acquire(session)
+        val next = gate.nextSession()
         val waiting = CountDownLatch(1)
         val opened = CountDownLatch(1)
         val second = Thread {
             waiting.countDown()
-            gate.acquire().use { opened.countDown() }
+            gate.acquire(next).use { opened.countDown() }
         }
         second.start()
         try {
             assertTrue(waiting.await(3, TimeUnit.SECONDS))
             assertFalse(opened.await(50, TimeUnit.MILLISECONDS))
-        } finally { first.close(); first.close() }
+            first.close(); first.close()
+            assertFalse(opened.await(50, TimeUnit.MILLISECONDS))
+        } finally { first.close(); segment.close() }
         assertTrue(opened.await(3, TimeUnit.SECONDS))
         second.join(3_000)
         assertFalse(second.isAlive)
@@ -29,12 +34,13 @@ class HttpConnectionGateTest {
 
     @Test fun cancelledWaitersDoNotOpenOrLeakThePermit() {
         val gate = HttpConnectionGate()
-        val first = gate.acquire()
+        val first = gate.acquire(gate.nextSession())
+        val next = gate.nextSession()
         val waiting = CountDownLatch(1)
         val cancelled = CountDownLatch(1)
         val waiter = Thread {
             waiting.countDown()
-            try { gate.acquire().use { error("Cancelled waiter opened a connection") } }
+            try { gate.acquire(next).use { error("Cancelled waiter opened a connection") } }
             catch (expected: InterruptedIOException) { cancelled.countDown() }
         }
         waiter.start()
@@ -43,6 +49,14 @@ class HttpConnectionGateTest {
             waiter.interrupt()
             assertTrue(cancelled.await(3, TimeUnit.SECONDS))
         } finally { first.close(); waiter.join(3_000) }
-        gate.acquire().close()
+        gate.acquire(next).close()
+    }
+
+    @Test(expected = InterruptedIOException::class)
+    fun lateRequestsFromSupersededMediaSourcesAreRejected() {
+        val gate = HttpConnectionGate()
+        val old = gate.nextSession()
+        gate.nextSession()
+        gate.acquire(old)
     }
 }

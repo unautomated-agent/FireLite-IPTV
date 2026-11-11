@@ -15,6 +15,12 @@ private const val PROGRAMME_AT =
 
 @Dao
 interface EpgDao {
+    @Query("SELECT MAX(p.stop) $MAPPED_PROGRAMMES WHERE c.sourceId=:sourceId " +
+        "AND (:groupName IS NULL OR c.groupName=:groupName) " +
+        "AND (:favorites=0 OR EXISTS(SELECT 1 FROM favorite f WHERE f.streamUrl=c.streamUrl)) " +
+        "AND (:recent=0 OR EXISTS(SELECT 1 FROM recent r WHERE r.streamUrl=c.streamUrl))")
+    fun guideEnd(sourceId: Long, groupName: String?, favorites: Boolean, recent: Boolean): Flow<Long?>
+
     @Insert
     suspend fun insertProgrammes(programmes: List<ProgrammeEntity>)
 

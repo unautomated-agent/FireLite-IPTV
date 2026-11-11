@@ -74,14 +74,15 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var zapCount = 0
     private var zapIndex = 0
     private var userAgent = LibraryRepository.DEFAULT_USER_AGENT
+    private var openJob: Job? = null
     private var zapJob: Job? = null
     private var catchupJob: Job? = null
     private var messageJob: Job? = null
 
     /** Opens the player on item [startIndex] of [zap] and starts playing it. */
     fun open(zap: ZapContext, startIndex: Int) {
-        if (mutableOpen.value) return
-        viewModelScope.launch {
+        if (mutableOpen.value || openJob?.isActive == true) return
+        openJob = viewModelScope.launch {
             val count = zap.count()
             if (count == 0) return@launch
             val index = startIndex.coerceIn(0, count - 1)
@@ -113,12 +114,17 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun close() {
+        openJob?.cancel()
         zapJob?.cancel()
         catchupJob?.cancel()
+        messageJob?.cancel()
         playback.stop()
         mutableOpen.value = false
         mutableChannel.value = null
         mutableCatchupOffset.value = 0
+        mutableMessage.value = null
+        mutablePosition.value = ZapPosition(0, 0)
+        zapCount = 0
         zapContext = null
     }
 

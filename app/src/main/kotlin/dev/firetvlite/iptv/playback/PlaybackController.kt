@@ -61,10 +61,17 @@ data class PlaybackSnapshot(
  *
  * Must be used from the main thread.
  */
-class PlaybackController(
-    private val context: Context,
+class PlaybackController internal constructor(
     private val scope: CoroutineScope,
+    private val createPlayer: (DefaultHttpDataSource.Factory) -> ExoPlayer,
 ) {
+    constructor(context: Context, scope: CoroutineScope) : this(scope, { httpFactory ->
+        val renderers = DefaultRenderersFactory(context).setEnableDecoderFallback(true)
+        ExoPlayer.Builder(context, renderers)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
+            .build()
+    })
+
     private val gate = StreamGate()
     private val httpFactory = DefaultHttpDataSource.Factory()
         .setAllowCrossProtocolRedirects(true)
@@ -117,6 +124,7 @@ class PlaybackController(
         startJob?.cancel()
         startJob = null
         activeRequest = null
+        suspendedRequest = null
         gate.onStopped()
         exo?.let {
             it.stop()
@@ -127,8 +135,9 @@ class PlaybackController(
 
     /** Called when the app goes to the background: closes the stream but remembers it. */
     fun suspendStream() {
-        suspendedRequest = activeRequest ?: suspendedRequest
+        val request = activeRequest ?: suspendedRequest
         stop()
+        suspendedRequest = request
     }
 
     /** Called when the app returns: reconnects the stream that was running before, if any. */
@@ -140,12 +149,15 @@ class PlaybackController(
 
     /** Frees the decoder. The player is created again when needed. */
     fun releasePlayer() {
+        val request = suspendedRequest
+        stop()
+        suspendedRequest = request
+        mutablePlayer.value = null
         exo?.let {
             it.removeListener(listener)
             it.release()
         }
         exo = null
-        mutablePlayer.value = null
     }
 
     fun togglePause() {
@@ -187,10 +199,7 @@ class PlaybackController(
 
     private fun ensurePlayer(): ExoPlayer {
         exo?.let { return it }
-        val renderers = DefaultRenderersFactory(context).setEnableDecoderFallback(true)
-        val player = ExoPlayer.Builder(context, renderers)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
-            .build()
+        val player = createPlayer(httpFactory)
         player.setAudioAttributes(AudioAttributes.DEFAULT, true)
         player.addListener(listener)
         exo = player

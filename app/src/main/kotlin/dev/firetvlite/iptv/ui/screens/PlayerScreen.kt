@@ -1,5 +1,6 @@
 package dev.firetvlite.iptv.ui.screens
 
+import android.view.ViewGroup
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
@@ -132,7 +133,6 @@ private fun PlayerContent(viewModel: PlayerViewModel) {
             .fillMaxSize()
             .background(Color.Black)
             .focusRequester(rootFocus)
-            .focusable()
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 val firstPress = event.nativeKeyEvent.repeatCount == 0
@@ -191,16 +191,21 @@ private fun PlayerContent(viewModel: PlayerViewModel) {
                     }
                     else -> false
                 }
-            },
+            }
+            .focusable(),
     ) {
         AndroidView(
             factory = { context ->
                 PlayerView(context).apply {
                     useController = false
+                    isFocusable = false
+                    isFocusableInTouchMode = false
+                    descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                 }
             },
             update = { view -> view.player = player },
+            onRelease = { view -> view.player = null },
             modifier = Modifier.fillMaxSize(),
         )
 

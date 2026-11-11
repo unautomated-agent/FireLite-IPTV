@@ -80,6 +80,7 @@ import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 import dev.firetvlite.iptv.ui.viewmodel.GroupItem
 import dev.firetvlite.iptv.ui.viewmodel.LibraryViewModel
 import dev.firetvlite.iptv.ui.viewmodel.PlayerViewModel
+import dev.firetvlite.iptv.ui.viewmodel.BrowserTarget
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
@@ -101,6 +102,8 @@ fun LiveTvScreen(
     onPreviewBounds: (Rect) -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
+    guideOnly: Boolean = false,
+    returnTarget: BrowserTarget? = null,
 ) {
     val source by library.source.collectAsState()
     val channelCount by library.channelCount.collectAsState()
@@ -129,6 +132,7 @@ fun LiveTvScreen(
                 library = library, player = player,
                 active = active && mode.acceptsPreview,
                 onPreviewBounds = onPreviewBounds, modifier = modifier,
+                guideOnly = guideOnly, returnTarget = returnTarget,
             )
         }
     }
@@ -159,10 +163,13 @@ private fun ChannelBrowser(
     onShowGroups: (Boolean) -> Unit = {},
     onPreviewBounds: (Rect) -> Unit = {},
     modifier: Modifier = Modifier,
+    guideOnly: Boolean = false,
+    returnTarget: BrowserTarget? = null,
 ) {
     val groups by library.groups.collectAsState()
     val selected by library.selectedGroup.collectAsState()
-    val restore by player.browserTarget.collectAsState()
+    val playerRestore by player.browserTarget.collectAsState()
+    val restore = if (guideOnly) returnTarget else playerRestore
     val pagingItems = key(selected) {
         remember(selected) { library.channels(selected) }.collectAsLazyPagingItems()
     }
@@ -239,7 +246,7 @@ private fun ChannelBrowser(
     }.collectAsState(initial = CurrentAndNext(null, null))
     var focusedIndex by remember(selected) { mutableStateOf(0) }
     LaunchedEffect(active, focusedChannel?.channel?.streamUrl, focusedIndex, selected, channelsHaveFocus) {
-        if (overlay) return@LaunchedEffect
+        if (overlay || guideOnly) return@LaunchedEffect
         player.cancelPreview()
         if (active && channelsHaveFocus && focusedChannel != null) {
             library.zapContext(selected)?.let { player.preview(it, focusedIndex, selected) }
@@ -459,7 +466,7 @@ private fun ChannelBrowser(
                 style = FireLiteTheme.typography.label, modifier = Modifier.padding(top = 8.dp))
         }
 
-        if (!overlay) DetailPanel(row = focusedChannel, guide = detailGuide,
+        if (!overlay && !guideOnly) DetailPanel(row = focusedChannel, guide = detailGuide,
             focusedProgramme = focusedProgramme, programmeFocus = programmeFocus, now = now,
             onPreviewBounds = onPreviewBounds, modifier = Modifier.width(188.dp))
     }

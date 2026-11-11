@@ -115,6 +115,11 @@ private fun AppShell(
                     onPreviewBounds = { previewBounds = it },
                     onOpenSettings = { navigate(Destination.Settings) },
                 )
+                Destination.Guide -> LiveTvScreen(
+                    library = libraryViewModel, player = playerViewModel,
+                    active = current == Destination.Guide, guideOnly = true, returnTarget = tabReturn,
+                    onPreviewBounds = {}, onOpenSettings = { navigate(Destination.Settings) },
+                )
                 Destination.Settings -> SettingsScreen(
                     installed = updateViewModel.installed,
                     updateState = updateState,

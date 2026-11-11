@@ -49,7 +49,7 @@ fun HomeScreen(
     LaunchedEffect(active, returnTarget?.token, recent.isNotEmpty(), favorites.isNotEmpty(), source?.id) {
         if (!active) return@LaunchedEffect
         val targetSection = sections.indexOfFirst { (group, rows) ->
-            group == returnTarget?.group && rows.any { it.channel.streamUrl == returnTarget.channel.streamUrl }
+            group == returnTarget?.group && rows.any { it.channel.streamUrl == returnTarget?.channel?.streamUrl }
         }.takeIf { it >= 0 } ?: sections.indexOfFirst { (_, rows) ->
             rows.any { it.channel.streamUrl == returnTarget?.channel?.streamUrl }
         }.takeIf { it >= 0 } ?: sections.indexOfFirst { it.second.isNotEmpty() }

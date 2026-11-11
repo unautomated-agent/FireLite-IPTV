@@ -126,7 +126,7 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
         if (mode == PlayerMode.Preview) Box(video) { StatusLayer(status) }
         if (mode == PlayerMode.Fullscreen && timeline == null) PlayerContent(viewModel)
         if (mode == PlayerMode.Overlay) PlayerChannelOverlay(library, viewModel)
-        timeline?.let { ChannelTimelineStrip(it, viewModel, library) }
+        timeline?.let { ChannelHistoryList(it, viewModel, library) }
     }
 }
 

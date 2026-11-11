@@ -33,7 +33,7 @@ object M3uParser {
         val tvgName: String? = null,
         val catchupType: String? = null,
         val catchupSource: String? = null,
-        val catchupDays: Int = 0,
+        val catchupDays: Int? = null,
     )
 
     private class Defaults(
@@ -105,8 +105,8 @@ object M3uParser {
 
     private fun readDefaults(line: String): Defaults {
         val source = attribute(line, "catchup-source")
-        val type = attribute(line, "catchup") ?: if (source != null) "default" else null
-        return Defaults(type, source, readCatchupDays(line))
+        val type = attribute(line, "catchup") ?: attribute(line, "catchup-type") ?: if (source != null) "default" else null
+        return Defaults(type, source, readCatchupDays(line) ?: if (type != null) 7 else 0)
     }
 
     private fun readInfo(line: String): Pending {
@@ -121,7 +121,7 @@ object M3uParser {
             logoUrl = attribute(attrs, "tvg-logo")?.takeIf { it.isNotEmpty() },
             tvgId = attribute(attrs, "tvg-id")?.takeIf { it.isNotEmpty() },
             tvgName = attribute(attrs, "tvg-name")?.takeIf { it.isNotEmpty() },
-            catchupType = attribute(attrs, "catchup")?.takeIf { it.isNotEmpty() },
+            catchupType = (attribute(attrs, "catchup") ?: attribute(attrs, "catchup-type"))?.takeIf { it.isNotEmpty() },
             catchupSource = attribute(attrs, "catchup-source")?.takeIf { it.isNotEmpty() },
             catchupDays = readCatchupDays(attrs),
         )
@@ -129,8 +129,16 @@ object M3uParser {
 
     private fun toChannel(info: Pending, url: String, defaults: Defaults): ParsedChannel {
         val source = info.catchupSource ?: defaults.catchupSource
-        val type = info.catchupType ?: defaults.catchupType ?: if (source != null) "default" else null
-        val days = if (info.catchupDays > 0) info.catchupDays else defaults.catchupDays
+        val declaredType = info.catchupType ?: defaults.catchupType
+        val days = info.catchupDays ?: defaults.catchupDays.takeIf { it > 0 }
+            ?: if (declaredType != null || source != null) 7 else 0
+        val type = declaredType?.takeUnless { it.equals("true", true) || it == "1" }
+            ?: when {
+                source != null -> "default"
+                days > 0 && XtreamAddress.stream(url) != null -> "xc"
+                days > 0 -> "shift"
+                else -> null
+            }
         return ParsedChannel(
             name = info.name.ifEmpty { url },
             group = info.group,
@@ -144,9 +152,11 @@ object M3uParser {
         )
     }
 
-    private fun readCatchupDays(attrs: String): Int =
-        (attribute(attrs, "catchup-days") ?: attribute(attrs, "tvg-rec") ?: attribute(attrs, "timeshift"))
-            ?.toIntOrNull() ?: 0
+    private fun readCatchupDays(attrs: String): Int? {
+        val days = attribute(attrs, "catchup-days") ?: attribute(attrs, "tvg-rec") ?: attribute(attrs, "timeshift")
+        val value = (days ?: attribute(attrs, "catchup-time"))?.toDoubleOrNull()?.takeIf { it.isFinite() } ?: return null
+        return (if (days == null && value >= 86_400) value / 86_400 else value).toInt().coerceIn(0, 365)
+    }
 
     /** Index of the first comma that is not inside quotes, or -1. */
     internal fun firstCommaOutsideQuotes(text: String): Int {

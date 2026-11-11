@@ -9,6 +9,28 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class M3uParserTest {
+    @Test fun detectsArchiveAliasesDefaultsExplicitOptOutAndXtreamPaths() {
+        val rows = parse("""
+            #EXTM3U catchup-type='append' catchup-days=3 catchup-source='?start=${'$'}{start}&end=${'$'}{end}'
+            #EXTINF:-1,Default
+            http://h/1
+            #EXTINF:-1 catchup-days=0,Disabled
+            http://h/live/u/p/2.ts
+            #EXTINF:-1 catchup-type=xc tvg-rec=7,XC
+            http://h/live/u/p/3.m3u8
+            #EXTINF:-1 catchup=shift catchup-time=172800,Seconds
+            http://h/4
+        """.trimIndent())
+        assertEquals("append", rows[0].catchupType)
+        assertEquals(3, rows[0].catchupDays)
+        assertEquals(0, rows[1].catchupDays)
+        assertEquals("xc", rows[2].catchupType)
+        assertEquals(7, rows[2].catchupDays)
+        assertEquals(2, rows[3].catchupDays)
+        assertEquals("xc", parse("#EXTINF:-1 timeshift=5,XC\nhttps://h/u/p/10.ts").single().catchupType)
+        assertEquals("shift", parse("#EXTINF:-1 tvg-rec=2,Shift\nhttps://h/channel").single().catchupType)
+    }
+
     @Test fun discoversMixedCaseSingleQuotedBareAndSeparateHeaderUrls() {
         var urls = emptyList<String>()
         val rows = mutableListOf<ParsedChannel>()

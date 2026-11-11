@@ -8,6 +8,28 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CatchupUrlBuilderTest {
+    @Test fun buildsXtreamArchiveForBothExtensionsAndRoundsDurationUpToMinutes() {
+        assertEquals("https://host:8443/timeshift/u/p/31/2024-03-05:07-08/12.ts",
+            CatchupUrlBuilder.build(channel("https://host:8443/live/u/p/12.ts", "xc"), start, now, 1801))
+        assertEquals("https://host/timeshift/u/p/30/2024-03-05:07-08/12.m3u8",
+            CatchupUrlBuilder.build(channel("https://host/u/p/12.m3u8", "xc"), start, now, 1800))
+        assertTrue(CatchupUrlBuilder.isSupported(channel("https://host/u/p/12", "xc")))
+    }
+
+    @Test fun expandsAllProviderPlaceholdersAndHonoursTemplatesForShiftAndFs() {
+        val template = "${'$'}{start}-{utc}-${'$'}{end}-{utcend}-{lutc}-${'$'}{timestamp}-{duration}-{offset}"
+        val expected = "$start-$start-${start + 600}-${start + 600}-$now-$now-600-3600"
+        assertEquals(expected, CatchupUrlBuilder.expand(template, start, now, 600))
+        for (type in listOf("default", "append", "shift", "flussonic", "fs", "xc")) {
+            assertEquals("http://host/live/1.m3u8-$start-600",
+                CatchupUrlBuilder.build(channel(type = type, source = "-{utc}-{duration}"), start, now, 600))
+        }
+        assertEquals("http://host/ch/archive-$start-600.ts?token=a",
+            CatchupUrlBuilder.build(channel("http://host/ch/mpegts?token=a", "fs"), start, now, 600))
+        assertFalse(CatchupUrlBuilder.isSupported(channel(type = "default", source = null)))
+        assertFalse(CatchupUrlBuilder.isSupported(channel(type = "none")))
+    }
+
 
     // 2024-03-05 07:08:09 UTC
     private val start = 1_709_622_489L

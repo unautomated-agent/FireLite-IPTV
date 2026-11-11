@@ -22,6 +22,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.LoadEventInfo
 import androidx.media3.exoplayer.source.MediaLoadData
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.channels.Channel
@@ -88,6 +89,9 @@ class PlaybackController internal constructor(
     private val recordPlayback: (Boolean, String) -> Unit = { _, _ -> },
     private val progressiveItem: (String) -> MediaItem = {
         MediaItem.Builder().setUri(it).setMimeType(MimeTypes.VIDEO_MP2T).build()
+    },
+    private val preparationError: (Throwable) -> PlaybackException = {
+        PlaybackException("Nie udało się przygotować odtwarzania", it, PlaybackException.ERROR_CODE_FAILED_RUNTIME_CHECK)
     },
 ) {
     internal constructor(scope: CoroutineScope, createPlayer: (HttpDataSource.Factory) -> ExoPlayer) :
@@ -250,7 +254,7 @@ class PlaybackController internal constructor(
         startJob?.cancel()
         httpFactory.setUserAgent(request.userAgent)
 
-        val player = ensurePlayer()
+        val player = prepareSafely { ensurePlayer() } ?: return
         player.stop() // first close the old connection ...
         player.clearMediaItems()
         val session = connectionGate.nextSession()
@@ -262,10 +266,33 @@ class PlaybackController internal constructor(
             delay(CLOSE_GRACE_MS) // ... and give the server time to notice, only then open the new one
             awaitConnectionClose()
             trace("PREPARE session=$session player=${System.identityHashCode(player)} stream=${request.url.hashCode()}")
-            setStream(player, mediaItem(request.url), trackedFactory(session))
-            player.playWhenReady = true
-            player.prepare()
+            prepareSafely {
+                setStream(player, mediaItem(request.url), trackedFactory(session))
+                player.playWhenReady = true
+                player.prepare()
+            }
         }
+    }
+
+    private inline fun <T> prepareSafely(block: () -> T): T? = try {
+        block()
+    } catch (cancelled: CancellationException) {
+        throw cancelled
+    } catch (error: Exception) {
+        failPreparation(error)
+        null
+    } catch (error: LinkageError) {
+        failPreparation(error)
+        null
+    }
+
+    private fun failPreparation(cause: Throwable) {
+        val error = preparationError(cause)
+        recordPlayback(true, diagnostic(error))
+        activeRequest = null
+        gate.onStopped()
+        mutableStatus.value = PlaybackStatus.Failed(error.errorCodeName)
+        runCatching { exo?.stop() }
     }
 
     /** Closes the stream for good. */
@@ -412,19 +439,21 @@ class PlaybackController internal constructor(
                 awaitConnectionClose()
                 val player = exo ?: return@launch
                 if (activeRequest !== request || activeSession != session) return@launch
-                recovery.onRecovery(action)
-                when (action) {
-                    RecoveryAction.LiveEdge -> player.seekToDefaultPosition()
-                    RecoveryAction.Progressive -> {
-                        setStream(player, progressiveItem(request.url), trackedFactory(session))
+                prepareSafely {
+                    recovery.onRecovery(action)
+                    when (action) {
+                        RecoveryAction.LiveEdge -> player.seekToDefaultPosition()
+                        RecoveryAction.Progressive -> {
+                            setStream(player, progressiveItem(request.url), trackedFactory(session))
+                        }
+                        RecoveryAction.RestoreHls -> {
+                            setStream(player, mediaItem(request.url), trackedFactory(session))
+                        }
+                        RecoveryAction.Retry -> Unit
                     }
-                    RecoveryAction.RestoreHls -> {
-                        setStream(player, mediaItem(request.url), trackedFactory(session))
-                    }
-                    RecoveryAction.Retry -> Unit
+                    trace("RECOVER session=$session action=$action")
+                    player.prepare()
                 }
-                trace("RECOVER session=$session action=$action")
-                player.prepare()
             }
         } else {
             mutableStatus.value = PlaybackStatus.Failed(error.errorCodeName)

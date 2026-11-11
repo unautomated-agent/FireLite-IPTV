@@ -17,7 +17,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ChannelEpgEntity::class,
         XtreamChannelEntity::class,
     ],
-    version = 5,
+    version = 6,
     exportSchema = false,
 )
 abstract class FireLiteDatabase : RoomDatabase() {
@@ -28,6 +28,16 @@ abstract class FireLiteDatabase : RoomDatabase() {
     abstract fun xtreamDao(): XtreamDao
 
     companion object {
+        val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE source ADD COLUMN importedVersionCode INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE source ADD COLUMN importedParserRevision INTEGER NOT NULL DEFAULT 0")
+                db.execSQL("ALTER TABLE source ADD COLUMN rawCatchupChannels INTEGER NOT NULL DEFAULT -1")
+                db.execSQL("ALTER TABLE source ADD COLUMN playlistUserAgent TEXT NOT NULL DEFAULT ''")
+                db.execSQL("ALTER TABLE source ADD COLUMN playlistDeviceType TEXT NOT NULL DEFAULT ''")
+            }
+        }
+
         val MIGRATION_4_5 = object : Migration(4, 5) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE source ADD COLUMN xtreamAccount TEXT NOT NULL DEFAULT ''")
@@ -85,7 +95,7 @@ abstract class FireLiteDatabase : RoomDatabase() {
 
         fun create(context: Context): FireLiteDatabase =
             Room.databaseBuilder(context, FireLiteDatabase::class.java, "firelite.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
                 .build()
     }
 }

@@ -7,6 +7,14 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class SourcePolicyTest {
+    @Test fun changedAppVersionOrParserRevisionRequiresOneSuccessfulReimport() {
+        assertTrue(SourcePolicy.needsReimport(0, 0, 115, 1))
+        assertTrue(SourcePolicy.needsReimport(114, 1, 115, 1))
+        assertTrue(SourcePolicy.needsReimport(115, 0, 115, 1))
+        assertFalse(SourcePolicy.needsReimport(115, 1, 115, 1))
+        assertTrue(SourcePolicy.needsReimport(116, 1, 115, 1))
+    }
+
     private val day = 24L * 60 * 60 * 1000
     private val now = 10 * day
 

@@ -303,13 +303,56 @@ class PlaybackControllerTest {
         }
     }
 
-    private class TestError(code: Int) : PlaybackException("fixture", null, code, Bundle.EMPTY, 0)
+    @Test fun sourceCreationAndPreparationExceptionsAreRecordedInsteadOfEscaping() = runBlocking {
+        for (stage in listOf("player", "item", "source", "prepare", "recovery", "recoveryPrepare", "linkage")) {
+            val fake = FakePlayer()
+            val records = mutableListOf<String>()
+            val failure = if (stage == "linkage") NoClassDefFoundError("DashMediaSource\$Factory") else
+                IllegalStateException("fixture", ClassNotFoundException("DashMediaSource\$Factory"))
+            val controller = PlaybackController(this,
+                { if (stage == "player") throw failure else fake.player }, {},
+                { if (stage == "item" || stage == "linkage") throw failure else MediaItem.EMPTY },
+                setStream = { _, _, _ -> if (stage == "source") throw failure },
+                progressiveItem = { if (stage == "recovery") throw failure else MediaItem.EMPTY },
+                recordPlayback = { failed, record -> if (failed) records += record },
+                preparationError = { TestError(PlaybackException.ERROR_CODE_FAILED_RUNTIME_CHECK, it) })
+            if (stage == "prepare") fake.prepareFailure = failure
+            controller.play(request.copy(url = "https://example.org/live.m3u8"))
+            delay(450)
+            if (stage == "recovery" || stage == "recoveryPrepare") {
+                if (stage == "recoveryPrepare") fake.prepareFailure = failure
+                fake.listener!!.onPlayerError(TestError(3002))
+                delay(450)
+            }
+            assertEquals(PlaybackStatus.Failed("ERROR_CODE_FAILED_RUNTIME_CHECK"), controller.status.value)
+            assertEquals(true, records.last().contains(if (stage == "linkage") "NoClassDefFoundError" else "ClassNotFoundException"))
+            assertEquals(true, records.last().contains("DashMediaSource"))
+            controller.stop()
+        }
+    }
+
+    @Test fun cancellingSourcePreparationIsNotReportedAsAPlaybackFailure() = runBlocking {
+        val fake = FakePlayer()
+        val records = mutableListOf<String>()
+        val controller = PlaybackController(this, { fake.player }, {},
+            { throw kotlinx.coroutines.CancellationException("fixture") },
+            recordPlayback = { _, record -> records += record },
+            preparationError = { TestError(PlaybackException.ERROR_CODE_FAILED_RUNTIME_CHECK, it) })
+        controller.play(request)
+        delay(450)
+        assertEquals(emptyList<String>(), records)
+        assertEquals(PlaybackStatus.Connecting, controller.status.value)
+        controller.stop()
+    }
+
+    private class TestError(code: Int, cause: Throwable? = null) : PlaybackException("fixture", cause, code, Bundle.EMPTY, 0)
 
     private class FakePlayer {
         val calls = mutableListOf<String>()
         var parameters = TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT
         var listener: Player.Listener? = null
         var state = Player.STATE_IDLE
+        var prepareFailure: Throwable? = null
         val player = Proxy.newProxyInstance(
             ExoPlayer::class.java.classLoader,
             arrayOf(ExoPlayer::class.java),
@@ -322,6 +365,7 @@ class PlaybackControllerTest {
                 "setTrackSelectionParameters" -> { parameters = args!![0] as TrackSelectionParameters; null }
                 "addListener" -> { listener = args!![0] as Player.Listener; null }
                 "getPlaybackState" -> state
+                "prepare" -> { calls += method.name; prepareFailure?.let { throw it }; null }
                 else -> {
                     calls += method.name
                     when (method.returnType) {

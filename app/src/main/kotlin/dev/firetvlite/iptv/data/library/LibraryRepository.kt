@@ -1,6 +1,7 @@
 package dev.firetvlite.iptv.data.library
 
 import android.content.Context
+import dev.firetvlite.iptv.BuildConfig
 import androidx.room.withTransaction
 import dev.firetvlite.iptv.data.db.FireLiteDatabase
 import dev.firetvlite.iptv.data.db.SourceEntity
@@ -130,6 +131,8 @@ class LibraryRepository(
         if (!force && !SourcePolicy.needsImport(
                 source.refreshedAt, database.channelDao().count(source.id), System.currentTimeMillis(),
             )
+            && !SourcePolicy.needsReimport(source.importedVersionCode, source.importedParserRevision,
+                BuildConfig.VERSION_CODE, PlaylistImporter.PARSER_REVISION)
         ) {
             epg.refresh(source.id)
             return

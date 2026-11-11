@@ -1,6 +1,7 @@
 package dev.firetvlite.iptv.data.playlist
 
 import androidx.room.withTransaction
+import dev.firetvlite.iptv.BuildConfig
 import dev.firetvlite.iptv.data.db.ChannelEntity
 import dev.firetvlite.iptv.data.db.FireLiteDatabase
 import dev.firetvlite.iptv.data.db.SourceEntity
@@ -36,8 +37,9 @@ class PlaylistImporter(
             val channels = ArrayList<ChannelEntity>()
             val groups = HashMap<String, String>()
             var epgUrls = emptyList<String>()
+            var playlistMetadata = M3uParser.Metadata()
             file.inputStream().reader(Charsets.UTF_8).use { reader ->
-                M3uParser.parse(reader, onEpgUrls = { epgUrls = it }) { parsed ->
+                M3uParser.parse(reader, onEpgUrls = { epgUrls = it }, onMetadata = { playlistMetadata = it }) { parsed ->
                     context.ensureActive()
                     channels.add(
                         ChannelEntity(
@@ -72,8 +74,9 @@ class PlaylistImporter(
 
             database.withTransaction {
                 val dao = database.channelDao()
+                val retained = PlaylistIdentity.retain(enriched, dao.identities(source.id))
                 dao.deleteForSource(source.id)
-                enriched.chunked(1_000).forEach { dao.insertAll(it) }
+                retained.chunked(1_000).forEach { dao.insertAll(it) }
                 val metadata = database.xtreamDao()
                 if (xtream == null) {
                     metadata.clear(source.id)
@@ -86,7 +89,8 @@ class PlaylistImporter(
                     metadata.publish(source.id, xtream.account, xtream.status, xtream.timezone,
                         xtream.rows.count { it.archived })
                 }
-                database.sourceDao().markRefreshed(source.id, System.currentTimeMillis())
+                database.sourceDao().markImported(source.id, System.currentTimeMillis(), BuildConfig.VERSION_CODE,
+                    PARSER_REVISION, playlistMetadata.catchupChannels, source.userAgent, playlistMetadata.deviceType)
                 database.sourceDao().updateDiscoveredEpg(source.id, epgUrls.joinToString("\n"))
             }
             channels.size
@@ -138,7 +142,8 @@ class PlaylistImporter(
         throw IOException("Too many redirects")
     }
 
-    private companion object {
+    companion object {
+        const val PARSER_REVISION = 1
         const val MAX_BYTES = 200L * 1024 * 1024
         const val MAX_REDIRECTS = 6
     }

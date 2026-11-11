@@ -9,6 +9,36 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class M3uParserTest {
+    @Test fun realProviderTimeshiftAndDeviceCommentAreRetained() {
+        val rows = mutableListOf<ParsedChannel>()
+        var metadata = M3uParser.Metadata()
+        M3uParser.parse(StringReader("""
+            #EXTM3U
+
+            # WARN: The playlist is adaptable to the type of device used and it is dynamic.
+            # DEVICE TYPE: NONSPECIFIC
+            #EXTINF:-1 id="3_494" group-title="Popularne" timeshift="3" tvg-id="TVPHD.pl" tvg-name="TVP HD" tvg-logo="http://my.teleelevidenie.com/assets/logo/4034.png",TVP HD
+            https://my.teleelevidenie.com/play/hls-custom-c494-XXX.m3u8
+        """.trimIndent()), onMetadata = { metadata = it }) { rows += it }
+        assertEquals("shift", rows.single().catchupType)
+        assertEquals(3, rows.single().catchupDays)
+        assertNull(rows.single().catchupSource)
+        assertEquals(M3uParser.Metadata(1, "NONSPECIFIC"), metadata)
+    }
+
+    @Test fun rawCatchupCountsIncludeDisabledAttributesAndHeaderDefaultsButNotNames() {
+        var metadata = M3uParser.Metadata()
+        M3uParser.parse(StringReader("#EXTM3U\n#EXTINF:-1,Name timeshift=3\nhttps://h/0\n" +
+            "#EXTINF:-1 CATCHUP-DAYS=0,Off\nhttps://h/1\n#EXTINF:-1 tvg-rec=3,Rec\nhttps://h/2\n"),
+            onMetadata = { metadata = it }) {}
+        assertEquals(2, metadata.catchupChannels)
+        M3uParser.parse(StringReader("#EXTM3U catchup-days=0\n#EXTINF:-1,Off\nhttps://h/1\nhttps://h/2\n"),
+            onMetadata = { metadata = it }) {}
+        assertEquals(2, metadata.catchupChannels)
+        M3uParser.parse(StringReader(""), onMetadata = { metadata = it }) {}
+        assertEquals(M3uParser.Metadata(), metadata)
+    }
+
     @Test fun explicitHeaderZeroDisablesArchiveAndChannelValuesOverrideIt() {
         val channels = parse("#EXTM3U catchup=xc catchup-days=0\n" +
             "#EXTINF:-1,Disabled\nhttp://h/live/u/p/1.ts\n" +

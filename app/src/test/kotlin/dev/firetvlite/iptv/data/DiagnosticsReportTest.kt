@@ -16,6 +16,54 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DiagnosticsReportTest {
+    @Test fun migratedSourcesHaveUnknownResponseMetadataUntilASuccessfulReimport() {
+        val source = SourceEntity(name = "M3U", url = "https://h/list", userAgent = "FireLite/2.0",
+            refreshedAt = 1234)
+        val text = DiagnosticsReport.text(source, null, SourceDiagnostics(), null)
+        for (label in listOf("M3U atrybuty archiwum", "M3U User-Agent", "M3U DEVICE TYPE")) {
+            assertTrue(text.contains("$label: Nieznany – brak importu po aktualizacji"))
+        }
+        assertFalse(text.contains("Brak komentarza"))
+        assertFalse(text.contains("M3U atrybuty archiwum: 0"))
+        assertFalse(text.contains("M3U User-Agent: własny"))
+    }
+
+    @Test fun successfulReimportWithoutAttributesOrCommentShowsRecordedAbsence() {
+        val source = SourceEntity(name = "M3U", url = "https://h/list", userAgent = "FireLite/2.0",
+            rawCatchupChannels = 0, playlistUserAgent = "FireLite/2.0", playlistDeviceType = "")
+        val text = DiagnosticsReport.text(source, null, SourceDiagnostics(), null)
+        assertTrue(text.contains("M3U atrybuty archiwum: 0"))
+        assertTrue(text.contains("M3U User-Agent: FireLite/2.0"))
+        assertTrue(text.contains("M3U DEVICE TYPE: Brak komentarza"))
+        assertFalse(text.contains("brak importu po aktualizacji"))
+    }
+
+    @Test fun customPlaylistUserAgentsAreNeverIncludedInTextOrQrPayload() {
+        for (agent in listOf("Bearer private-ua-value", "FireLite/2.0 private-ua-value", "firelite/2.0",
+                "Mozilla/5.0\nprivate-ua-value", "")) {
+            val source = SourceEntity(name = "M3U", url = "https://h/list", userAgent = agent,
+                rawCatchupChannels = 0, playlistUserAgent = agent)
+            val text = DiagnosticsReport.text(source, null, SourceDiagnostics(), null)
+            assertTrue(text.contains("M3U User-Agent: własny (ukryty)"))
+            assertFalse(text.contains("private-ua-value"))
+            assertFalse(DiagnosticsReport.payload(text).contains("private-ua-value"))
+            if (agent.isNotEmpty()) assertFalse(text.contains(agent))
+        }
+    }
+
+    @Test fun providerResponseDiagnosticsShowActualImportUaAttributesAndDeviceType() {
+        val source = SourceEntity(name = "M3U", url = "https://h/list", userAgent = "edited-UA",
+            rawCatchupChannels = 334, playlistUserAgent = "FireLite/2.0", playlistDeviceType = "NONSPECIFIC")
+        val text = DiagnosticsReport.text(source, null, SourceDiagnostics(), null)
+        assertTrue(text.contains("M3U atrybuty archiwum: 334"))
+        assertTrue(text.contains("M3U User-Agent: FireLite/2.0"))
+        assertTrue(text.contains("M3U DEVICE TYPE: NONSPECIFIC"))
+        assertFalse(text.contains("edited-UA"))
+        val unknown = DiagnosticsReport.text(null, null, SourceDiagnostics(), null)
+        assertTrue(unknown.contains("M3U atrybuty archiwum: —"))
+        assertTrue(unknown.contains("M3U User-Agent: —"))
+    }
+
     @Test fun aggregateDiagnosticsNeedOnlyCountsAndOneCredentialSample() {
         val stats = SourceDiagnostics.from(12000, 11000, listOf(ArchiveTypeCount("xc", 9000)),
             "https://provider/live/private-user/private-pass/12.ts")

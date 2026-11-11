@@ -13,6 +13,8 @@ import kotlinx.coroutines.flow.Flow
 private const val CHANNEL_ROW =
     "SELECT c.*, EXISTS(SELECT 1 FROM favorite f WHERE f.streamUrl = c.streamUrl) AS isFavorite FROM channel c"
 
+data class ArchiveTypeCount(val type: String, val count: Int)
+
 @Dao
 interface SourceDao {
     @Query("SELECT * FROM source ORDER BY lastUsedAt DESC, id DESC LIMIT 1")
@@ -61,8 +63,15 @@ interface SourceDao {
 
 @Dao
 interface ChannelDao {
-    @Query("SELECT * FROM channel WHERE sourceId=:sourceId ORDER BY position")
-    fun observeDiagnostics(sourceId: Long): Flow<List<ChannelEntity>>
+    @Query("SELECT streamUrl FROM channel WHERE sourceId=:sourceId ORDER BY position LIMIT 1")
+    fun observeDiagnosticSample(sourceId: Long): Flow<String?>
+
+    @Query("SELECT type, COUNT(*) AS count FROM (SELECT LOWER(TRIM(COALESCE(catchupType, " +
+        "CASE WHEN LENGTH(TRIM(COALESCE(catchupSource,'')))>0 THEN 'default' ELSE '' END))) AS type, catchupSource " +
+        "FROM channel WHERE sourceId=:sourceId AND catchupDays>0) " +
+        "WHERE type IN ('shift','timeshift','xc','flussonic','fs') OR " +
+        "(type IN ('default','append') AND LENGTH(TRIM(COALESCE(catchupSource,'')))>0) GROUP BY type")
+    fun observeArchiveTypes(sourceId: Long): Flow<List<ArchiveTypeCount>>
 
     @Query("SELECT COALESCE(MAX(c.catchupDays), 0) FROM channel c WHERE c.sourceId=:sourceId " +
         "AND (:groupName IS NULL OR c.groupName=:groupName) " +

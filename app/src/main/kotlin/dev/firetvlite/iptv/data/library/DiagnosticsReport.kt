@@ -4,12 +4,11 @@ import com.google.zxing.BarcodeFormat
 import com.google.zxing.EncodeHintType
 import com.google.zxing.common.BitMatrix
 import com.google.zxing.qrcode.QRCodeWriter
-import dev.firetvlite.iptv.data.db.ChannelEntity
+import dev.firetvlite.iptv.data.db.ArchiveTypeCount
 import dev.firetvlite.iptv.data.db.SourceEntity
 import dev.firetvlite.iptv.data.epg.EpgSources
 import dev.firetvlite.iptv.data.epg.EpgState
 import dev.firetvlite.iptv.data.playlist.XtreamAddress
-import dev.firetvlite.iptv.playback.CatchupUrlBuilder
 import java.net.URI
 import java.net.URLDecoder
 import java.time.Instant
@@ -17,13 +16,9 @@ import java.time.Instant
 data class SourceDiagnostics(val channelCount: Int = 0, val matched: Int = 0,
     val archiveTypes: Map<String, Int> = emptyMap(), val secrets: Set<String> = emptySet()) {
     companion object {
-        fun from(channels: List<ChannelEntity>, matched: Int): SourceDiagnostics = SourceDiagnostics(
-            channels.size, matched,
-            channels.filter { CatchupUrlBuilder.isSupported(it) }.groupingBy {
-                it.catchupType?.lowercase() ?: "default"
-            }.eachCount(),
-            DiagnosticRedactor.secrets(channels.flatMap { listOfNotNull(it.streamUrl, it.catchupSource, it.logoUrl) }),
-        )
+        fun from(channelCount: Int, matched: Int, types: List<ArchiveTypeCount>, sample: String?): SourceDiagnostics =
+            SourceDiagnostics(channelCount, matched, types.associate { it.type to it.count },
+                DiagnosticRedactor.secrets(listOfNotNull(sample)))
     }
 }
 

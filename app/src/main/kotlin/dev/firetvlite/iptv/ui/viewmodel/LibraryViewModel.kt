@@ -63,9 +63,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     private val sourceId: Flow<Long?> = source.map { it?.id }.distinctUntilChanged()
     val diagnostics: Flow<SourceDiagnostics> = sourceId.flatMapLatest { id ->
-        if (id == null) flowOf(SourceDiagnostics()) else combine(channelDao.observeDiagnostics(id),
-            container.database.epgDao().observeMatchedCount(id)) { channels, matched ->
-            SourceDiagnostics.from(channels, matched)
+        if (id == null) flowOf(SourceDiagnostics()) else combine(channelDao.observeCount(id), channelDao.observeArchiveTypes(id),
+            channelDao.observeDiagnosticSample(id), container.database.epgDao().observeMatchedCount(id)) { count, types, sample, matched ->
+            SourceDiagnostics.from(count, matched, types, sample)
         }
     }.flowOn(Dispatchers.Default)
 

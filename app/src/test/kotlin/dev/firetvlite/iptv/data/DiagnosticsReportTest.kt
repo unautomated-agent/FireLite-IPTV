@@ -5,6 +5,7 @@ import com.google.zxing.MultiFormatReader
 import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 import dev.firetvlite.iptv.data.db.SourceEntity
+import dev.firetvlite.iptv.data.db.ArchiveTypeCount
 import dev.firetvlite.iptv.data.epg.EpgState
 import dev.firetvlite.iptv.data.library.DiagnosticRedactor
 import dev.firetvlite.iptv.data.library.DiagnosticsReport
@@ -15,6 +16,15 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DiagnosticsReportTest {
+    @Test fun aggregateDiagnosticsNeedOnlyCountsAndOneCredentialSample() {
+        val stats = SourceDiagnostics.from(12000, 11000, listOf(ArchiveTypeCount("xc", 9000)),
+            "https://provider/live/private-user/private-pass/12.ts")
+        assertEquals(12000, stats.channelCount)
+        assertEquals(9000, stats.archiveTypes["xc"])
+        assertTrue(stats.secrets.contains("private-user"))
+        assertEquals(SourceDiagnostics(), SourceDiagnostics.from(0, 0, emptyList(), null))
+    }
+
     @Test fun masksAllCredentialAliasesInQueriesAndPlainCrashMessages() {
         for (key in listOf("token", "key", "api_key", "apikey", "auth", "pass", "password", "user", "username", "login", "secret", "sig", "signature")) {
             val secret = "private-$key-value"

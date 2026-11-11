@@ -4,6 +4,14 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class PlaybackTimeTest {
+    @Test fun endedArchiveContinuesFromReachedTimeWhileBehindLive() {
+        assertEquals(SeekPlan.Archive(20_000), PlaybackTime.archiveContinuation(PlaybackFrame(100_000, 20_000), 10_000))
+    }
+
+    @Test fun endedArchiveReturnsToLiveAtTheLiveEdgeOrWithoutProgress() {
+        assertEquals(SeekPlan.Live, PlaybackTime.archiveContinuation(PlaybackFrame(100_000, 99_000), 10_000))
+        assertEquals(SeekPlan.Live, PlaybackTime.archiveContinuation(PlaybackFrame(100_000, 10_000), 10_000))
+    }
     private val now = 1_800_000_000_000L
     private val dvr = PlaybackSnapshot(true, 60_000, 60_000, 120_000)
 

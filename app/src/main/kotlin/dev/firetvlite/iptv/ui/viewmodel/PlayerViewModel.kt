@@ -88,6 +88,20 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         viewModelScope.launch {
+            status.collect { state ->
+                val start = archiveStartMs
+                val channel = activeChannel
+                if (state == PlaybackStatus.Ended && start != null && channel != null && mutableMode.value.fullFrame) {
+                    catchupJob?.cancel()
+                    pendingSeekMs = null
+                    when (val plan = PlaybackTime.archiveContinuation(updateFrame(), start)) {
+                        is SeekPlan.Archive -> applyCatchup(channel, plan.timeMs)
+                        else -> startLive(channel)
+                    }
+                }
+            }
+        }
+        viewModelScope.launch {
             mode.collectLatest { mode ->
                 if (mode == PlayerMode.Closed) mutableFrame.value = PlaybackFrame()
                 else while (true) { updateFrame(); delay(500) }

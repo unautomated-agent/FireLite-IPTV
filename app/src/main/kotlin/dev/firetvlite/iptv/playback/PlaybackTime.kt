@@ -16,6 +16,10 @@ data class PlaybackFrame(
 object PlaybackTime {
     const val LIVE_TOLERANCE_MS = 1_500L
 
+    fun archiveContinuation(frame: PlaybackFrame, archiveStart: Long): SeekPlan =
+        if (frame.watchedMs <= archiveStart || frame.watchedMs >= frame.nowMs - LIVE_TOLERANCE_MS) SeekPlan.Live
+        else SeekPlan.Archive(frame.watchedMs)
+
     fun watched(now: Long, snapshot: PlaybackSnapshot, archiveStart: Long?, fallbackStart: Long): Long = when {
         snapshot.windowStartMs != null -> snapshot.windowStartMs + snapshot.positionMs
         archiveStart != null -> archiveStart + snapshot.positionMs

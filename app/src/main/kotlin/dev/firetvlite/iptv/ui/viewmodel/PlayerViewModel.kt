@@ -77,6 +77,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     val player: StateFlow<ExoPlayer?> = playback.player
     val status: StateFlow<PlaybackStatus> = playback.status
+    val startupDelayed: StateFlow<Boolean> = playback.startupDelayed
 
     private val mutableMode = MutableStateFlow(PlayerMode.Closed)
     val mode = mutableMode.asStateFlow()
@@ -500,7 +501,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
         archiveStartMs = start * 1000
-        playback.play(StreamRequest(url, userAgent, archive = true))
+        playback.play(StreamRequest(url, userAgent, archive = true, channelName = channel.name))
         updateFrame()
     }
 
@@ -514,7 +515,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         activeIndex = zapIndex
         archiveStartMs = null
         fallbackStartMs = System.currentTimeMillis()
-        playback.play(StreamRequest(channel.streamUrl, userAgent))
+        playback.play(StreamRequest(channel.streamUrl, userAgent, channelName = channel.name))
         updateFrame()
     }
 

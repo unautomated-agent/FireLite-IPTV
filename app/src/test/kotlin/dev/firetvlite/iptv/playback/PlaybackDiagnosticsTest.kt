@@ -70,6 +70,22 @@ class PlaybackDiagnosticsTest {
         assertTrue(text.length < 2000)
     }
 
+    @Test fun startupStateHttpAndTrackDetailsSurvivePersistenceAndQrSummary() {
+        val store = PlaybackDiagnosticsStore(temporary.root)
+        val text = PlaybackDiagnosticRecord.text("https://provider/play/hls-custom-private-code.m3u8", "live",
+            "START_TIMEOUT", null, "video/hevc hvc1", "video/hevc [nieobsługiwany]", null, Instant.EPOCH,
+            listOf("Channel: TVP Seriale", "Player: BUFFERING; pos=0; buffered=2500; openHTTP=1",
+                "Source: HLS", "HTTP: HTTP=200; Content-Type=application/dash+xml"))
+        store.write(true, text)
+        val summary = store.summary()
+        val payload = DiagnosticsReport.payload(DiagnosticsReport.text(null, null, SourceDiagnostics(), null, summary))
+        for (value in listOf("START_TIMEOUT", "TVP Seriale", "BUFFERING", "buffered=2500", "HLS",
+                "HTTP=200", "application/dash+xml", "video/hevc", "nieobsługiwany", "__path_hidden__")) {
+            assertTrue(payload, payload.contains(value))
+        }
+        assertFalse(payload.contains("private-code"))
+    }
+
     @Test(expected = java.io.IOException::class)
     fun unwritableStoreDoesNotPretendToPersist() {
         PlaybackDiagnosticsStore(temporary.newFile()).write(true, record())

@@ -5,6 +5,8 @@ import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Format
+import androidx.media3.common.Tracks
 import android.os.Bundle
 import java.lang.reflect.Proxy
 import java.util.concurrent.atomic.AtomicInteger
@@ -238,6 +240,7 @@ class PlaybackControllerTest {
         delay(450)
         fake.state = Player.STATE_READY
         fake.listener!!.onPlaybackStateChanged(fake.state)
+        fake.listener!!.onRenderedFirstFrame()
         fake.state = Player.STATE_BUFFERING
         fake.listener!!.onPlaybackStateChanged(fake.state)
         val connections = PlaybackController::class.java.getDeclaredField("connections").let {
@@ -372,12 +375,103 @@ class PlaybackControllerTest {
 
     private class TestError(code: Int, cause: Throwable? = null) : PlaybackException("fixture", cause, code, Bundle.EMPTY, 0)
 
+    @Test fun startupDeadlineRecordsIdleOnceWithoutStoppingOrReopeningTheStream(): Unit = runBlocking {
+        val fake = FakePlayer()
+        val records = mutableListOf<String>()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            recordPlayback = { failed, text -> if (failed) records += text }, startupTimeoutMs = 60)
+        val channel = request.copy(url = "https://provider/play/hls-custom-c123-private-code.m3u8", channelName = "TVP Seriale")
+        controller.play(channel)
+        delay(100)
+        assertEquals(true, controller.startupDelayed.value)
+        assertEquals(1, records.size)
+        for (value in listOf("START_TIMEOUT", "TVP Seriale", "IDLE", "buffered=2500", "HLS", "HTTP: not available", "__path_hidden__")) {
+            assertEquals(records.single(), true, records.single().contains(value))
+        }
+        assertEquals(false, records.single().contains("private-code"))
+        assertEquals(PlaybackStatus.Connecting, controller.status.value)
+        controller.play(channel)
+        delay(450)
+        assertEquals(1, records.size)
+        assertEquals(1, fake.calls.count { it == "prepare" })
+        assertEquals(1, fake.calls.count { it == "stop" })
+        fake.state = Player.STATE_READY
+        fake.listener!!.onRenderedFirstFrame()
+        assertEquals(false, controller.startupDelayed.value)
+        assertEquals(1, records.size)
+        controller.stop()
+    }
+
+    @Test fun bufferingAndReadyWithoutAFrameStillReportDetectedVideoFormat(): Unit = runBlocking {
+        for (state in listOf(Player.STATE_BUFFERING, Player.STATE_READY)) {
+            val fake = FakePlayer()
+            val format = Format.Builder().setSampleMimeType("video/hevc").setCodecs("hvc1").setWidth(1920).setHeight(1080).build()
+            fake.videoFormat = format
+            val records = mutableListOf<String>()
+            val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+                recordPlayback = { failed, text -> if (failed) records += text }, startupTimeoutMs = 60)
+            controller.play(request)
+            fake.state = state
+            fake.listener!!.onPlaybackStateChanged(state)
+            delay(100)
+            assertEquals(1, records.size)
+            for (value in listOf("video/hevc", "hvc1", "1920x1080")) {
+                assertEquals(records.single(), true, records.single().contains(value))
+            }
+            controller.stop()
+        }
+    }
+
+    @Test fun renderingStopAndChannelReplacementCancelOldStartupDeadlines(): Unit = runBlocking {
+        val fake = FakePlayer()
+        val records = mutableListOf<String>()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            recordPlayback = { failed, text -> if (failed) records += text }, startupTimeoutMs = 150)
+        controller.play(request)
+        fake.state = Player.STATE_BUFFERING
+        fake.listener!!.onRenderedFirstFrame()
+        delay(180)
+        assertEquals(emptyList<String>(), records)
+        controller.stop()
+        controller.play(request)
+        controller.stop()
+        delay(180)
+        assertEquals(emptyList<String>(), records)
+        controller.play(request.copy(channelName = "old"))
+        delay(70)
+        controller.play(request.copy(url = "https://provider/next", channelName = "new"))
+        delay(100)
+        assertEquals(emptyList<String>(), records)
+        delay(90)
+        assertEquals(1, records.size)
+        assertEquals(true, records.single().contains("Channel: new"))
+        controller.stop()
+        assertEquals(false, controller.startupDelayed.value)
+    }
+
+    @Test fun readyWithoutRenderingCannotResetTheRecoveryBudgetForever(): Unit = runBlocking {
+        val fake = FakePlayer()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY })
+        controller.play(request)
+        repeat(4) {
+            fake.state = Player.STATE_READY
+            fake.listener!!.onPlaybackStateChanged(fake.state)
+            fake.listener!!.onPlayerError(TestError(PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW))
+            delay(450)
+        }
+        assertEquals(PlaybackStatus.Failed("ERROR_CODE_BEHIND_LIVE_WINDOW"), controller.status.value)
+        assertEquals(false, controller.startupDelayed.value)
+        controller.stop()
+    }
+
     private class FakePlayer {
         val calls = mutableListOf<String>()
         var parameters = TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT
         var listener: Player.Listener? = null
         var state = Player.STATE_IDLE
         var prepareFailure: Throwable? = null
+        var tracks: Tracks = Tracks.EMPTY
+        var videoFormat: Format? = null
         val player = Proxy.newProxyInstance(
             ExoPlayer::class.java.classLoader,
             arrayOf(ExoPlayer::class.java),
@@ -390,6 +484,9 @@ class PlaybackControllerTest {
                 "setTrackSelectionParameters" -> { parameters = args!![0] as TrackSelectionParameters; null }
                 "addListener" -> { listener = args!![0] as Player.Listener; null }
                 "getPlaybackState" -> state
+                "getCurrentTracks" -> tracks
+                "getVideoFormat" -> videoFormat
+                "getBufferedPosition" -> 2500L
                 "prepare" -> { calls += method.name; prepareFailure?.let { throw it }; null }
                 else -> {
                     calls += method.name

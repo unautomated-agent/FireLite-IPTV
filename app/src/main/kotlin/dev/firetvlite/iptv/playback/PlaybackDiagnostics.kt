@@ -24,7 +24,7 @@ internal object PlaybackDiagnosticRecord {
     private val urls = Regex("https?://[^\\s<>\"']+", RegexOption.IGNORE_CASE)
 
     fun text(url: String, mode: String, code: String?, error: Throwable?, selected: String,
-        available: String, decoder: String?, time: Instant = Instant.now()): String {
+        available: String, decoder: String?, time: Instant = Instant.now(), details: List<String> = emptyList()): String {
         val known = DiagnosticRedactor.secrets(listOf(url))
         fun safe(value: String, limit: Int): String {
             val masked = DiagnosticRedactor.mask(value, known)
@@ -45,6 +45,7 @@ internal object PlaybackDiagnosticRecord {
         }
         return buildString {
             appendLine("$time · $mode · ${code ?: "OK"}")
+            details.forEach { appendLine(safe(it, 512)) }
             appendLine("Dekoder audio: ${safe(decoder ?: "nieznany", 256)}")
             appendLine("Wybrane: ${safe(selected.ifEmpty { "brak" }, 1500)}")
             if (error != null) appendLine("Przyczyny: ${safe(causes.joinToString(" ← "), 2500)}")
@@ -66,13 +67,13 @@ internal class PlaybackDiagnosticsStore(private val directory: File) {
         val record = runCatching { file(failed).takeIf { it.exists() }?.readText(Charsets.UTF_8) }.getOrNull()
         val compact = record?.lineSequence()?.map { line ->
             utf8Limit(line, when {
-                line.startsWith("Wybrane:") -> 180
+                line.startsWith("Wybrane:") || line.startsWith("Dostępne:") -> 120
                 line.startsWith("Przyczyny:") -> 140
                 else -> 100
             })
         }?.joinToString("\n") ?: "Brak"
         (if (failed) "Ostatni błąd odtwarzania:\n" else "Ostatnie poprawne odtwarzanie:\n") +
-            utf8Limit(compact, if (failed) 650 else 450)
+            utf8Limit(compact, if (failed) 850 else 300)
     }
 
     private fun file(failed: Boolean) = File(directory, if (failed) "playback-error.txt" else "playback-success.txt")

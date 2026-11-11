@@ -9,6 +9,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class M3uParserTest {
+    @Test fun explicitHeaderZeroDisablesArchiveAndChannelValuesOverrideIt() {
+        val channels = parse("#EXTM3U catchup=xc catchup-days=0\n" +
+            "#EXTINF:-1,Disabled\nhttp://h/live/u/p/1.ts\n" +
+            "#EXTINF:-1 catchup-days=3,Enabled\nhttp://h/live/u/p/2.ts\n")
+        assertEquals(0, channels[0].catchupDays)
+        assertEquals(3, channels[1].catchupDays)
+        assertEquals(7, parse("#EXTM3U catchup=xc\n#EXTINF:-1,Default\nhttp://h/live/u/p/3.ts\n")[0].catchupDays)
+        assertEquals(0, parse("#EXTM3U catchup=xc catchup-days=7\n#EXTINF:-1 catchup-days=0,Off\nhttp://h/live/u/p/3.ts\n")[0].catchupDays)
+    }
+
     @Test fun detectsArchiveAliasesDefaultsExplicitOptOutAndXtreamPaths() {
         val rows = parse("""
             #EXTM3U catchup-type='append' catchup-days=3 catchup-source='?start=${'$'}{start}&end=${'$'}{end}'

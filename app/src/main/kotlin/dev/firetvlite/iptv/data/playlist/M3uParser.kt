@@ -39,7 +39,7 @@ object M3uParser {
     private class Defaults(
         val catchupType: String? = null,
         val catchupSource: String? = null,
-        val catchupDays: Int = 0,
+        val catchupDays: Int? = null,
     )
 
     fun parse(
@@ -106,7 +106,7 @@ object M3uParser {
     private fun readDefaults(line: String): Defaults {
         val source = attribute(line, "catchup-source")
         val type = attribute(line, "catchup") ?: attribute(line, "catchup-type") ?: if (source != null) "default" else null
-        return Defaults(type, source, readCatchupDays(line) ?: if (type != null) 7 else 0)
+        return Defaults(type, source, readCatchupDays(line))
     }
 
     private fun readInfo(line: String): Pending {
@@ -130,7 +130,7 @@ object M3uParser {
     private fun toChannel(info: Pending, url: String, defaults: Defaults): ParsedChannel {
         val source = info.catchupSource ?: defaults.catchupSource
         val declaredType = info.catchupType ?: defaults.catchupType
-        val days = info.catchupDays ?: defaults.catchupDays.takeIf { it > 0 }
+        val days = info.catchupDays ?: defaults.catchupDays
             ?: if (declaredType != null || source != null) 7 else 0
         val type = declaredType?.takeUnless { it.equals("true", true) || it == "1" }
             ?: when {

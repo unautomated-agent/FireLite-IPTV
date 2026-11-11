@@ -20,7 +20,7 @@ class XtreamApiTest {
     private val live = """[{"stream_id":"12","tv_archive":1,"tv_archive_duration":"7","epg_channel_id":"TVN.PL"}]"""
     private val info = """{"user_info":{"auth":"1"},"server_info":{"timezone":"Europe/Warsaw","timestamp_now":123}}"""
     private fun channel() = ChannelEntity(sourceId = 1, position = 0, name = "TVN", groupName = "",
-        streamUrl = "https://cdn/live/test%20user/test%2Bpassword/12.m3u8", logoUrl = null, tvgId = null,
+        streamUrl = "${address.origin}/live/test%20user/test%2Bpassword/12.m3u8", logoUrl = null, tvgId = null,
         catchupType = null, catchupSource = null, catchupDays = 0)
 
     private class FakeReader(var live: String, var info: String) : XtreamMetadataReader {
@@ -46,8 +46,35 @@ class XtreamApiTest {
         assertEquals(2, reader.requests.size)
         assertTrue(reader.requests.all { it.startsWith("https://provider:8443/player_api.php?") })
         assertTrue(reader.requests[0].contains("username=test+user&password=test%2Bpassword"))
-        assertEquals(channel(), result.enrich(listOf(channel().copy(streamUrl = "https://cdn/live/other/account/12.ts")), address)
+        assertEquals(channel(), result.enrich(listOf(channel().copy(streamUrl = "${address.origin}/live/other/account/12.ts")), address)
             .single().copy(streamUrl = channel().streamUrl))
+    }
+
+    @Test fun enrichmentIsScopedToTheQueriedServerAndCredentials() {
+        val result = XtreamApi(FakeReader(live, info)).refresh(source, address, emptyList())
+        val outsiders = listOf(
+            "https://another-provider:8443/live/test%20user/test%2Bpassword/12.m3u8",
+            "http://provider:8443/live/test%20user/test%2Bpassword/12.m3u8",
+            "https://provider:9443/live/test%20user/test%2Bpassword/12.m3u8",
+            "https://provider:8443/live/another-user/test%2Bpassword/12.m3u8",
+            "https://provider:8443/live/test%20user/another-password/12.m3u8",
+            "not a stream URL",
+        ).map { channel().copy(streamUrl = it, tvgId = "Other-ID", catchupType = "shift", catchupDays = 2,
+            catchupTimezone = "America/New_York") }
+        val enriched = result.enrich(listOf(channel()) + outsiders, address)
+        assertEquals(7, enriched.first().catchupDays)
+        assertEquals("TVN.PL", enriched.first().tvgId)
+        assertEquals("Europe/Warsaw", enriched.first().catchupTimezone)
+        assertEquals(outsiders, enriched.drop(1))
+        assertTrue(result.enrich(emptyList(), address).isEmpty())
+    }
+
+    @Test fun serverMatchingNormalizesHostCaseAndDefaultPorts() {
+        val target = address.copy(origin = "https://provider")
+        val result = XtreamApi(FakeReader(live, info)).refresh(source, target, emptyList())
+        val row = channel().copy(streamUrl = "HTTPS://PROVIDER:443/live/test%20user/test%2Bpassword/12.m3u8")
+        assertEquals(7, result.enrich(listOf(row), target).single().catchupDays)
+        assertEquals(row, result.enrich(listOf(row), address).single())
     }
 
     @Test fun workingM3uWinsTiesAndLongerRetentionWhileApiCanEnableMore() {

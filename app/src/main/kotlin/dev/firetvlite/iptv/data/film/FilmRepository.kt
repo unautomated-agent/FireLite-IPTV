@@ -28,6 +28,10 @@ data class FilmShowing(val channel: ChannelEntity, val programme: ProgrammeEntit
     val identity: String get() = "${channel.id}:${programme.start}"
 }
 
+fun ratingCandidates(programmes: List<ProgrammeEntity>, now: Long): List<ProgrammeEntity> = programmes
+    .filter { Films.candidate(it) && it.stop > now && it.start < now + 2 * Films.DAY }
+    .distinctBy(Films::key)
+
 fun rankedFilms(films: List<FilmShowing>, now: Long, tab: Int): List<FilmShowing> = films
     .filter { Films.candidate(it.programme) && Films.inWindow(it.programme, now, tab) }
     .sortedWith(compareByDescending<FilmShowing> { it.rating?.imdbRating ?: -1.0 }
@@ -69,9 +73,8 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
                     while (true) {
                         try {
                             val now = System.currentTimeMillis()
-                            val candidates = database.epgDao().filmWindow(source.id, now, now + 2 * Films.DAY).first()
-                                .map { it.programme }.filter { Films.candidate(it) && it.start >= now }
-                                .distinctBy(Films::key)
+                            val candidates = ratingCandidates(database.epgDao()
+                                .filmWindow(source.id, now, now + 2 * Films.DAY).first().map { it.programme }, now)
                             for (p in candidates) {
                                 currentCoroutineContext().ensureActive()
                                 if (database.sourceDao().active()?.id != source.id || preferences.key.value != key) break

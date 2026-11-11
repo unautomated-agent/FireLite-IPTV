@@ -43,6 +43,15 @@ class FilmsTest {
         assertTrue(Films.candidate(film().copy(stop = now + 240 * 60_000)))
         assertFalse(Films.candidate(film().copy(stop = now + 241 * 60_000)))
     }
+    @Test fun enrichmentIncludesAiringAndFutureFilmsButNotExpiredOrOutsideWindow() {
+        val airing = film().copy(start = now - 60 * 60_000, stop = now + 60 * 60_000)
+        val future = film("Future").copy(originalTitle = "Future", start = now + Films.DAY, stop = now + Films.DAY + 120 * 60_000)
+        val ended = airing.copy(stop = now)
+        val outside = future.copy(start = now + 2 * Films.DAY, stop = now + 2 * Films.DAY + 120 * 60_000)
+        assertEquals(listOf(airing, future), ratingCandidates(listOf(airing, future, ended, outside, airing), now))
+        assertTrue(ratingCandidates(emptyList(), now).isEmpty())
+        assertTrue(ratingCandidates(listOf(airing.copy(episodeNum = "S1 E1")), now).isEmpty())
+    }
     @Test fun selectsOriginalThenPolishAndAdjacentYearsWithoutDuplicateQueries() {
         assertEquals(listOf("About a Boy" to 2002, "Był sobie chłopiec" to 2002,
             "About a Boy" to 2001, "Był sobie chłopiec" to 2001,

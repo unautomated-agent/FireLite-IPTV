@@ -1,1 +1,3 @@
-# Project-specific R8 rules. Libraries ship their own consumer rules, so this file is empty for now.
+-keep class androidx.media3.exoplayer.dash.DashMediaSource$Factory { public *; }
+-keep class androidx.media3.exoplayer.smoothstreaming.SsMediaSource$Factory { public *; }
+-keep class androidx.media3.exoplayer.hls.HlsMediaSource$Factory { public *; }

@@ -15,6 +15,7 @@
         android:allowBackup="false"
         android:banner="@drawable/banner"
         android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:label="@string/app_name"
         android:largeHeap="true"
         android:theme="@style/Theme.FireLite"
@@ -22,6 +23,8 @@
 
         <activity
             android:name=".MainActivity"
+            android:banner="@drawable/banner"
+            android:icon="@mipmap/ic_launcher"
             android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|uiMode"
             android:exported="true"
             android:launchMode="singleTask"

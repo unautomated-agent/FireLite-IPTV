@@ -136,6 +136,7 @@ private fun AppShell(
                     onActivateSource = libraryViewModel::activateSource,
                     onDeleteSource = libraryViewModel::deleteSource,
                     onRefreshSource = libraryViewModel::refreshSource,
+                    diagnostics = libraryViewModel.diagnostics,
                 )
                 Destination.Favorites -> FavoritesScreen(libraryViewModel, playerViewModel,
                     current == Destination.Favorites && !mode.fullFrame, tabReturn, { navigate(Destination.Live) })

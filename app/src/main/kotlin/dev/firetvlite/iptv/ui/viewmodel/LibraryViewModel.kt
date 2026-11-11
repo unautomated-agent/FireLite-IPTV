@@ -16,6 +16,9 @@ import dev.firetvlite.iptv.data.library.ImportState
 import dev.firetvlite.iptv.data.library.LibraryRepository
 import dev.firetvlite.iptv.data.library.ListZapContext
 import dev.firetvlite.iptv.data.library.QueryZapContext
+import dev.firetvlite.iptv.data.library.SourceDiagnostics
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.flowOn
 import dev.firetvlite.iptv.data.library.ZapContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -59,6 +62,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     val sources = repository.sources.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val sourceId: Flow<Long?> = source.map { it?.id }.distinctUntilChanged()
+    val diagnostics: Flow<SourceDiagnostics> = sourceId.flatMapLatest { id ->
+        if (id == null) flowOf(SourceDiagnostics()) else combine(channelDao.observeDiagnostics(id),
+            container.database.epgDao().observeMatchedCount(id)) { channels, matched ->
+            SourceDiagnostics.from(channels, matched)
+        }
+    }.flowOn(Dispatchers.Default)
 
     val recentRows = sourceId.flatMapLatest { id ->
         if (id == null) flowOf(emptyList()) else channelDao.observeRecentRows(id)

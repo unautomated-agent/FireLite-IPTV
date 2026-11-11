@@ -61,6 +61,9 @@ interface SourceDao {
 
 @Dao
 interface ChannelDao {
+    @Query("SELECT * FROM channel WHERE sourceId=:sourceId ORDER BY position")
+    fun observeDiagnostics(sourceId: Long): Flow<List<ChannelEntity>>
+
     @Query("SELECT COALESCE(MAX(c.catchupDays), 0) FROM channel c WHERE c.sourceId=:sourceId " +
         "AND (:groupName IS NULL OR c.groupName=:groupName) " +
         "AND (:favorites=0 OR EXISTS(SELECT 1 FROM favorite f WHERE f.streamUrl=c.streamUrl)) " +

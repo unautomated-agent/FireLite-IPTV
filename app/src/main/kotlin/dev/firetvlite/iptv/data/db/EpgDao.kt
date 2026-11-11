@@ -16,6 +16,12 @@ private const val PROGRAMME_AT =
 
 @Dao
 interface EpgDao {
+    @Query("SELECT COUNT(*) FROM channel c JOIN source s ON s.id=c.sourceId " +
+        "JOIN channel_epg m ON m.sourceId=c.sourceId AND m.streamUrl=c.streamUrl AND m.generation=s.epgGeneration " +
+        "WHERE c.sourceId=:sourceId AND EXISTS(SELECT 1 FROM programme p WHERE p.sourceId=m.sourceId " +
+        "AND p.generation=m.generation AND p.epgKey=m.epgKey)")
+    fun observeMatchedCount(sourceId: Long): Flow<Int>
+
     @Query("SELECT c.id FROM channel c JOIN source s ON s.id = c.sourceId " +
         "JOIN channel_epg m ON m.sourceId = c.sourceId AND m.streamUrl = c.streamUrl AND m.generation = s.epgGeneration " +
         "WHERE c.id IN (:channelIds) AND EXISTS(SELECT 1 FROM programme p WHERE p.sourceId = m.sourceId " +

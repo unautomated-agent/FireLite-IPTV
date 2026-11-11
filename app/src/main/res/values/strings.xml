@@ -13,6 +13,10 @@
 
     <!-- Home -->
     <string name="home_recent">Ostatnio oglądane</string>
+    <string name="search_label">Nazwa kanału</string>
+    <string name="search_prompt">Wpisz nazwę kanału z aktywnej listy.</string>
+    <string name="search_empty">Nie znaleziono kanałów.</string>
+    <string name="search_hint">OK w polu: klawiatura · Dół: wyniki · OK na kanale: oglądaj · Do 200 wyników</string>
     <string name="favorites_empty">Brak ulubionych kanałów na aktywnej liście. Dodaj kanał przyciskiem Menu w TV na żywo.</string>
     <string name="favorites_hint">OK: oglądaj · Przytrzymaj OK: usuń z ulubionych · Wstecz: menu</string>
     <string name="home_empty">Nie oglądano jeszcze kanałów z tej listy. Otwórz TV na żywo lub dodaj listę w ustawieniach.</string>
@@ -140,7 +144,6 @@
     <string name="import_error_no_source">Najpierw dodaj adres listy.</string>
 
     <!-- Placeholder screens -->
-    <string name="coming_soon_text">Ten ekran pojawi się w jednej z kolejnych wersji.</string>
 
     <!-- Demo content, only used until real sources are connected -->
 </resources>

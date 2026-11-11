@@ -7,6 +7,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import dev.firetvlite.iptv.data.library.SourcePolicy
+import dev.firetvlite.iptv.data.library.ChannelSearch
 import kotlinx.coroutines.flow.Flow
 
 private const val CHANNEL_ROW =
@@ -105,6 +106,10 @@ interface ChannelDao {
     @Query("$CHANNEL_ROW INNER JOIN favorite fav ON fav.streamUrl=c.streamUrl " +
         "WHERE c.sourceId=:sourceId ORDER BY fav.addedAt DESC LIMIT 30")
     fun observeHomeFavorites(sourceId: Long): Flow<List<ChannelRow>>
+
+    @Query("$CHANNEL_ROW WHERE c.sourceId=:sourceId AND ${ChannelSearch.NAME_SQL} LIKE :pattern ESCAPE '\\' " +
+        "ORDER BY c.position LIMIT ${ChannelSearch.LIMIT}")
+    fun observeSearch(sourceId: Long, pattern: String): Flow<List<ChannelRow>>
 
     // ---- Neighbours for channel up/down while watching ----
 

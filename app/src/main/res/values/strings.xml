@@ -30,10 +30,13 @@
         <item quantity="one">%d kanał</item>
         <item quantity="few">%d kanały</item>
         <item quantity="many">%d kanałów</item>
-        <item quantity="other">%d kanału</item>
+        <item quantity="other">%d kanałów</item>
     </plurals>
 
     <!-- Settings and app updates -->
+    <string name="crash_section">Ostatni błąd aplikacji</string>
+    <string name="crash_clear">Usuń raport błędu</string>
+    <string name="crash_scroll_hint">Góra/Dół – przewijaj raport · Prawo – usuń</string>
     <string name="update_section">Aktualizacja aplikacji</string>
     <string name="update_installed">Zainstalowana wersja: %1$s (kompilacja %2$d)</string>
     <string name="update_check">Sprawdź aktualizacje</string>
@@ -64,40 +67,73 @@
     <string name="live_loading">Wczytywanie listy kanałów…</string>
     <string name="live_empty_list">Lista jest pusta. Odśwież ją w ustawieniach.</string>
     <string name="live_empty_group">Brak kanałów w tej grupie.</string>
-    <string name="live_hint">OK – oglądaj · Menu – ulubione</string>
+    <string name="live_hint">Zatrzymaj fokus – podgląd · OK – pełny ekran · Menu – ulubione</string>
     <string name="detail_group">Grupa: %1$s</string>
     <string name="badge_catchup">ARCHIWUM</string>
     <plurals name="catchup_days">
         <item quantity="one">%d dzień wstecz</item>
         <item quantity="few">%d dni wstecz</item>
         <item quantity="many">%d dni wstecz</item>
-        <item quantity="other">%d dnia wstecz</item>
+        <item quantity="other">%d dni wstecz</item>
     </plurals>
 
     <!-- Player -->
     <string name="player_live">NA ŻYWO</string>
+    <string name="player_watched_live">Oglądasz %1$s · NA ŻYWO</string>
+    <string name="player_watched_behind">Oglądasz %1$s · −%2$d min</string>
+    <string name="epg_next">Następnie %1$s · %2$s</string>
+    <string name="guide_no_programme">Brak programu</string>
+    <string name="guide_archive_available">Archiwum dostępne</string>
+    <string name="guide_unavailable">Niedostępne</string>
+    <string name="guide_hint">Lewo/Prawo: audycje · Przewijanie: ±1 h · Play/Pause: teraz · Menu: ulubione</string>
     <string name="player_behind">−%1$s od transmisji</string>
-    <string name="player_archive">Archiwum: −%1$d min</string>
     <string name="player_position">%1$s / %2$s</string>
     <string name="player_position_of">%1$d z %2$d</string>
     <string name="player_connecting">Łączenie…</string>
     <string name="player_error">Ten kanał nie działa (%1$s).\nGóra/Dół – inny kanał, Wstecz – lista.</string>
     <string name="player_ended">Transmisja się zakończyła.</string>
-    <string name="player_hint">Góra/Dół: kanał · Lewo/Prawo: ±10 s · Przewijanie: ±30 s lub archiwum · Menu: ulubione</string>
+    <string name="player_hint">Góra/Dół: kanał · Lewo/Prawo: ±10 s · ⏪: oś czasu · ⏩: +30 s\nPrzytrzymaj Lewo: początek audycji · Menu: lista · Przytrzymaj OK: ulubione</string>
+    <string name="channel_timeline_title">Oś czasu kanału · %1$s</string>
+    <string name="channel_timeline_live">Na żywo</string>
+    <string name="channel_timeline_hour">Przedział godzinowy</string>
+    <string name="channel_timeline_today">Dziś</string>
+    <string name="channel_timeline_yesterday">Wczoraj</string>
+    <string name="channel_timeline_start">Początek archiwum</string>
+    <string name="channel_timeline_unavailable">Ten kanał nie ma dostępnego archiwum.</string>
+    <string name="channel_timeline_future">Ten program jeszcze się nie rozpoczął.</string>
+    <string name="channel_timeline_hint">Lewo/Prawo: audycja · OK: oglądaj · Wstecz: zamknij</string>
+    <string name="channel_timeline_overlay_hint">Prawo: oś czasu kanału</string>
     <string name="player_seek_unsupported">Przewijanie nie jest dostępne dla tego kanału.</string>
     <string name="player_catchup_unsupported">Archiwum nie działa dla tego kanału.</string>
 
     <!-- Settings: channel list -->
-    <string name="source_section">Lista kanałów (M3U)</string>
+    <string name="source_section">Listy kanałów</string>
     <string name="source_none">Nie dodano jeszcze listy.</string>
     <string name="source_server">Serwer: %1$s</string>
     <string name="source_stats">%1$s · zaktualizowano %2$s</string>
     <string name="source_never_refreshed">jeszcze nie wczytano</string>
-    <string name="source_add">Dodaj adres</string>
+    <string name="source_add">Dodaj nową listę</string>
+    <string name="source_active">Aktywna</string>
+    <string name="source_entry">%1$s %2$d · %3$s</string>
+    <string name="source_delete">Usuń</string>
+    <string name="source_delete_confirm">Usunąć listę %1$s %2$d? Jej kanały zostaną usunięte.</string>
     <string name="source_change">Zmień adres</string>
     <string name="source_refresh">Odśwież listę</string>
     <string name="source_url_label">Adres listy M3U</string>
     <string name="source_agent_label">User-Agent (opcjonalnie)</string>
+    <string name="source_epg_label">Adres EPG (XMLTV, opcjonalnie)</string>
+    <string name="source_epg_invalid">Adres EPG musi zaczynać się od http:// lub https://</string>
+    <string name="epg_stats">Program TV: %1$s, aktualizacja %2$s</string>
+    <string name="epg_running">Program TV: pobieranie…</string>
+    <string name="epg_waiting">Program TV: oczekiwanie na pobranie…</string>
+    <string name="epg_failed">Program TV: nie udało się pobrać danych.</string>
+    <string name="epg_none">Program TV: nie podano adresu EPG.</string>
+    <plurals name="programme_count">
+        <item quantity="one">%,d audycja</item>
+        <item quantity="few">%,d audycje</item>
+        <item quantity="many">%,d audycji</item>
+        <item quantity="other">%,d audycji</item>
+    </plurals>
     <string name="source_save">Zapisz i wczytaj</string>
     <string name="source_cancel">Anuluj</string>
     <string name="source_invalid_url">Adres musi zaczynać się od http:// lub https://</string>

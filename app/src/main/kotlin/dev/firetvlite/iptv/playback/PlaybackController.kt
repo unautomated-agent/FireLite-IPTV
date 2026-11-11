@@ -1,12 +1,16 @@
 package dev.firetvlite.iptv.playback
 
 import android.content.Context
+import android.util.Log
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.DataSpec
+import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -17,6 +21,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicInteger
+import java.io.Closeable
 
 /** What to play. */
 data class StreamRequest(
@@ -34,7 +40,7 @@ sealed interface PlaybackStatus {
     data class Failed(val code: String) : PlaybackStatus
 }
 
-/** Time information of the running stream, polled by the UI while the info bar is visible. */
+/** Position and server window timestamps used to locate the watched frame in the guide. */
 data class PlaybackSnapshot(
     /** True if the user can jump back and forth (HLS with a time-shift window, or an archive stream). */
     val seekable: Boolean,
@@ -42,6 +48,7 @@ data class PlaybackSnapshot(
     val liveOffsetMs: Long?,
     val positionMs: Long,
     val durationMs: Long?,
+    val windowStartMs: Long? = null,
 ) {
     companion object {
         val EMPTY = PlaybackSnapshot(seekable = false, liveOffsetMs = null, positionMs = 0, durationMs = null)
@@ -50,7 +57,7 @@ data class PlaybackSnapshot(
 
 /**
  * The only place in the app that opens a stream. It owns exactly one [ExoPlayer] and therefore at most one
- * connection to the provider.
+ * streaming session with the provider. HTTP requests within that session may overlap.
  *
  * How the rule "never two streams" is kept:
  * 1. [StreamGate] drops a request for the stream that is already active.
@@ -61,10 +68,25 @@ data class PlaybackSnapshot(
  *
  * Must be used from the main thread.
  */
-class PlaybackController(
-    private val context: Context,
+class PlaybackController internal constructor(
     private val scope: CoroutineScope,
+    private val createPlayer: (HttpDataSource.Factory) -> ExoPlayer,
+    private val trace: (String) -> Unit,
+    private val mediaItem: (String) -> MediaItem = { MediaItem.fromUri(it) },
+    private val setStream: (ExoPlayer, MediaItem, HttpDataSource.Factory) -> Unit = { player, item, _ -> player.setMediaItem(item) },
 ) {
+    internal constructor(scope: CoroutineScope, createPlayer: (HttpDataSource.Factory) -> ExoPlayer) :
+        this(scope, createPlayer, {})
+
+    constructor(context: Context, scope: CoroutineScope) : this(scope, { httpFactory ->
+        val renderers = DefaultRenderersFactory(context).setEnableDecoderFallback(true)
+        ExoPlayer.Builder(context, renderers)
+            .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
+            .build()
+    }, { Log.d("FireLiteStream", it) }, setStream = { player, item, factory ->
+        player.setMediaSource(DefaultMediaSourceFactory(factory).createMediaSource(item))
+    })
+
     private val gate = StreamGate()
     private val httpFactory = DefaultHttpDataSource.Factory()
         .setAllowCrossProtocolRedirects(true)
@@ -76,6 +98,50 @@ class PlaybackController(
     private var retries = 0
     private var activeRequest: StreamRequest? = null
     private var suspendedRequest: StreamRequest? = null
+    private var preview = false
+    private val connections = AtomicInteger()
+    private val connectionGate = HttpConnectionGate()
+    private fun trackedFactory(session: Long) = object : HttpDataSource.Factory {
+        override fun setDefaultRequestProperties(properties: Map<String, String>): HttpDataSource.Factory {
+            httpFactory.setDefaultRequestProperties(properties)
+            return this
+        }
+
+        override fun createDataSource(): HttpDataSource {
+            val delegate = httpFactory.createDataSource()
+            return object : HttpDataSource by delegate {
+                private var connected = false
+                private var stream = 0
+                private var connection: Closeable? = null
+
+                override fun open(dataSpec: DataSpec): Long {
+                    connection = connectionGate.acquire(session)
+                    stream = dataSpec.uri.toString().hashCode()
+                    connected = true
+                    trace("HTTP_OPEN session=$session stream=$stream active=${connections.incrementAndGet()}")
+                    return try {
+                        delegate.open(dataSpec)
+                    } catch (error: Exception) {
+                        runCatching { close() }
+                        throw error
+                    }
+                }
+
+                override fun close() {
+                    try {
+                        delegate.close()
+                    } finally {
+                        if (connected) {
+                            connected = false
+                            trace("HTTP_CLOSE session=$session stream=$stream active=${connections.decrementAndGet()}")
+                            connection?.close()
+                            connection = null
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     private val mutablePlayer = MutableStateFlow<ExoPlayer?>(null)
     val player: StateFlow<ExoPlayer?> = mutablePlayer.asStateFlow()
@@ -102,11 +168,15 @@ class PlaybackController(
         val player = ensurePlayer()
         player.stop() // first close the old connection ...
         player.clearMediaItems()
+        val session = connectionGate.nextSession()
+        trace("STOP before switch")
         mutableStatus.value = PlaybackStatus.Connecting
 
         startJob = scope.launch {
             delay(CLOSE_GRACE_MS) // ... and give the server time to notice, only then open the new one
-            player.setMediaItem(MediaItem.fromUri(request.url))
+            awaitConnectionClose()
+            trace("PREPARE session=$session player=${System.identityHashCode(player)} stream=${request.url.hashCode()}")
+            setStream(player, mediaItem(request.url), trackedFactory(session))
             player.playWhenReady = true
             player.prepare()
         }
@@ -117,18 +187,40 @@ class PlaybackController(
         startJob?.cancel()
         startJob = null
         activeRequest = null
+        suspendedRequest = null
         gate.onStopped()
+        connectionGate.nextSession()
         exo?.let {
             it.stop()
             it.clearMediaItems()
         }
         mutableStatus.value = PlaybackStatus.Idle
+        trace("STOP closed")
+    }
+
+    fun setPreview(enabled: Boolean) {
+        if (preview == enabled) return
+        preview = enabled
+        exo?.let(::applyQuality)
+        trace("QUALITY preview=$enabled")
+    }
+
+    private fun applyQuality(player: ExoPlayer) {
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setMaxVideoSize(if (preview) 960 else Int.MAX_VALUE, if (preview) 540 else Int.MAX_VALUE)
+            .setMaxVideoBitrate(if (preview) 1_500_000 else Int.MAX_VALUE)
+            .build()
+    }
+
+    private suspend fun awaitConnectionClose() {
+        while (connections.get() > 0) delay(25)
     }
 
     /** Called when the app goes to the background: closes the stream but remembers it. */
     fun suspendStream() {
-        suspendedRequest = activeRequest ?: suspendedRequest
+        val request = activeRequest ?: suspendedRequest
         stop()
+        suspendedRequest = request
     }
 
     /** Called when the app returns: reconnects the stream that was running before, if any. */
@@ -140,12 +232,15 @@ class PlaybackController(
 
     /** Frees the decoder. The player is created again when needed. */
     fun releasePlayer() {
+        val request = suspendedRequest
+        stop()
+        suspendedRequest = request
+        mutablePlayer.value = null
         exo?.let {
             it.removeListener(listener)
             it.release()
         }
         exo = null
-        mutablePlayer.value = null
     }
 
     fun togglePause() {
@@ -161,18 +256,15 @@ class PlaybackController(
         exo?.play()
     }
 
-    /** Jumps by [deltaMs] if the stream allows it. Returns false if it is not seekable. */
-    fun seekBy(deltaMs: Long): Boolean {
+    fun seekTo(positionMs: Long): Boolean {
         val player = exo ?: return false
         if (!player.isCurrentMediaItemSeekable) return false
-        val target = (player.currentPosition + deltaMs).coerceAtLeast(0)
-        val duration = player.duration
-        if (deltaMs > 0 && duration != C.TIME_UNSET && target >= duration - LIVE_EDGE_SNAP_MS) {
-            player.seekToDefaultPosition() // past the end of a live window means: back to live
-        } else {
-            player.seekTo(target)
-        }
+        player.seekTo(positionMs.coerceAtLeast(0))
         return true
+    }
+
+    fun seekToLiveEdge() {
+        exo?.seekToDefaultPosition()
     }
 
     fun snapshot(): PlaybackSnapshot {
@@ -182,15 +274,16 @@ class PlaybackController(
             liveOffsetMs = player.currentLiveOffset.takeIf { it != C.TIME_UNSET },
             positionMs = player.currentPosition,
             durationMs = player.duration.takeIf { it != C.TIME_UNSET },
+            windowStartMs = if (player.currentTimeline.isEmpty) null else
+                player.currentTimeline.getWindow(player.currentMediaItemIndex, Timeline.Window())
+                    .windowStartTimeMs.takeIf { it != C.TIME_UNSET },
         )
     }
 
     private fun ensurePlayer(): ExoPlayer {
         exo?.let { return it }
-        val renderers = DefaultRenderersFactory(context).setEnableDecoderFallback(true)
-        val player = ExoPlayer.Builder(context, renderers)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
-            .build()
+        val player = createPlayer(trackedFactory(0))
+        applyQuality(player)
         player.setAudioAttributes(AudioAttributes.DEFAULT, true)
         player.addListener(listener)
         exo = player
@@ -221,6 +314,7 @@ class PlaybackController(
             startJob?.cancel()
             startJob = scope.launch {
                 delay(RETRY_DELAY_MS * retries)
+                awaitConnectionClose()
                 exo?.prepare() // the failed connection is closed already; open a fresh one
             }
         } else {
@@ -235,6 +329,5 @@ class PlaybackController(
         const val CLOSE_GRACE_MS = 400L
         const val RETRY_DELAY_MS = 1_500L
         const val MAX_RETRIES = 3
-        const val LIVE_EDGE_SNAP_MS = 1_500L
     }
 }

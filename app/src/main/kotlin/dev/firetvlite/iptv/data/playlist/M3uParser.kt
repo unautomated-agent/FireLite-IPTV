@@ -40,7 +40,11 @@ object M3uParser {
         val catchupDays: Int = 0,
     )
 
-    fun parse(source: Reader, onChannel: (ParsedChannel) -> Unit) {
+    fun parse(
+        source: Reader,
+        onEpgUrls: (List<String>) -> Unit = {},
+        onChannel: (ParsedChannel) -> Unit,
+    ) {
         val reader = source as? BufferedReader ?: BufferedReader(source, 1 shl 16)
         var defaults = Defaults()
         var pending: Pending? = null
@@ -57,7 +61,13 @@ object M3uParser {
 
             if (line.startsWith("#")) {
                 when {
-                    line.startsWith("#EXTM3U", ignoreCase = true) -> defaults = readDefaults(line)
+                    line.startsWith("#EXTM3U", ignoreCase = true) -> {
+                        defaults = readDefaults(line)
+                        onEpgUrls(
+                            listOfNotNull(attribute(line, "x-tvg-url"), attribute(line, "url-tvg"))
+                                .flatMap { it.split(',') }.map { it.trim() }.filter { it.isNotEmpty() }.distinct(),
+                        )
+                    }
                     line.startsWith("#EXTINF", ignoreCase = true) -> pending = readInfo(line)
                     line.startsWith("#EXTGRP:", ignoreCase = true) -> {
                         val group = line.substring("#EXTGRP:".length).trim()

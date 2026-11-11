@@ -20,13 +20,14 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.geometry.Rect
 import dev.firetvlite.iptv.ui.navigation.AppNavigationRail
 import dev.firetvlite.iptv.ui.navigation.Destination
 import dev.firetvlite.iptv.ui.navigation.RailCollapsedWidth
 import dev.firetvlite.iptv.ui.screens.ComingSoonScreen
 import dev.firetvlite.iptv.ui.screens.HomeScreen
 import dev.firetvlite.iptv.ui.screens.LiveTvScreen
-import dev.firetvlite.iptv.ui.screens.PlayerDialog
+import dev.firetvlite.iptv.ui.screens.PlayerLayer
 import dev.firetvlite.iptv.ui.screens.SettingsScreen
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 import dev.firetvlite.iptv.ui.theme.ReferenceDensity
@@ -56,14 +57,22 @@ private fun AppShell(
 ) {
     val updateState by updateViewModel.state.collectAsState()
     val source by libraryViewModel.source.collectAsState()
-    val channelCount by libraryViewModel.channelCount.collectAsState()
+    val sources by libraryViewModel.sources.collectAsState()
     val importState by libraryViewModel.importState.collectAsState()
+    val epgStates by libraryViewModel.epgStates.collectAsState()
+    val mode by playerViewModel.mode.collectAsState()
+    var previewBounds by remember { mutableStateOf<Rect?>(null) }
     var current by rememberSaveable { mutableStateOf(Destination.Home) }
     var railHasFocus by remember { mutableStateOf(false) }
     val railRequesters = remember { Destination.entries.associateWith { FocusRequester() } }
 
     // Back first returns focus to the rail; only a second press (with the rail focused) leaves the app.
-    BackHandler(enabled = !railHasFocus) {
+    fun navigate(destination: Destination) {
+        if (destination != Destination.Live) playerViewModel.close()
+        current = destination
+    }
+
+    BackHandler(enabled = !railHasFocus && !mode.fullFrame) {
         try {
             railRequesters.getValue(current).requestFocus()
         } catch (ignored: IllegalStateException) {
@@ -96,7 +105,9 @@ private fun AppShell(
                 Destination.Live -> LiveTvScreen(
                     library = libraryViewModel,
                     player = playerViewModel,
-                    onOpenSettings = { current = Destination.Settings },
+                    active = current == Destination.Live,
+                    onPreviewBounds = { previewBounds = it },
+                    onOpenSettings = { navigate(Destination.Settings) },
                 )
                 Destination.Settings -> SettingsScreen(
                     installed = updateViewModel.installed,
@@ -105,9 +116,12 @@ private fun AppShell(
                     onInstallUpdate = updateViewModel::downloadAndInstall,
                     onOpenInstallSettings = updateViewModel::openInstallSettings,
                     source = source,
-                    channelCount = channelCount,
+                    sources = sources,
                     importState = importState,
+                    epgStates = epgStates,
                     onSaveSource = libraryViewModel::saveSource,
+                    onActivateSource = libraryViewModel::activateSource,
+                    onDeleteSource = libraryViewModel::deleteSource,
                     onRefreshSource = libraryViewModel::refreshSource,
                 )
                 else -> ComingSoonScreen(destination)
@@ -117,11 +131,9 @@ private fun AppShell(
         AppNavigationRail(
             selected = current,
             focusRequesters = railRequesters,
-            onSelect = { current = it },
+            onSelect = ::navigate,
             onFocusWithinChanged = { railHasFocus = it },
         )
+        PlayerLayer(viewModel = playerViewModel, library = libraryViewModel, previewBounds = previewBounds)
     }
-
-    // The player is a dialog window above everything else.
-    PlayerDialog(viewModel = playerViewModel)
 }

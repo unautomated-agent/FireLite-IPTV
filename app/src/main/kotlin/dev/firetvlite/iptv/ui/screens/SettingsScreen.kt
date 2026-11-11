@@ -1,35 +1,52 @@
 package dev.firetvlite.iptv.ui.screens
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
 import dev.firetvlite.iptv.R
+import dev.firetvlite.iptv.CrashReportStore
 import dev.firetvlite.iptv.data.db.SourceEntity
+import dev.firetvlite.iptv.data.db.SavedSource
+import dev.firetvlite.iptv.data.epg.EpgState
 import dev.firetvlite.iptv.data.library.ImportFailure
 import dev.firetvlite.iptv.data.library.ImportState
 import dev.firetvlite.iptv.data.library.LibraryRepository
 import dev.firetvlite.iptv.ui.components.FLText
+import dev.firetvlite.iptv.ui.components.FocusSurface
 import dev.firetvlite.iptv.ui.components.LabeledTextField
 import dev.firetvlite.iptv.ui.components.PrimaryButton
 import dev.firetvlite.iptv.ui.components.ProgressBar
@@ -44,6 +61,10 @@ import dev.firetvlite.iptv.update.pendingRelease
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+import java.io.File
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 private val WarningColor = Color(0xFFFFB74D)
 
@@ -56,9 +77,12 @@ fun SettingsScreen(
     onInstallUpdate: () -> Unit,
     onOpenInstallSettings: () -> Unit,
     source: SourceEntity?,
-    channelCount: Int,
+    sources: List<SavedSource>,
     importState: ImportState,
-    onSaveSource: (url: String, userAgent: String) -> Unit,
+    epgStates: Map<Long, EpgState>,
+    onSaveSource: (url: String, userAgent: String, epgUrl: String, id: Long?) -> Unit,
+    onActivateSource: (Long) -> Unit,
+    onDeleteSource: (Long) -> Unit,
     onRefreshSource: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -76,10 +100,13 @@ fun SettingsScreen(
         )
         SourceSection(
             source = source,
-            channelCount = channelCount,
+            sources = sources,
             importState = importState,
+            epgStates = epgStates,
             onSave = onSaveSource,
             onRefresh = onRefreshSource,
+            onActivate = onActivateSource,
+            onDelete = onDeleteSource,
         )
         UpdateSection(
             installed = installed,
@@ -88,6 +115,50 @@ fun SettingsScreen(
             onInstall = onInstallUpdate,
             onOpenInstallSettings = onOpenInstallSettings,
         )
+        CrashSection()
+    }
+}
+
+@Composable
+private fun CrashSection() {
+    val context = LocalContext.current
+    val store = remember(context) { CrashReportStore(File(context.filesDir, "last-crash.txt")) }
+    var report by remember { mutableStateOf<String?>(null) }
+    val scroll = rememberScrollState()
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(store) { report = withContext(Dispatchers.IO) { store.read() } }
+    val text = report ?: return
+    SettingsCard {
+        FLText(text = stringResource(R.string.crash_section), style = FireLiteTheme.typography.headline)
+        FLText(text = stringResource(R.string.crash_scroll_hint), style = FireLiteTheme.typography.label)
+        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+            FocusSurface(
+                onClick = {},
+                focusedScale = 1f,
+                modifier = Modifier.weight(1f).height(180.dp).onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown &&
+                        (event.key == Key.DirectionDown || event.key == Key.DirectionUp)
+                    ) {
+                        scope.launch { scroll.animateScrollBy(if (event.key == Key.DirectionDown) 120f else -120f) }
+                        true
+                    } else false
+                },
+            ) {
+                FLText(
+                    text = text,
+                    style = FireLiteTheme.typography.body,
+                    modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(12.dp),
+                )
+            }
+            SecondaryButton(
+                text = stringResource(R.string.crash_clear),
+                onClick = {
+                    scope.launch {
+                        if (withContext(Dispatchers.IO) { store.clear() }) report = null
+                    }
+                },
+            )
+        }
     }
 }
 
@@ -110,20 +181,67 @@ private fun SettingsCard(content: @Composable () -> Unit) {
 @Composable
 private fun SourceSection(
     source: SourceEntity?,
-    channelCount: Int,
+    sources: List<SavedSource>,
     importState: ImportState,
-    onSave: (url: String, userAgent: String) -> Unit,
+    epgStates: Map<Long, EpgState>,
+    onSave: (url: String, userAgent: String, epgUrl: String, id: Long?) -> Unit,
     onRefresh: () -> Unit,
+    onActivate: (Long) -> Unit,
+    onDelete: (Long) -> Unit,
 ) {
     val colors = FireLiteTheme.colors
     val typography = FireLiteTheme.typography
 
     var editing by remember { mutableStateOf(false) }
-    var url by remember { mutableStateOf(source?.url.orEmpty()) }
-    var agent by remember { mutableStateOf(source?.userAgent ?: LibraryRepository.DEFAULT_USER_AGENT) }
+    var editingId by remember { mutableStateOf<Long?>(null) }
+    var deleting by remember { mutableStateOf<SourceEntity?>(null) }
+    var url by remember { mutableStateOf("") }
+    var agent by remember { mutableStateOf(LibraryRepository.DEFAULT_USER_AGENT) }
+    var epgUrl by remember { mutableStateOf("") }
     var invalid by remember { mutableStateOf(false) }
+    var invalidEpg by remember { mutableStateOf(false) }
     val firstFocus = remember { FocusRequester() }
-    LaunchedEffect(editing) { firstFocus.requestFocusWhenReady() }
+    val agentFocus = remember { FocusRequester() }
+    val epgFocus = remember { FocusRequester() }
+    val saveFocus = remember { FocusRequester() }
+    LaunchedEffect(editing, deleting) {
+        if (deleting == null) firstFocus.requestFocusWhenReady()
+    }
+    BackHandler(enabled = editing) { editing = false }
+
+    fun openForm(existing: SourceEntity?) {
+        editingId = existing?.id
+        url = existing?.url.orEmpty()
+        agent = existing?.userAgent ?: LibraryRepository.DEFAULT_USER_AGENT
+        epgUrl = existing?.epgUrl.orEmpty()
+        invalid = false
+        invalidEpg = false
+        editing = true
+    }
+
+    deleting?.let { entry ->
+        val confirmFocus = remember { FocusRequester() }
+        Dialog(onDismissRequest = { deleting = null }) {
+            LaunchedEffect(Unit) { confirmFocus.requestFocusWhenReady() }
+            SettingsCard {
+                FLText(
+                    text = stringResource(R.string.source_delete_confirm, entry.name, entry.id),
+                    style = typography.headline,
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    PrimaryButton(
+                        text = stringResource(R.string.source_delete),
+                        onClick = { onDelete(entry.id); deleting = null },
+                        modifier = Modifier.focusRequester(confirmFocus),
+                    )
+                    SecondaryButton(
+                        text = stringResource(R.string.source_cancel),
+                        onClick = { deleting = null },
+                    )
+                }
+            }
+        }
+    }
 
     SettingsCard {
         FLText(text = stringResource(R.string.source_section), style = typography.headline)
@@ -136,16 +254,36 @@ private fun SourceSection(
                     url = it
                     invalid = false
                 },
-                modifier = Modifier.focusRequester(firstFocus),
+                modifier = Modifier.focusRequester(firstFocus).focusProperties { down = agentFocus },
             )
             LabeledTextField(
                 label = stringResource(R.string.source_agent_label),
                 value = agent,
                 onValueChange = { agent = it },
+                modifier = Modifier.focusRequester(agentFocus).focusProperties {
+                    up = firstFocus
+                    down = epgFocus
+                },
+            )
+            LabeledTextField(
+                label = stringResource(R.string.source_epg_label),
+                value = epgUrl,
+                onValueChange = { epgUrl = it; invalidEpg = false },
+                modifier = Modifier.focusRequester(epgFocus).focusProperties {
+                    up = agentFocus
+                    down = saveFocus
+                },
             )
             if (invalid) {
                 FLText(
                     text = stringResource(R.string.source_invalid_url),
+                    style = typography.title,
+                    color = WarningColor,
+                )
+            }
+            if (invalidEpg) {
+                FLText(
+                    text = stringResource(R.string.source_epg_invalid),
                     style = typography.title,
                     color = WarningColor,
                 )
@@ -155,51 +293,76 @@ private fun SourceSection(
                     text = stringResource(R.string.source_save),
                     onClick = {
                         val trimmed = url.trim()
-                        if (trimmed.startsWith("http://") || trimmed.startsWith("https://")) {
-                            onSave(trimmed, agent.trim().ifEmpty { LibraryRepository.DEFAULT_USER_AGENT })
+                        val uri = Uri.parse(trimmed)
+                        invalid = uri.scheme !in listOf("http", "https") || uri.host.isNullOrEmpty()
+                        invalidEpg = epgUrl.isNotBlank() && epgUrl.split(',').any {
+                            val epg = Uri.parse(it.trim())
+                            epg.scheme !in listOf("http", "https") || epg.host.isNullOrEmpty()
+                        }
+                        if (!invalid && !invalidEpg) {
+                            onSave(trimmed, agent.trim().ifEmpty { LibraryRepository.DEFAULT_USER_AGENT }, epgUrl.trim(), editingId)
                             editing = false
-                        } else {
-                            invalid = true
                         }
                     },
+                    modifier = Modifier.focusRequester(saveFocus).focusProperties { up = epgFocus },
                 )
-                if (source != null) {
-                    SecondaryButton(
-                        text = stringResource(R.string.source_cancel),
-                        onClick = {
-                            url = source.url
-                            agent = source.userAgent
-                            invalid = false
-                            editing = false
-                        },
-                    )
-                }
+                SecondaryButton(
+                    text = stringResource(R.string.source_cancel),
+                    onClick = { editing = false },
+                    modifier = Modifier.focusProperties { up = epgFocus },
+                )
             }
         } else {
-            // Only the server name is shown: playlist addresses often contain a user name and password.
-            FLText(
-                text = if (source == null) {
-                    stringResource(R.string.source_none)
-                } else {
-                    stringResource(R.string.source_server, Uri.parse(source.url).host ?: "?")
-                },
-                style = typography.body,
-            )
-            if (source != null) {
-                val updated = if (source.refreshedAt > 0) {
-                    DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT, Locale("pl", "PL"))
-                        .format(Date(source.refreshedAt))
-                } else {
-                    stringResource(R.string.source_never_refreshed)
+            if (sources.isEmpty()) {
+                FLText(text = stringResource(R.string.source_none), style = typography.body)
+            }
+            sources.forEach { saved ->
+                key(saved.source.id) {
+                    val entry = saved.source
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        FocusSurface(
+                            onClick = { onActivate(entry.id) },
+                            modifier = Modifier.weight(1f),
+                            focusedScale = 1f,
+                        ) {
+                            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                                FLText(
+                                    text = stringResource(
+                                        R.string.source_entry, entry.name, entry.id, Uri.parse(entry.url).host ?: "?",
+                                    ),
+                                    style = typography.title,
+                                    maxLines = 1,
+                                )
+                                if (entry.id == source?.id) {
+                                    FLText(
+                                        text = stringResource(R.string.source_active),
+                                        style = typography.label,
+                                        color = colors.accent,
+                                    )
+                                }
+                                val updated = if (entry.refreshedAt > 0) {
+                                    DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT, Locale("pl", "PL"))
+                                        .format(Date(entry.refreshedAt))
+                                } else stringResource(R.string.source_never_refreshed)
+                                FLText(
+                                    text = stringResource(
+                                        R.string.source_stats, pluralString(R.plurals.channel_count, saved.channelCount), updated,
+                                    ),
+                                    style = typography.body,
+                                )
+                                FLText(
+                                    text = epgStatusText(entry, epgStates[entry.id]),
+                                    style = typography.body,
+                                    color = if (epgStates[entry.id] == EpgState.Failed) WarningColor else colors.textSecondary,
+                                )
+                            }
+                        }
+                        SecondaryButton(
+                            text = stringResource(R.string.source_delete),
+                            onClick = { deleting = entry },
+                        )
+                    }
                 }
-                FLText(
-                    text = stringResource(
-                        R.string.source_stats,
-                        pluralString(R.plurals.channel_count, channelCount),
-                        updated,
-                    ),
-                    style = typography.body,
-                )
             }
             val status = importStatusText(importState)
             if (status.isNotEmpty()) {
@@ -211,16 +374,15 @@ private fun SourceSection(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 SecondaryButton(
-                    text = stringResource(if (source == null) R.string.source_add else R.string.source_change),
-                    onClick = {
-                        url = source?.url.orEmpty()
-                        agent = source?.userAgent ?: LibraryRepository.DEFAULT_USER_AGENT
-                        invalid = false
-                        editing = true
-                    },
+                    text = stringResource(R.string.source_add),
+                    onClick = { openForm(null) },
                     modifier = Modifier.focusRequester(firstFocus),
                 )
                 if (source != null) {
+                    SecondaryButton(
+                        text = stringResource(R.string.source_change),
+                        onClick = { openForm(source) },
+                    )
                     SecondaryButton(
                         text = stringResource(R.string.source_refresh),
                         onClick = onRefresh,
@@ -229,6 +391,20 @@ private fun SourceSection(
             }
         }
     }
+}
+
+@Composable
+private fun epgStatusText(source: SourceEntity, state: EpgState?): String = when {
+    state == EpgState.Running -> stringResource(R.string.epg_running)
+    state == EpgState.Failed -> stringResource(R.string.epg_failed)
+    source.epgRefreshedAt > 0 -> stringResource(
+        R.string.epg_stats,
+        pluralString(R.plurals.programme_count, source.epgProgrammeCount),
+        DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT, Locale("pl", "PL"))
+            .format(Date(source.epgRefreshedAt)),
+    )
+    source.epgUrl.isNotBlank() || source.discoveredEpgUrls.isNotBlank() -> stringResource(R.string.epg_waiting)
+    else -> stringResource(R.string.epg_none)
 }
 
 @Composable

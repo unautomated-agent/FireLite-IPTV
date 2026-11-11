@@ -1,12 +1,13 @@
 package dev.firetvlite.iptv.data.db
 
 import androidx.room.Embedded
+import androidx.room.ColumnInfo
 import androidx.room.Entity
 import androidx.room.ForeignKey
 import androidx.room.Index
 import androidx.room.PrimaryKey
 
-/** A channel list the user added. Only one exists for now; the schema already allows several. */
+/** A saved playlist. The most recently used source is active. */
 @Entity(tableName = "source")
 data class SourceEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -15,6 +16,17 @@ data class SourceEntity(
     val userAgent: String,
     /** Epoch milliseconds of the last successful import, 0 if never. */
     val refreshedAt: Long = 0,
+    @ColumnInfo(defaultValue = "0") val lastUsedAt: Long = 0,
+    @ColumnInfo(defaultValue = "''") val epgUrl: String = "",
+    @ColumnInfo(defaultValue = "''") val discoveredEpgUrls: String = "",
+    @ColumnInfo(defaultValue = "0") val epgRefreshedAt: Long = 0,
+    @ColumnInfo(defaultValue = "0") val epgProgrammeCount: Int = 0,
+    @ColumnInfo(defaultValue = "''") val epgGeneration: String = "",
+)
+
+data class SavedSource(
+    @Embedded val source: SourceEntity,
+    val channelCount: Int,
 )
 
 /**

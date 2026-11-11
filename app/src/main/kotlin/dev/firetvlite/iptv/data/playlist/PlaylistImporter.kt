@@ -9,6 +9,8 @@ import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 /** The download worked, but it contained no channels (wrong address, or not an M3U file). */
@@ -26,47 +28,55 @@ class PlaylistImporter(
     /** @return the number of imported channels. */
     @Throws(IOException::class)
     suspend fun import(source: SourceEntity): Int = withContext(Dispatchers.IO) {
-        val file = File(cacheDir, "playlist-${source.id}.m3u")
-        download(source.url, source.userAgent, file)
-
-        val channels = ArrayList<ChannelEntity>()
-        val groups = HashMap<String, String>()
-        file.inputStream().reader(Charsets.UTF_8).use { reader ->
-            M3uParser.parse(reader) { parsed ->
-                channels.add(
-                    ChannelEntity(
-                        sourceId = source.id,
-                        position = channels.size,
-                        name = parsed.name,
-                        // One shared String per group name instead of thousands of copies.
-                        groupName = groups.getOrPut(parsed.group) { parsed.group },
-                        streamUrl = parsed.url,
-                        logoUrl = parsed.logoUrl,
-                        tvgId = parsed.tvgId,
-                        catchupType = parsed.catchupType,
-                        catchupSource = parsed.catchupSource,
-                        catchupDays = parsed.catchupDays,
-                    ),
-                )
+        val file = File.createTempFile("playlist-${source.id}-", ".m3u", cacheDir)
+        try {
+            download(source.url, source.userAgent, file)
+            val context = currentCoroutineContext()
+            context.ensureActive()
+            val channels = ArrayList<ChannelEntity>()
+            val groups = HashMap<String, String>()
+            var epgUrls = emptyList<String>()
+            file.inputStream().reader(Charsets.UTF_8).use { reader ->
+                M3uParser.parse(reader, onEpgUrls = { epgUrls = it }) { parsed ->
+                    context.ensureActive()
+                    channels.add(
+                        ChannelEntity(
+                            sourceId = source.id,
+                            position = channels.size,
+                            name = parsed.name,
+                            // One shared String per group name instead of thousands of copies.
+                            groupName = groups.getOrPut(parsed.group) { parsed.group },
+                            streamUrl = parsed.url,
+                            logoUrl = parsed.logoUrl,
+                            tvgId = parsed.tvgId,
+                            catchupType = parsed.catchupType,
+                            catchupSource = parsed.catchupSource,
+                            catchupDays = parsed.catchupDays,
+                        ),
+                    )
+                }
             }
-        }
-        file.delete()
-        if (channels.isEmpty()) throw EmptyPlaylistException()
+            if (channels.isEmpty()) throw EmptyPlaylistException()
 
-        database.withTransaction {
-            val dao = database.channelDao()
-            dao.deleteForSource(source.id)
-            channels.chunked(1_000).forEach { dao.insertAll(it) }
-            database.sourceDao().markRefreshed(source.id, System.currentTimeMillis())
+            database.withTransaction {
+                val dao = database.channelDao()
+                dao.deleteForSource(source.id)
+                channels.chunked(1_000).forEach { dao.insertAll(it) }
+                database.sourceDao().markRefreshed(source.id, System.currentTimeMillis())
+                database.sourceDao().updateDiscoveredEpg(source.id, epgUrls.joinToString("\n"))
+            }
+            channels.size
+        } finally {
+            file.delete()
         }
-        channels.size
     }
 
     /** Streams the answer of the server into [target], following redirects. Big lists never sit in memory. */
     @Throws(IOException::class)
-    private fun download(urlText: String, userAgent: String, target: File) {
+    private suspend fun download(urlText: String, userAgent: String, target: File) {
         var current = urlText
         repeat(MAX_REDIRECTS + 1) {
+            currentCoroutineContext().ensureActive()
             val connection = URL(current).openConnection() as HttpURLConnection
             connection.connectTimeout = 15_000
             connection.readTimeout = 30_000
@@ -87,6 +97,7 @@ class PlaylistImporter(
                     target.outputStream().use { output ->
                         val buffer = ByteArray(32 * 1024)
                         while (true) {
+                            currentCoroutineContext().ensureActive()
                             val read = input.read(buffer)
                             if (read < 0) break
                             total += read

@@ -1,5 +1,7 @@
 package dev.firetvlite.iptv.ui.screens
 
+import android.view.ViewGroup
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.animateFloat
@@ -20,15 +22,18 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -37,6 +42,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
@@ -48,14 +54,19 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.viewinterop.AndroidView
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.db.ChannelEntity
 import dev.firetvlite.iptv.playback.PlaybackSnapshot
+import dev.firetvlite.iptv.playback.PlaybackFrame
+import dev.firetvlite.iptv.playback.PlaybackTime
+import dev.firetvlite.iptv.data.epg.CurrentAndNext
+import dev.firetvlite.iptv.ui.components.clockTime
+import dev.firetvlite.iptv.ui.components.programmeTimes
 import dev.firetvlite.iptv.playback.PlaybackStatus
 import dev.firetvlite.iptv.ui.components.ChannelLogo
 import dev.firetvlite.iptv.ui.components.FLText
@@ -66,51 +77,78 @@ import dev.firetvlite.iptv.ui.components.requestFocusWhenReady
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 import dev.firetvlite.iptv.ui.viewmodel.PlayerMessage
 import dev.firetvlite.iptv.ui.viewmodel.PlayerViewModel
+import dev.firetvlite.iptv.playback.PlayerMode
+import dev.firetvlite.iptv.ui.viewmodel.LibraryViewModel
 import dev.firetvlite.iptv.ui.viewmodel.ZapPosition
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 private const val OVERLAY_VISIBLE_MS = 5_000L
-private const val SNAPSHOT_INTERVAL_MS = 500L
 private const val SEEK_STEP_MS = 10_000L
 
-/**
- * Full-screen player. It is a dialog window, so the screen underneath keeps its focus and scroll position
- * and the user lands exactly where they were when the player closes.
- *
- * Remote: Up/Down change the channel, Left/Right jump 10 s, rewind/fast-forward jump 30 s (or enter the archive),
- * OK shows the info bar, Menu toggles the favourite, Back closes the player.
- */
 @Composable
-fun PlayerDialog(viewModel: PlayerViewModel) {
-    val open by viewModel.isOpen.collectAsState()
-    if (!open) return
-
-    Dialog(
-        onDismissRequest = viewModel::close,
-        properties = DialogProperties(
-            dismissOnBackPress = true,
-            dismissOnClickOutside = false,
-            usePlatformDefaultWidth = false,
-        ),
-    ) {
-        PlayerContent(viewModel)
+fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBounds: Rect?) {
+    val mode by viewModel.mode.collectAsState()
+    val player by viewModel.player.collectAsState()
+    val status by viewModel.status.collectAsState()
+    val timeline by viewModel.timeline.collectAsState()
+    val density = LocalDensity.current
+    val full = mode.fullFrame
+    val video = when {
+        full -> Modifier
+        mode == PlayerMode.Preview && previewBounds != null -> Modifier
+            .offset { IntOffset(previewBounds.left.toInt(), previewBounds.top.toInt()) }
+            .size(with(density) { previewBounds.width.toDp() }, with(density) { previewBounds.height.toDp() })
+        else -> Modifier.size(0.dp)
+    }
+    BackHandler(enabled = full) {
+        if (timeline != null) viewModel.closeTimeline()
+        else if (mode == PlayerMode.Overlay) viewModel.closeOverlay() else viewModel.backToPreview()
+    }
+    Box(Modifier.fillMaxSize()) {
+        // The SurfaceView stays in this single AndroidView slot; only its bounds change.
+        AndroidView(
+            factory = { context ->
+                PlayerView(context).apply {
+                    useController = false
+                    isFocusable = false
+                    isFocusableInTouchMode = false
+                    descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
+                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    setKeepContentOnPlayerReset(true)
+                }
+            },
+            update = { view -> if (view.player !== player) view.player = player },
+            onRelease = { view -> view.player = null },
+            modifier = if (full) Modifier.matchParentSize() else video,
+        )
+        if (mode == PlayerMode.Preview) Box(video) { StatusLayer(status) }
+        if (mode == PlayerMode.Fullscreen && timeline == null) PlayerContent(viewModel)
+        if (mode == PlayerMode.Overlay) PlayerChannelOverlay(library, viewModel)
+        timeline?.let { ChannelTimelineStrip(it, viewModel, library) }
     }
 }
 
 @Composable
 private fun PlayerContent(viewModel: PlayerViewModel) {
-    val player by viewModel.player.collectAsState()
     val status by viewModel.status.collectAsState()
     val channel by viewModel.channel.collectAsState()
     val position by viewModel.position.collectAsState()
     val isFavorite by viewModel.isFavorite.collectAsState()
-    val catchupOffset by viewModel.catchupOffsetMinutes.collectAsState()
+    val frame by viewModel.frame.collectAsState()
+    val guide by viewModel.programme.collectAsState()
     val message by viewModel.message.collectAsState()
 
     var overlayVisible by remember { mutableStateOf(true) }
     var overlayToken by remember { mutableIntStateOf(0) }
-    var snapshot by remember { mutableStateOf(PlaybackSnapshot.EMPTY) }
     val rootFocus = remember { FocusRequester() }
+    val scope = rememberCoroutineScope()
+    var okJob by remember { mutableStateOf<Job?>(null) }
+    var okFired by remember { mutableStateOf(false) }
+    var leftJob by remember { mutableStateOf<Job?>(null) }
+    var leftFired by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) { onDispose { okJob?.cancel(); leftJob?.cancel() } }
 
     LaunchedEffect(Unit) { rootFocus.requestFocusWhenReady() }
 
@@ -120,20 +158,53 @@ private fun PlayerContent(viewModel: PlayerViewModel) {
         delay(OVERLAY_VISIBLE_MS)
         overlayVisible = false
     }
-    LaunchedEffect(overlayVisible) {
-        while (overlayVisible) {
-            snapshot = viewModel.snapshot()
-            delay(SNAPSHOT_INTERVAL_MS)
-        }
-    }
-
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black)
             .focusRequester(rootFocus)
-            .focusable()
             .onPreviewKeyEvent { event ->
+                if (event.key == Key.DirectionLeft) {
+                    if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0) {
+                        overlayToken++
+                        leftFired = false
+                        leftJob?.cancel()
+                        leftJob = scope.launch {
+                            delay(600)
+                            if (!leftFired) { leftFired = true; viewModel.jumpToProgrammeStart() }
+                        }
+                    } else if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.isLongPress && !leftFired) {
+                        leftFired = true
+                        leftJob?.cancel()
+                        viewModel.jumpToProgrammeStart()
+                    } else if (event.type == KeyEventType.KeyUp) {
+                        leftJob?.cancel()
+                        if (!leftFired) viewModel.seek(-SEEK_STEP_MS)
+                    }
+                    return@onPreviewKeyEvent true
+                }
+                if (event.key == Key.Menu) {
+                    if (event.type == KeyEventType.KeyUp) viewModel.openOverlay()
+                    return@onPreviewKeyEvent true
+                }
+                if (event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter) {
+                    if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0) {
+                        overlayToken++
+                        okJob?.cancel()
+                        okFired = false
+                        okJob = scope.launch {
+                            delay(600)
+                            if (!okFired) { okFired = true; viewModel.toggleFavorite() }
+                        }
+                    } else if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.isLongPress && !okFired) {
+                        okFired = true
+                        okJob?.cancel()
+                        viewModel.toggleFavorite()
+                    } else if (event.type == KeyEventType.KeyUp) {
+                        okJob?.cancel()
+                        okJob = null
+                    }
+                    return@onPreviewKeyEvent true
+                }
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
                 val firstPress = event.nativeKeyEvent.repeatCount == 0
                 when (event.key) {
@@ -147,22 +218,8 @@ private fun PlayerContent(viewModel: PlayerViewModel) {
                         overlayToken++
                         true
                     }
-                    Key.DirectionLeft -> {
-                        viewModel.seek(-SEEK_STEP_MS)
-                        overlayToken++
-                        true
-                    }
                     Key.DirectionRight -> {
                         viewModel.seek(SEEK_STEP_MS)
-                        overlayToken++
-                        true
-                    }
-                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
-                        overlayToken++
-                        true
-                    }
-                    Key.Menu -> {
-                        if (firstPress) viewModel.toggleFavorite()
                         overlayToken++
                         true
                     }
@@ -180,7 +237,7 @@ private fun PlayerContent(viewModel: PlayerViewModel) {
                         true
                     }
                     Key.MediaRewind -> {
-                        if (firstPress) viewModel.jump(forward = false)
+                        if (firstPress) viewModel.openTimeline()
                         overlayToken++
                         true
                     }
@@ -191,19 +248,9 @@ private fun PlayerContent(viewModel: PlayerViewModel) {
                     }
                     else -> false
                 }
-            },
+            }
+            .focusable(),
     ) {
-        AndroidView(
-            factory = { context ->
-                PlayerView(context).apply {
-                    useController = false
-                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                }
-            },
-            update = { view -> view.player = player },
-            modifier = Modifier.fillMaxSize(),
-        )
-
         StatusLayer(status = status)
 
         message?.let { hint ->
@@ -234,8 +281,8 @@ private fun PlayerContent(viewModel: PlayerViewModel) {
                 channel = channel,
                 position = position,
                 isFavorite = isFavorite,
-                snapshot = snapshot,
-                catchupOffset = catchupOffset,
+                frame = frame,
+                guide = guide,
             )
         }
     }
@@ -297,8 +344,8 @@ private fun InfoBar(
     channel: ChannelEntity?,
     position: ZapPosition,
     isFavorite: Boolean,
-    snapshot: PlaybackSnapshot,
-    catchupOffset: Int,
+    frame: PlaybackFrame,
+    guide: CurrentAndNext,
 ) {
     val colors = FireLiteTheme.colors
     val typography = FireLiteTheme.typography
@@ -348,18 +395,33 @@ private fun InfoBar(
                 )
             }
             FLText(
-                text = timeLabel(snapshot, catchupOffset),
+                text = if (frame.nowMs - frame.watchedMs > PlaybackTime.LIVE_TOLERANCE_MS) {
+                    stringResource(R.string.player_watched_behind, clockTime(frame.watchedMs),
+                        ((frame.nowMs - frame.watchedMs) / 60_000).coerceAtLeast(1))
+                } else stringResource(R.string.player_watched_live, clockTime(frame.watchedMs)),
                 style = typography.title,
-                color = if (catchupOffset > 0) Color(0xFFFFB74D) else colors.textPrimary,
+                color = if (frame.nowMs - frame.watchedMs > PlaybackTime.LIVE_TOLERANCE_MS) Color(0xFFFFB74D) else colors.textPrimary,
             )
         }
 
-        val duration = snapshot.durationMs
-        if (snapshot.seekable && duration != null && duration > 0) {
-            ProgressBar(
-                progress = snapshot.positionMs.toFloat() / duration.toFloat(),
+        val current = guide.current
+        if (current != null) {
+            FLText("${programmeTimes(current)}  ${current.title}", style = typography.title, maxLines = 1)
+            ProgressBar(PlaybackTime.progress(frame.watchedMs, current.start, current.stop),
                 modifier = Modifier.padding(vertical = 2.dp),
-            )
+                liveProgress = if (frame.nowMs - frame.watchedMs > PlaybackTime.LIVE_TOLERANCE_MS)
+                    PlaybackTime.progress(frame.nowMs, current.start, current.stop) else null)
+        } else {
+            val snapshot = frame.snapshot
+            val duration = snapshot.durationMs
+            FLText(timeLabel(snapshot), style = typography.label)
+            if (snapshot.seekable && duration != null && duration > 0) {
+                ProgressBar(progress = snapshot.positionMs.toFloat() / duration.toFloat(),
+                    modifier = Modifier.padding(vertical = 2.dp))
+            }
+        }
+        guide.next?.let { next ->
+            FLText(stringResource(R.string.epg_next, programmeTimes(next), next.title), style = typography.label, maxLines = 1)
         }
         FLText(
             text = stringResource(R.string.player_hint),
@@ -370,8 +432,7 @@ private fun InfoBar(
 }
 
 @Composable
-private fun timeLabel(snapshot: PlaybackSnapshot, catchupOffset: Int): String {
-    if (catchupOffset > 0) return stringResource(R.string.player_archive, catchupOffset)
+private fun timeLabel(snapshot: PlaybackSnapshot): String {
     val behind = snapshot.liveOffsetMs
     if (behind != null) {
         return if (behind < LIVE_TOLERANCE_MS) {

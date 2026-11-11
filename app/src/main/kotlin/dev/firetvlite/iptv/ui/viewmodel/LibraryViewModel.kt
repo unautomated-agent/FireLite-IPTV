@@ -6,7 +6,6 @@ import androidx.lifecycle.viewModelScope
 import androidx.paging.Pager
 import androidx.paging.PagingConfig
 import androidx.paging.PagingData
-import androidx.paging.cachedIn
 import dev.firetvlite.iptv.FireLiteApplication
 import dev.firetvlite.iptv.data.db.ChannelRow
 import dev.firetvlite.iptv.data.db.FavoriteEntity
@@ -28,6 +27,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -50,6 +50,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         repository.source.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     val importState: StateFlow<ImportState> = repository.importState
+    val epgStates = container.epg.states
+
+    val sources = repository.sources.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val sourceId: Flow<Long?> = source.map { it?.id }.distinctUntilChanged()
 
@@ -59,6 +62,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     private val mutableSelectedGroup = MutableStateFlow<GroupKey>(GroupKey.All)
     val selectedGroup: StateFlow<GroupKey> = mutableSelectedGroup.asStateFlow()
+
+    init {
+        viewModelScope.launch {
+            sourceId.collect { mutableSelectedGroup.value = GroupKey.All }
+        }
+    }
 
     fun selectGroup(key: GroupKey) {
         mutableSelectedGroup.value = key
@@ -73,8 +82,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 combine(
                     channelDao.observeGroups(id),
                     channelDao.observeCount(id),
-                    userDao.observeFavoriteCount(),
-                    userDao.observeRecentCount(),
+                    userDao.observeFavoriteCount(id),
+                    userDao.observeRecentCount(id),
                 ) { named, all, favorites, recent ->
                     buildList {
                         add(GroupItem(GroupKey.Favorites, favorites))
@@ -88,12 +97,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
     /** The channels of the selected group, loaded page by page. */
-    val channels: Flow<PagingData<ChannelRow>> = combine(sourceId, mutableSelectedGroup) { id, key -> id to key }
-        .flatMapLatest { (id, key) ->
+    fun channels(key: GroupKey): Flow<PagingData<ChannelRow>> = sourceId
+        .flatMapLatest { id ->
             if (id == null) {
                 flowOf(PagingData.empty<ChannelRow>())
             } else {
-                Pager(PagingConfig(pageSize = 40, enablePlaceholders = false)) {
+                Pager(PagingConfig(pageSize = 40, enablePlaceholders = true)) {
                     when (key) {
                         GroupKey.Favorites -> channelDao.pagingFavorites(id)
                         GroupKey.Recent -> channelDao.pagingRecent(id)
@@ -103,7 +112,6 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
                 }.flow
             }
         }
-        .cachedIn(viewModelScope)
 
     fun toggleFavorite(streamUrl: String) {
         viewModelScope.launch {
@@ -114,6 +122,34 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
             }
         }
     }
+
+    suspend fun channelIndex(key: GroupKey, url: String): Int? {
+        val id = source.value?.id ?: return null
+        return when (key) {
+            GroupKey.All -> channelDao.allIndex(id, url)
+            is GroupKey.Named -> channelDao.groupIndex(id, key.name, url)
+            GroupKey.Favorites -> channelDao.favoriteChannels(id).indexOfFirst { it.streamUrl == url }.takeIf { it >= 0 }
+            GroupKey.Recent -> channelDao.recentChannels(id).indexOfFirst { it.streamUrl == url }.takeIf { it >= 0 }
+        }
+    }
+
+    fun currentProgrammes(channelIds: List<Long>, time: Long) = container.epg.programmes(channelIds, time, time + 1)
+
+    fun programmes(channelIds: List<Long>, from: Long, until: Long) = container.epg.programmes(channelIds, from, until)
+
+    fun guideChannels(channelIds: List<Long>) = container.epg.guideChannels(channelIds)
+
+    fun guideLimits(key: GroupKey): Flow<Pair<Int, Long?>> = sourceId.flatMapLatest { id ->
+        if (id == null) flowOf(0 to null) else {
+            val group = (key as? GroupKey.Named)?.name
+            combine(
+                channelDao.guideCatchupDays(id, group, key == GroupKey.Favorites, key == GroupKey.Recent),
+                container.database.epgDao().guideEnd(id, group, key == GroupKey.Favorites, key == GroupKey.Recent),
+            ) { days, end -> days to end }
+        }
+    }
+
+    fun guide(channelId: Long, time: Long) = container.epg.observeCurrentAndNextAt(channelId, time)
 
     /** The list to walk through with channel up/down when a channel of [key] is opened. */
     suspend fun zapContext(key: GroupKey): ZapContext? {
@@ -132,7 +168,12 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun saveSource(url: String, userAgent: String) = repository.saveSource(url, userAgent)
+    fun saveSource(url: String, userAgent: String, epgUrl: String, id: Long?) =
+        repository.saveSource(url, userAgent, epgUrl, id)
+
+    fun activateSource(id: Long) = repository.activateSource(id)
+
+    fun deleteSource(id: Long) = repository.deleteSource(id)
 
     fun refreshSource() = repository.refresh()
 }

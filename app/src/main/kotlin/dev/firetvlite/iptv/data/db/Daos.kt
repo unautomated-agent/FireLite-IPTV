@@ -5,6 +5,8 @@ import androidx.room.Dao
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import androidx.room.Transaction
+import dev.firetvlite.iptv.data.library.SourcePolicy
 import kotlinx.coroutines.flow.Flow
 
 private const val CHANNEL_ROW =
@@ -12,17 +14,45 @@ private const val CHANNEL_ROW =
 
 @Dao
 interface SourceDao {
-    @Query("SELECT * FROM source ORDER BY id LIMIT 1")
-    fun observeFirst(): Flow<SourceEntity?>
+    @Query("SELECT * FROM source ORDER BY lastUsedAt DESC, id DESC LIMIT 1")
+    fun observeActive(): Flow<SourceEntity?>
 
-    @Query("SELECT * FROM source ORDER BY id LIMIT 1")
-    suspend fun first(): SourceEntity?
+    @Query("SELECT * FROM source ORDER BY lastUsedAt DESC, id DESC LIMIT 1")
+    suspend fun active(): SourceEntity?
+
+    @Query("SELECT source.*, (SELECT COUNT(*) FROM channel WHERE sourceId = source.id) AS channelCount " +
+        "FROM source ORDER BY lastUsedAt DESC, id DESC")
+    fun observeAll(): Flow<List<SavedSource>>
+
+    @Query("SELECT * FROM source WHERE id = :id")
+    suspend fun byId(id: Long): SourceEntity?
+
+    @Query("SELECT COALESCE(MAX(lastUsedAt), 0) FROM source")
+    suspend fun mostRecentUse(): Long
+
+    @Query("UPDATE source SET lastUsedAt = :usedAt WHERE id = :id")
+    suspend fun markUsed(id: Long, usedAt: Long)
+
+    @Transaction
+    suspend fun activate(id: Long, now: Long) {
+        markUsed(id, SourcePolicy.nextUsedAt(mostRecentUse(), now))
+    }
+
+    @Query("DELETE FROM source WHERE id = :id")
+    suspend fun delete(id: Long)
 
     @Insert
     suspend fun insert(source: SourceEntity): Long
 
-    @Query("UPDATE source SET url = :url, userAgent = :userAgent WHERE id = :id")
-    suspend fun updateConnection(id: Long, url: String, userAgent: String)
+    @Query("UPDATE source SET url = :url, userAgent = :userAgent, epgUrl = :epgUrl WHERE id = :id")
+    suspend fun updateConnection(id: Long, url: String, userAgent: String, epgUrl: String)
+
+    @Query("UPDATE source SET discoveredEpgUrls = :urls WHERE id = :id")
+    suspend fun updateDiscoveredEpg(id: Long, urls: String)
+
+    @Query("UPDATE source SET epgGeneration = :generation, epgRefreshedAt = :time, epgProgrammeCount = :count " +
+        "WHERE id = :id")
+    suspend fun publishEpg(id: Long, generation: String, time: Long, count: Int)
 
     @Query("UPDATE source SET refreshedAt = :refreshedAt WHERE id = :id")
     suspend fun markRefreshed(id: Long, refreshedAt: Long)
@@ -30,6 +60,12 @@ interface SourceDao {
 
 @Dao
 interface ChannelDao {
+    @Query("SELECT COALESCE(MAX(c.catchupDays), 0) FROM channel c WHERE c.sourceId=:sourceId " +
+        "AND (:groupName IS NULL OR c.groupName=:groupName) " +
+        "AND (:favorites=0 OR EXISTS(SELECT 1 FROM favorite f WHERE f.streamUrl=c.streamUrl)) " +
+        "AND (:recent=0 OR EXISTS(SELECT 1 FROM recent r WHERE r.streamUrl=c.streamUrl))")
+    fun guideCatchupDays(sourceId: Long, groupName: String?, favorites: Boolean, recent: Boolean): Flow<Int>
+
     @Query(
         "SELECT groupName, COUNT(*) AS channelCount FROM channel " +
             "WHERE sourceId = :sourceId GROUP BY groupName ORDER BY MIN(position)",
@@ -67,6 +103,14 @@ interface ChannelDao {
     @Query("SELECT * FROM channel WHERE sourceId = :sourceId ORDER BY position LIMIT 1 OFFSET :offset")
     suspend fun allAt(sourceId: Long, offset: Int): ChannelEntity?
 
+    @Query("SELECT (SELECT COUNT(*) FROM channel x WHERE x.sourceId=c.sourceId AND x.position<c.position) " +
+        "FROM channel c WHERE c.sourceId=:sourceId AND c.streamUrl=:url ORDER BY c.position LIMIT 1")
+    suspend fun allIndex(sourceId: Long, url: String): Int?
+
+    @Query("SELECT (SELECT COUNT(*) FROM channel x WHERE x.sourceId=c.sourceId AND x.groupName=c.groupName AND x.position<c.position) " +
+        "FROM channel c WHERE c.sourceId=:sourceId AND c.groupName=:group AND c.streamUrl=:url ORDER BY c.position LIMIT 1")
+    suspend fun groupIndex(sourceId: Long, group: String, url: String): Int?
+
     @Query("SELECT COUNT(*) FROM channel WHERE sourceId = :sourceId AND groupName = :group")
     suspend fun groupCount(sourceId: Long, group: String): Int
 
@@ -99,11 +143,13 @@ interface ChannelDao {
 
 @Dao
 interface UserDao {
-    @Query("SELECT COUNT(*) FROM favorite")
-    fun observeFavoriteCount(): Flow<Int>
+    @Query("SELECT COUNT(*) FROM channel c INNER JOIN favorite f ON f.streamUrl = c.streamUrl " +
+        "WHERE c.sourceId = :sourceId")
+    fun observeFavoriteCount(sourceId: Long): Flow<Int>
 
-    @Query("SELECT COUNT(*) FROM recent")
-    fun observeRecentCount(): Flow<Int>
+    @Query("SELECT COUNT(*) FROM (SELECT c.id FROM channel c INNER JOIN recent r ON r.streamUrl = c.streamUrl " +
+        "WHERE c.sourceId = :sourceId ORDER BY r.watchedAt DESC LIMIT 30)")
+    fun observeRecentCount(sourceId: Long): Flow<Int>
 
     @Query("SELECT EXISTS(SELECT 1 FROM favorite WHERE streamUrl = :streamUrl)")
     fun observeIsFavorite(streamUrl: String): Flow<Boolean>

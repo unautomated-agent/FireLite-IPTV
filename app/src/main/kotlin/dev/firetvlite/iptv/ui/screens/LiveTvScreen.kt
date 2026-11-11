@@ -189,8 +189,9 @@ private fun ChannelBrowser(
     val groupListState = rememberLazyListState()
     val channelListState = rememberLazyListState()
     val browserFocus = remember { FocusRequester() }
-    val categoryFocus = remember { mutableMapOf<GroupKey, ChannelFocusTarget>() }
-    var pendingCategoryFocus by remember { mutableStateOf<GroupKey?>(null) }
+    val categoryFocus = remember { CategoryFocusMemory() }
+    val focusGeneration = categoryFocus.generation
+    var pendingCategoryFocus by remember { mutableStateOf<CategoryFocusRequest?>(null) }
     var focusJob by remember { mutableStateOf<Job?>(null) }
     val now by wallClock()
     val limits by remember(selected) { library.guideLimits(selected) }.collectAsState(initial = 0 to null)
@@ -201,10 +202,11 @@ private fun ChannelBrowser(
     var programmeFocus by remember(selected) { mutableStateOf(false) }
     var focusedProgramme by remember(selected) { mutableStateOf<ProgrammeEntity?>(null) }
     fun switchCategory(delta: Int) {
-        CategorySwitch.next(groups.map { it.key }, selected, delta)?.takeIf { it != selected }?.let {
+        val current = categoryFocus.selection(library.selectedGroup.value)
+        CategorySwitch.next(groups.map { it.key }, current, delta)?.takeIf { it != current }?.let {
             focusJob?.cancel()
+            pendingCategoryFocus = categoryFocus.begin(it)
             browserFocus.requestFocus()
-            pendingCategoryFocus = it
             library.selectGroup(it)
         }
     }
@@ -260,7 +262,7 @@ private fun ChannelBrowser(
         if (pagingItems.itemCount == 0) return
         focusJob?.cancel()
         focusJob = scope.launch {
-            val target = categoryFocus[selected]
+            val target = categoryFocus.target(selected)
             val index = target?.index(library.channelIndex(selected, target.url), pagingItems.itemCount)
                 ?: (restoreIndex ?: 0).coerceIn(0, pagingItems.itemCount - 1)
             if (channelListState.layoutInfo.visibleItemsInfo.none { it.index == index }) channelListState.animateScrollToItem(index)
@@ -278,18 +280,20 @@ private fun ChannelBrowser(
     }.collectAsState(initial = CurrentAndNext(null, null))
     var focusedIndex by remember { mutableStateOf(0) }
     fun recordFocus(row: ChannelRow, index: Int) {
+        if (library.selectedGroup.value != selected || !categoryFocus.record(selected, focusGeneration,
+                ChannelFocusTarget(row.channel.streamUrl, index))) return
         focusedChannel = row
         focusedIndex = index
-        categoryFocus[selected] = ChannelFocusTarget(row.channel.streamUrl, index)
     }
     LaunchedEffect(selected, pagingItems.itemSnapshotList) {
-        val url = categoryFocus[selected]?.url ?: return@LaunchedEffect
+        val url = categoryFocus.target(selected)?.url ?: return@LaunchedEffect
         val snapshot = pagingItems.itemSnapshotList
         val index = snapshot.items.indexOfFirst { it.channel.streamUrl == url }
         if (index >= 0) {
             val position = snapshot.placeholdersBefore + index
-            focusedIndex = position
-            categoryFocus[selected] = ChannelFocusTarget(url, position)
+            if (categoryFocus.record(selected, focusGeneration, ChannelFocusTarget(url, position))) {
+                focusedIndex = position
+            }
         }
     }
     LaunchedEffect(active, focusedChannel?.channel?.streamUrl, focusedIndex, selected, channelsHaveFocus) {
@@ -352,15 +356,28 @@ private fun ChannelBrowser(
         }
     }
     LaunchedEffect(pendingCategoryFocus, selected, pagingItems.loadState.refresh) {
-        if (pendingCategoryFocus != selected || pagingItems.loadState.refresh !is LoadState.NotLoading) return@LaunchedEffect
-        if (pagingItems.itemCount > 0) {
-            val target = categoryFocus[selected]
-            val index = target?.index(library.channelIndex(selected, target.url), pagingItems.itemCount) ?: 0
-            if (channelListState.layoutInfo.visibleItemsInfo.none { it.index == index }) channelListState.animateScrollToItem(index)
-            val row = snapshotFlow { pagingItems.peek(index) }.filterNotNull().first()
-            rowRequester(row).requestFocusWhenReady()
+        val request = pendingCategoryFocus ?: return@LaunchedEffect
+        if (request.group != selected || pagingItems.loadState.refresh !is LoadState.NotLoading) return@LaunchedEffect
+        focusJob?.cancel()
+        focusJob = launch {
+            fun current() = categoryFocus.isCurrent(request) && library.selectedGroup.value == request.group
+            if (!current()) return@launch
+            if (pagingItems.itemCount > 0) {
+                val target = request.target
+                val index = target?.index(library.channelIndex(selected, target.url), pagingItems.itemCount) ?: 0
+                if (!current()) return@launch
+                if (channelListState.layoutInfo.visibleItemsInfo.none { it.index == index }) channelListState.animateScrollToItem(index)
+                val row = snapshotFlow { pagingItems.peek(index) }.filterNotNull().first()
+                if (!current()) return@launch
+                rowRequester(row).requestFocusWhenReady()
+                if (!current()) return@launch
+                if (categoryFocus.complete(request, ChannelFocusTarget(row.channel.streamUrl, index))) {
+                    pendingCategoryFocus = null
+                    focusedChannel = row
+                    focusedIndex = index
+                }
+            } else if (categoryFocus.complete(request)) pendingCategoryFocus = null
         }
-        pendingCategoryFocus = null
     }
 
     Row(
@@ -430,7 +447,7 @@ private fun ChannelBrowser(
                         group = group,
                         selected = group.key == selected,
                         onFocused = {
-                            if (ChannelTabPolicy.canSelectGroup(restore?.token, handledRestore)) library.selectGroup(group.key)
+                            if (pendingCategoryFocus == null && ChannelTabPolicy.canSelectGroup(restore?.token, handledRestore)) library.selectGroup(group.key)
                         },
                         onClick = { focusChannels() },
                         modifier = Modifier.focusRequester(groupRequesters.getValue(group.key)),

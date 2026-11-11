@@ -53,13 +53,13 @@ data class XtreamUpdate(val account: String, val status: String, val timezone: S
         return channels.map { channel ->
             val stream = XtreamAddress.stream(channel.streamUrl)
             val metadata = stream?.streamId?.let { byId[it] }
-            if (stream == null || metadata == null ||
+            if (stream == null ||
                 stream.user != address.user || stream.password != address.password) channel
             else {
-                val apiDays = metadata.days
+                val apiDays = metadata?.days ?: 0
                 val useApi = apiDays > 0 && (!CatchupUrlBuilder.isSupported(channel) || apiDays > channel.catchupDays)
                 channel.copy(
-                    tvgId = channel.tvgId?.takeIf { it.isNotBlank() } ?: metadata.epgId,
+                    tvgId = channel.tvgId?.takeIf { it.isNotBlank() } ?: metadata?.epgId,
                     catchupType = if (useApi) "xc" else channel.catchupType,
                     catchupDays = if (useApi) apiDays else channel.catchupDays,
                     catchupSource = if (useApi) null else channel.catchupSource,

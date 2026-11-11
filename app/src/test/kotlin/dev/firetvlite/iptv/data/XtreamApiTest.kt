@@ -15,6 +15,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class XtreamApiTest {
+    @Test fun matchingAccountGetsServerTimezoneEvenWithoutAnApiStreamRow() {
+        val update = dev.firetvlite.iptv.data.playlist.XtreamUpdate("account", "OK", "Europe/Warsaw", emptyList(), true)
+        val declared = channel().copy(catchupType = "xc", catchupDays = 3, tvgId = "TVN.PL")
+        val different = declared.copy(streamUrl = "https://other/live/wrong/account/12.ts")
+        assertEquals(listOf(declared.copy(catchupTimezone = "Europe/Warsaw"), different),
+            update.enrich(listOf(declared, different), address))
+    }
+
     private val address = XtreamAddress("https://provider:8443", "test user", "test+password")
     private val source = SourceEntity(id = 1, name = "Provider", url = address.origin + "/get.php?username=test+user&password=test%2Bpassword", userAgent = "Test")
     private val live = """[{"stream_id":"12","tv_archive":1,"tv_archive_duration":"7","epg_channel_id":"TVN.PL"}]"""

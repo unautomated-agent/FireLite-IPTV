@@ -62,7 +62,8 @@ class DiagnosticsReportTest {
     @Test fun reportsActiveSourceGuideArchiveMatchingAndFailureWithMaskedCrash() {
         val source = SourceEntity(name = "Provider", url = "https://provider/get.php?username=login-name&password=secret-value",
             userAgent = "TV", discoveredEpgUrls = "https://provider/xmltv.php?username=login-name&password=secret-value",
-            epgProgrammeCount = 123, epgRefreshedAt = 1)
+            epgProgrammeCount = 123, epgRefreshedAt = 1, xtreamStatus = "Lista API: OK",
+            xtreamArchiveCount = 7, xtreamTimezone = "Europe/Warsaw")
         val report = DiagnosticsReport.text(source, EpgState.Failed("HTTP 403"),
             SourceDiagnostics(10, 8, mapOf("xc" to 7)), "Exception: secret-value for login-name")
         assertFalse(report.contains("secret-value"))
@@ -71,6 +72,8 @@ class DiagnosticsReportTest {
         assertTrue(report.contains("Dopasowane kanały: 8"))
         assertTrue(report.contains("Archiwum: 7"))
         assertTrue(report.contains("Audycje: 123"))
+        assertTrue(report.contains("Xtream API: Lista API: OK"))
+        assertTrue(report.contains("Xtream tv_archive: 7 · Strefa XC: Europe/Warsaw"))
         assertTrue(DiagnosticsReport.text(null, null, SourceDiagnostics(), null).contains("Brak aktywnej listy"))
     }
 

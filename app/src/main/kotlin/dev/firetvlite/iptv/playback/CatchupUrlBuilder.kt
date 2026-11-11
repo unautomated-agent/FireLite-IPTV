@@ -3,6 +3,9 @@ package dev.firetvlite.iptv.playback
 import dev.firetvlite.iptv.data.db.ChannelEntity
 import dev.firetvlite.iptv.data.playlist.XtreamAddress
 import java.net.URLEncoder
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 import java.util.TimeZone
 
@@ -58,7 +61,9 @@ object CatchupUrlBuilder {
                 val address = XtreamAddress.stream(stream) ?: return null
                 fun segment(value: String) = URLEncoder.encode(value, "UTF-8").replace("+", "%20")
                 val minutes = (durationSec.coerceAtLeast(1) / 60 + if (durationSec % 60 != 0L) 1 else 0).coerceAtLeast(1)
-                val time = expand("{Y}-{m}-{d}:{H}-{M}", startEpochSec, nowEpochSec, durationSec)
+                val zone = runCatching { ZoneId.of(channel.catchupTimezone) }.getOrDefault(ZoneId.of("UTC"))
+                val time = DateTimeFormatter.ofPattern("yyyy-MM-dd:HH-mm", Locale.ROOT).withZone(zone)
+                    .format(Instant.ofEpochSecond(startEpochSec))
                 "${address.origin}/timeshift/${segment(address.user)}/${segment(address.password)}/$minutes/$time/${address.streamId}.${address.extension}"
             }
 

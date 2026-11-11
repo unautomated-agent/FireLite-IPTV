@@ -95,6 +95,8 @@ object DiagnosticsReport {
             appendLine("EPG import: ${source?.epgRefreshedAt?.takeIf { it > 0 }?.let { Instant.ofEpochMilli(it) } ?: "—"}")
             appendLine("Audycje: ${source?.epgProgrammeCount ?: 0} · Dopasowane kanały: ${stats.matched}")
             appendLine("Archiwum: ${stats.archiveTypes.values.sum()} · Typy: ${stats.archiveTypes.entries.joinToString { "${it.key}: ${it.value}" }.ifEmpty { "brak" }}")
+            appendLine("Xtream API: ${source?.xtreamStatus?.ifEmpty { "Nie użyto" } ?: "Nie użyto"}")
+            appendLine("Xtream tv_archive: ${source?.xtreamArchiveCount ?: 0} · Strefa XC: ${source?.xtreamTimezone ?: "UTC"}")
             appendLine("Wykrycie z metadanych; dostępność u dostawcy niepotwierdzona. Bez testowania strumieni.")
             appendLine("Ostatni raport błędu:")
             append(crash ?: "Brak")

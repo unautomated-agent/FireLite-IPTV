@@ -97,6 +97,7 @@ dependencies {
 
     implementation(libs.coil.compose)
     implementation("com.google.zxing:core:3.5.3")
+    implementation("com.google.code.gson:gson:2.11.0")
 
     implementation(libs.androidx.media3.exoplayer)
     implementation(libs.androidx.media3.exoplayer.hls)

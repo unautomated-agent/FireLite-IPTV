@@ -29,8 +29,20 @@ with posters, seasons, history and resume.
   `default/append/shift/flussonic/fs/xc` formats are recognized. `catchup-time` values of at least 86400
   are interpreted as seconds; smaller values as days. A declared archive without retention uses 7 days;
   explicit zero days disables it. Xtream paths use duration rounded up to minutes, the live extension
-  (`.ts`/`.m3u8`) and UTC `YYYY-MM-DD:HH-MM`. No archive is assumed for an otherwise unmarked Xtream channel;
-  optional `player_api.php` probing is not performed. Detection is not proof of provider entitlement.
+  (`.ts`/`.m3u8`) and server-local `YYYY-MM-DD:HH-MM` (UTC fallback).
+  After parsing an Xtream playlist, including manual and normal daily playlist refreshes, `player_api.php`
+  metadata supplies archive retention by stream ID and missing EPG IDs. A working M3U archive wins ties
+  or longer retention; otherwise positive API retention enables XC. Explicit M3U zero can therefore be
+  upgraded by positive API entitlement. A successful API refresh replaces the cache, including removals;
+  failures retain the previous same-account metadata without failing the playlist import. Account changes
+  never reuse another account's cache. Both API calls use the ordinary metadata HTTP path, 5-second
+  connect/read timeouts, a 15-second deadline per response (plus at most one blocked read timeout),
+  a 32-million-character/200,000-row limit and no redirects. JSON is read one object at a time.
+  `server_info.timezone` supplies historical DST rules; missing/invalid zones fall back to UTC, while
+  a failed server-info request retains the last known timezone. Device or server clock drift is not added
+  to absolute programme timestamps. Diagnostics shows API outcomes, `tv_archive` count and the timezone.
+  Detection is not proof of provider entitlement. Diagnostic archive type counts aggregate declarations
+  with positive retention; they do not probe URLs or validate provider availability.
 - **Diagnostics**: Settings → Diagnostyka shows active-source guide URLs, import time/count/error,
   matched channels, archive counts/types and the last crash. Usernames, passwords and query values are
   masked before display/export. The QR contains UTF-8 text limited to 1800 bytes (the crash tail may be

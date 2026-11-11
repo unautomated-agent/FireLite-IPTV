@@ -7,6 +7,12 @@ import java.net.URLEncoder
 data class XtreamAddress(val origin: String, val user: String, val password: String,
     val streamId: String? = null, val extension: String = "ts") {
     fun epgUrl(): String = "$origin/xmltv.php?username=${encode(user)}&password=${encode(password)}"
+    fun apiUrl(liveStreams: Boolean = false): String =
+        "$origin/player_api.php?username=${encode(user)}&password=${encode(password)}" +
+            if (liveStreams) "&action=get_live_streams" else ""
+
+    fun accountKey(): String = java.security.MessageDigest.getInstance("SHA-256")
+        .digest(epgUrl().toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
 
     companion object {
         private fun encode(value: String) = URLEncoder.encode(value, "UTF-8")

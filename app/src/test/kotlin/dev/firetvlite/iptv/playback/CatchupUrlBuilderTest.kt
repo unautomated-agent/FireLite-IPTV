@@ -8,6 +8,16 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CatchupUrlBuilderTest {
+    @Test fun xtreamUsesHistoricalServerZoneOffsetsAcrossDstAndFallsBackToUtc() {
+        val base = channel("https://host/live/u/p/12.ts", "xc").copy(catchupTimezone = "Europe/Warsaw")
+        for ((utc, local) in listOf("2024-03-31T00:30:00Z" to "2024-03-31:01-30", "2024-03-31T01:30:00Z" to "2024-03-31:03-30")) {
+            val epoch = java.time.Instant.parse(utc).epochSecond
+            assertEquals("https://host/timeshift/u/p/1/$local/12.ts", CatchupUrlBuilder.build(base, epoch, epoch + 60, 60))
+        }
+        assertEquals("https://host/timeshift/u/p/30/2024-03-05:07-08/12.ts",
+            CatchupUrlBuilder.build(base.copy(catchupTimezone = "invalid/zone"), start, now, 1800))
+    }
+
     @Test fun buildsXtreamArchiveForBothExtensionsAndRoundsDurationUpToMinutes() {
         assertEquals("https://host:8443/timeshift/u/p/31/2024-03-05:07-08/12.ts",
             CatchupUrlBuilder.build(channel("https://host:8443/live/u/p/12.ts", "xc"), start, now, 1801))

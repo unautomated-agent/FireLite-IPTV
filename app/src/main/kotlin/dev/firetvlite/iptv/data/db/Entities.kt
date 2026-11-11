@@ -22,6 +22,10 @@ data class SourceEntity(
     @ColumnInfo(defaultValue = "0") val epgRefreshedAt: Long = 0,
     @ColumnInfo(defaultValue = "0") val epgProgrammeCount: Int = 0,
     @ColumnInfo(defaultValue = "''") val epgGeneration: String = "",
+    @ColumnInfo(defaultValue = "''") val xtreamAccount: String = "",
+    @ColumnInfo(defaultValue = "''") val xtreamStatus: String = "",
+    @ColumnInfo(defaultValue = "'UTC'") val xtreamTimezone: String = "UTC",
+    @ColumnInfo(defaultValue = "0") val xtreamArchiveCount: Int = 0,
 )
 
 data class SavedSource(
@@ -62,7 +66,14 @@ data class ChannelEntity(
     val catchupSource: String?,
     val catchupDays: Int,
     val tvgName: String? = null,
+    @ColumnInfo(defaultValue = "'UTC'") val catchupTimezone: String = "UTC",
 )
+
+@Entity(tableName = "xtream_channel", primaryKeys = ["sourceId", "streamId"],
+    foreignKeys = [ForeignKey(entity = SourceEntity::class, parentColumns = ["id"],
+        childColumns = ["sourceId"], onDelete = ForeignKey.CASCADE)])
+data class XtreamChannelEntity(val sourceId: Long, val streamId: String, val archived: Boolean,
+    val days: Int, val epgId: String?)
 
 /** Favourites are keyed by stream URL, so they survive re-importing the playlist. */
 @Entity(tableName = "favorite")

@@ -41,6 +41,7 @@ import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.CrashReportStore
 import dev.firetvlite.iptv.data.db.SourceEntity
 import dev.firetvlite.iptv.data.db.SavedSource
+import dev.firetvlite.iptv.data.epg.EpgState
 import dev.firetvlite.iptv.data.library.ImportFailure
 import dev.firetvlite.iptv.data.library.ImportState
 import dev.firetvlite.iptv.data.library.LibraryRepository
@@ -78,7 +79,8 @@ fun SettingsScreen(
     source: SourceEntity?,
     sources: List<SavedSource>,
     importState: ImportState,
-    onSaveSource: (url: String, userAgent: String, id: Long?) -> Unit,
+    epgStates: Map<Long, EpgState>,
+    onSaveSource: (url: String, userAgent: String, epgUrl: String, id: Long?) -> Unit,
     onActivateSource: (Long) -> Unit,
     onDeleteSource: (Long) -> Unit,
     onRefreshSource: () -> Unit,
@@ -100,6 +102,7 @@ fun SettingsScreen(
             source = source,
             sources = sources,
             importState = importState,
+            epgStates = epgStates,
             onSave = onSaveSource,
             onRefresh = onRefreshSource,
             onActivate = onActivateSource,
@@ -180,7 +183,8 @@ private fun SourceSection(
     source: SourceEntity?,
     sources: List<SavedSource>,
     importState: ImportState,
-    onSave: (url: String, userAgent: String, id: Long?) -> Unit,
+    epgStates: Map<Long, EpgState>,
+    onSave: (url: String, userAgent: String, epgUrl: String, id: Long?) -> Unit,
     onRefresh: () -> Unit,
     onActivate: (Long) -> Unit,
     onDelete: (Long) -> Unit,
@@ -193,9 +197,12 @@ private fun SourceSection(
     var deleting by remember { mutableStateOf<SourceEntity?>(null) }
     var url by remember { mutableStateOf("") }
     var agent by remember { mutableStateOf(LibraryRepository.DEFAULT_USER_AGENT) }
+    var epgUrl by remember { mutableStateOf("") }
     var invalid by remember { mutableStateOf(false) }
+    var invalidEpg by remember { mutableStateOf(false) }
     val firstFocus = remember { FocusRequester() }
     val agentFocus = remember { FocusRequester() }
+    val epgFocus = remember { FocusRequester() }
     val saveFocus = remember { FocusRequester() }
     LaunchedEffect(editing, deleting) {
         if (deleting == null) firstFocus.requestFocusWhenReady()
@@ -206,7 +213,9 @@ private fun SourceSection(
         editingId = existing?.id
         url = existing?.url.orEmpty()
         agent = existing?.userAgent ?: LibraryRepository.DEFAULT_USER_AGENT
+        epgUrl = existing?.epgUrl.orEmpty()
         invalid = false
+        invalidEpg = false
         editing = true
     }
 
@@ -253,6 +262,15 @@ private fun SourceSection(
                 onValueChange = { agent = it },
                 modifier = Modifier.focusRequester(agentFocus).focusProperties {
                     up = firstFocus
+                    down = epgFocus
+                },
+            )
+            LabeledTextField(
+                label = stringResource(R.string.source_epg_label),
+                value = epgUrl,
+                onValueChange = { epgUrl = it; invalidEpg = false },
+                modifier = Modifier.focusRequester(epgFocus).focusProperties {
+                    up = agentFocus
                     down = saveFocus
                 },
             )
@@ -263,25 +281,35 @@ private fun SourceSection(
                     color = WarningColor,
                 )
             }
+            if (invalidEpg) {
+                FLText(
+                    text = stringResource(R.string.source_epg_invalid),
+                    style = typography.title,
+                    color = WarningColor,
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 PrimaryButton(
                     text = stringResource(R.string.source_save),
                     onClick = {
                         val trimmed = url.trim()
                         val uri = Uri.parse(trimmed)
-                        if (uri.scheme in listOf("http", "https") && !uri.host.isNullOrEmpty()) {
-                            onSave(trimmed, agent.trim().ifEmpty { LibraryRepository.DEFAULT_USER_AGENT }, editingId)
+                        invalid = uri.scheme !in listOf("http", "https") || uri.host.isNullOrEmpty()
+                        invalidEpg = epgUrl.isNotBlank() && epgUrl.split(',').any {
+                            val epg = Uri.parse(it.trim())
+                            epg.scheme !in listOf("http", "https") || epg.host.isNullOrEmpty()
+                        }
+                        if (!invalid && !invalidEpg) {
+                            onSave(trimmed, agent.trim().ifEmpty { LibraryRepository.DEFAULT_USER_AGENT }, epgUrl.trim(), editingId)
                             editing = false
-                        } else {
-                            invalid = true
                         }
                     },
-                    modifier = Modifier.focusRequester(saveFocus).focusProperties { up = agentFocus },
+                    modifier = Modifier.focusRequester(saveFocus).focusProperties { up = epgFocus },
                 )
                 SecondaryButton(
                     text = stringResource(R.string.source_cancel),
                     onClick = { editing = false },
-                    modifier = Modifier.focusProperties { up = agentFocus },
+                    modifier = Modifier.focusProperties { up = epgFocus },
                 )
             }
         } else {
@@ -322,6 +350,11 @@ private fun SourceSection(
                                     ),
                                     style = typography.body,
                                 )
+                                FLText(
+                                    text = epgStatusText(entry, epgStates[entry.id]),
+                                    style = typography.body,
+                                    color = if (epgStates[entry.id] == EpgState.Failed) WarningColor else colors.textSecondary,
+                                )
                             }
                         }
                         SecondaryButton(
@@ -358,6 +391,20 @@ private fun SourceSection(
             }
         }
     }
+}
+
+@Composable
+private fun epgStatusText(source: SourceEntity, state: EpgState?): String = when {
+    state == EpgState.Running -> stringResource(R.string.epg_running)
+    state == EpgState.Failed -> stringResource(R.string.epg_failed)
+    source.epgRefreshedAt > 0 -> stringResource(
+        R.string.epg_stats,
+        pluralString(R.plurals.programme_count, source.epgProgrammeCount),
+        DateFormat.getDateTimeInstance(DateFormat.SHORT, DateFormat.SHORT, Locale("pl", "PL"))
+            .format(Date(source.epgRefreshedAt)),
+    )
+    source.epgUrl.isNotBlank() || source.discoveredEpgUrls.isNotBlank() -> stringResource(R.string.epg_waiting)
+    else -> stringResource(R.string.epg_none)
 }
 
 @Composable

@@ -17,6 +17,15 @@ class M3uParserTest {
     }
 
     @Test
+    fun readsMultipleEpgHeaderUrlsAndAliases() {
+        val urls = ArrayList<String>()
+        M3uParser.parse(StringReader("\uFEFF#EXTM3U X-TVG-URL=\"http://a/guide, http://b/guide\" url-tvg=\"http://c/guide,http://a/guide\"\n"),
+            onEpgUrls = { urls.addAll(it) }, onChannel = {},
+        )
+        assertEquals(listOf("http://a/guide", "http://b/guide", "http://c/guide"), urls)
+    }
+
+    @Test
     fun readsChannelsAndGroups() {
         val channels = parse(
             "#EXTM3U\n" +

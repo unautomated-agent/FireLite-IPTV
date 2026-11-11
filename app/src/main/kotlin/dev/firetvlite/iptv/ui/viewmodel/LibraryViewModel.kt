@@ -50,6 +50,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         repository.source.stateIn(viewModelScope, SharingStarted.Eagerly, null)
 
     val importState: StateFlow<ImportState> = repository.importState
+    val epgStates = container.epg.states
 
     val sources = repository.sources.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -139,7 +140,8 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
-    fun saveSource(url: String, userAgent: String, id: Long?) = repository.saveSource(url, userAgent, id)
+    fun saveSource(url: String, userAgent: String, epgUrl: String, id: Long?) =
+        repository.saveSource(url, userAgent, epgUrl, id)
 
     fun activateSource(id: Long) = repository.activateSource(id)
 

@@ -17,6 +17,11 @@ data class SourceEntity(
     /** Epoch milliseconds of the last successful import, 0 if never. */
     val refreshedAt: Long = 0,
     @ColumnInfo(defaultValue = "0") val lastUsedAt: Long = 0,
+    @ColumnInfo(defaultValue = "''") val epgUrl: String = "",
+    @ColumnInfo(defaultValue = "''") val discoveredEpgUrls: String = "",
+    @ColumnInfo(defaultValue = "0") val epgRefreshedAt: Long = 0,
+    @ColumnInfo(defaultValue = "0") val epgProgrammeCount: Int = 0,
+    @ColumnInfo(defaultValue = "''") val epgGeneration: String = "",
 )
 
 data class SavedSource(

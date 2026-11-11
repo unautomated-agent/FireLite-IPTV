@@ -105,6 +105,19 @@
     <string name="source_refresh">Odśwież listę</string>
     <string name="source_url_label">Adres listy M3U</string>
     <string name="source_agent_label">User-Agent (opcjonalnie)</string>
+    <string name="source_epg_label">Adres EPG (XMLTV, opcjonalnie)</string>
+    <string name="source_epg_invalid">Adres EPG musi zaczynać się od http:// lub https://</string>
+    <string name="epg_stats">Program TV: %1$s, aktualizacja %2$s</string>
+    <string name="epg_running">Program TV: pobieranie…</string>
+    <string name="epg_waiting">Program TV: oczekiwanie na pobranie…</string>
+    <string name="epg_failed">Program TV: nie udało się pobrać danych.</string>
+    <string name="epg_none">Program TV: nie podano adresu EPG.</string>
+    <plurals name="programme_count">
+        <item quantity="one">%,d audycja</item>
+        <item quantity="few">%,d audycje</item>
+        <item quantity="many">%,d audycji</item>
+        <item quantity="other">%,d audycji</item>
+    </plurals>
     <string name="source_save">Zapisz i wczytaj</string>
     <string name="source_cancel">Anuluj</string>
     <string name="source_invalid_url">Adres musi zaczynać się od http:// lub https://</string>

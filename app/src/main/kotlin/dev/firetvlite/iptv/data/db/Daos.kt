@@ -44,8 +44,15 @@ interface SourceDao {
     @Insert
     suspend fun insert(source: SourceEntity): Long
 
-    @Query("UPDATE source SET url = :url, userAgent = :userAgent WHERE id = :id")
-    suspend fun updateConnection(id: Long, url: String, userAgent: String)
+    @Query("UPDATE source SET url = :url, userAgent = :userAgent, epgUrl = :epgUrl WHERE id = :id")
+    suspend fun updateConnection(id: Long, url: String, userAgent: String, epgUrl: String)
+
+    @Query("UPDATE source SET discoveredEpgUrls = :urls WHERE id = :id")
+    suspend fun updateDiscoveredEpg(id: Long, urls: String)
+
+    @Query("UPDATE source SET epgGeneration = :generation, epgRefreshedAt = :time, epgProgrammeCount = :count " +
+        "WHERE id = :id")
+    suspend fun publishEpg(id: Long, generation: String, time: Long, count: Int)
 
     @Query("UPDATE source SET refreshedAt = :refreshedAt WHERE id = :id")
     suspend fun markRefreshed(id: Long, refreshedAt: Long)

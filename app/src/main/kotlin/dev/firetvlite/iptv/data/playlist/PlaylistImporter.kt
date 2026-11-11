@@ -35,8 +35,9 @@ class PlaylistImporter(
             context.ensureActive()
             val channels = ArrayList<ChannelEntity>()
             val groups = HashMap<String, String>()
+            var epgUrls = emptyList<String>()
             file.inputStream().reader(Charsets.UTF_8).use { reader ->
-                M3uParser.parse(reader) { parsed ->
+                M3uParser.parse(reader, onEpgUrls = { epgUrls = it }) { parsed ->
                     context.ensureActive()
                     channels.add(
                         ChannelEntity(
@@ -62,6 +63,7 @@ class PlaylistImporter(
                 dao.deleteForSource(source.id)
                 channels.chunked(1_000).forEach { dao.insertAll(it) }
                 database.sourceDao().markRefreshed(source.id, System.currentTimeMillis())
+                database.sourceDao().updateDiscoveredEpg(source.id, epgUrls.joinToString("\n"))
             }
             channels.size
         } finally {

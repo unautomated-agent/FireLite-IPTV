@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.room.withTransaction
 import dev.firetvlite.iptv.data.db.FireLiteDatabase
 import dev.firetvlite.iptv.data.db.SourceEntity
+import dev.firetvlite.iptv.data.epg.EpgRepository
 import dev.firetvlite.iptv.data.playlist.EmptyPlaylistException
 import dev.firetvlite.iptv.data.playlist.PlaylistImporter
 import java.io.IOException
@@ -42,6 +43,7 @@ class LibraryRepository(
     private val importer: PlaylistImporter,
     private val context: Context,
     private val scope: CoroutineScope,
+    private val epg: EpgRepository,
 ) {
     private val sourceDao = database.sourceDao()
     private val operations = Mutex()
@@ -62,16 +64,17 @@ class LibraryRepository(
     }
 
     /** Adds and activates a playlist, or explicitly edits an existing one. */
-    fun saveSource(url: String, userAgent: String, id: Long? = null) {
+    fun saveSource(url: String, userAgent: String, epgUrl: String, id: Long? = null) {
         scope.launch {
             operations.withLock {
                 cancelImport()
                 database.withTransaction {
                     val savedId = if (id == null) {
-                        sourceDao.insert(SourceEntity(name = DEFAULT_NAME, url = url, userAgent = userAgent))
+                        sourceDao.insert(SourceEntity(name = DEFAULT_NAME, url = url, userAgent = userAgent, epgUrl = epgUrl))
                     } else {
                         if (sourceDao.byId(id) == null) return@withTransaction
-                        sourceDao.updateConnection(id, url, userAgent)
+                        epg.remove(id)
+                        sourceDao.updateConnection(id, url, userAgent, epgUrl)
                         id
                     }
                     sourceDao.activate(savedId, System.currentTimeMillis())
@@ -97,6 +100,7 @@ class LibraryRepository(
             operations.withLock {
                 val wasActive = sourceDao.active()?.id == id
                 if (wasActive) cancelImport()
+                epg.remove(id)
                 sourceDao.delete(id)
                 if (wasActive) loadActive()
             }
@@ -126,7 +130,10 @@ class LibraryRepository(
         if (!force && !SourcePolicy.needsImport(
                 source.refreshedAt, database.channelDao().count(source.id), System.currentTimeMillis(),
             )
-        ) return
+        ) {
+            epg.refresh(source.id)
+            return
+        }
         importJob = scope.launch {
             mutableImportState.value = ImportState.Running
             val result = try {
@@ -138,6 +145,7 @@ class LibraryRepository(
             }
             currentCoroutineContext().ensureActive()
             mutableImportState.value = result
+            epg.refresh(source.id, force = result is ImportState.Done)
         }
     }
 

@@ -58,6 +58,7 @@ private fun AppShell(
     val source by libraryViewModel.source.collectAsState()
     val sources by libraryViewModel.sources.collectAsState()
     val importState by libraryViewModel.importState.collectAsState()
+    val epgStates by libraryViewModel.epgStates.collectAsState()
     var current by rememberSaveable { mutableStateOf(Destination.Home) }
     var railHasFocus by remember { mutableStateOf(false) }
     val railRequesters = remember { Destination.entries.associateWith { FocusRequester() } }
@@ -107,6 +108,7 @@ private fun AppShell(
                     source = source,
                     sources = sources,
                     importState = importState,
+                    epgStates = epgStates,
                     onSaveSource = libraryViewModel::saveSource,
                     onActivateSource = libraryViewModel::activateSource,
                     onDeleteSource = libraryViewModel::deleteSource,

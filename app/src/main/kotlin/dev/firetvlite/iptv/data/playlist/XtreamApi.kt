@@ -7,9 +7,7 @@ import dev.firetvlite.iptv.playback.CatchupUrlBuilder
 import java.io.IOException
 import java.io.Reader
 import java.net.HttpURLConnection
-import java.net.URI
 import java.net.URL
-import java.util.Locale
 import kotlinx.coroutines.CancellationException
 
 interface XtreamMetadataReader {
@@ -50,26 +48,18 @@ class HttpXtreamMetadataReader(private val ensureActive: () -> Unit = {}) : Xtre
 
 data class XtreamUpdate(val account: String, val status: String, val timezone: String,
     val rows: List<XtreamChannelEntity>, val refreshed: Boolean) {
-    private fun serverKey(origin: String): Triple<String, String, Int>? = runCatching {
-        val uri = URI(origin)
-        val scheme = uri.scheme.lowercase(Locale.ROOT)
-        Triple(scheme, uri.host.lowercase(Locale.ROOT),
-            uri.port.takeIf { it >= 0 } ?: if (scheme == "https") 443 else 80)
-    }.getOrNull()
-
     fun enrich(channels: List<ChannelEntity>, address: XtreamAddress): List<ChannelEntity> {
         val byId = rows.associateBy { it.streamId }
-        val server = serverKey(address.origin)
         return channels.map { channel ->
             val stream = XtreamAddress.stream(channel.streamUrl)
-            if (stream == null || server == null || serverKey(stream.origin) != server ||
+            val metadata = stream?.streamId?.let { byId[it] }
+            if (stream == null || metadata == null ||
                 stream.user != address.user || stream.password != address.password) channel
             else {
-                val metadata = byId[stream.streamId]
-                val apiDays = metadata?.days ?: 0
+                val apiDays = metadata.days
                 val useApi = apiDays > 0 && (!CatchupUrlBuilder.isSupported(channel) || apiDays > channel.catchupDays)
                 channel.copy(
-                    tvgId = channel.tvgId?.takeIf { it.isNotBlank() } ?: metadata?.epgId,
+                    tvgId = channel.tvgId?.takeIf { it.isNotBlank() } ?: metadata.epgId,
                     catchupType = if (useApi) "xc" else channel.catchupType,
                     catchupDays = if (useApi) apiDays else channel.catchupDays,
                     catchupSource = if (useApi) null else channel.catchupSource,

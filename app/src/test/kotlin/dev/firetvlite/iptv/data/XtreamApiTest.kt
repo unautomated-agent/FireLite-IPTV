@@ -50,14 +50,15 @@ class XtreamApiTest {
             .single().copy(streamUrl = channel().streamUrl))
     }
 
-    @Test fun enrichmentIsScopedToTheQueriedServerAndCredentials() {
+    @Test fun enrichmentIsScopedToTheQueriedCredentialsAndStreamId() {
         val result = XtreamApi(FakeReader(live, info)).refresh(source, address, emptyList())
         val outsiders = listOf(
-            "https://another-provider:8443/live/test%20user/test%2Bpassword/12.m3u8",
-            "http://provider:8443/live/test%20user/test%2Bpassword/12.m3u8",
-            "https://provider:9443/live/test%20user/test%2Bpassword/12.m3u8",
             "https://provider:8443/live/another-user/test%2Bpassword/12.m3u8",
             "https://provider:8443/live/test%20user/another-password/12.m3u8",
+            "https://cdn:9443/live/another-user/test%2Bpassword/12.m3u8",
+            "https://cdn:9443/live/test%20user/another-password/12.m3u8",
+            "https://provider:8443/live/test%20user/test%2Bpassword/13.m3u8",
+            "https://cdn:9443/live/test%20user/test%2Bpassword/13.m3u8",
             "not a stream URL",
         ).map { channel().copy(streamUrl = it, tvgId = "Other-ID", catchupType = "shift", catchupDays = 2,
             catchupTimezone = "America/New_York") }
@@ -69,12 +70,21 @@ class XtreamApiTest {
         assertTrue(result.enrich(emptyList(), address).isEmpty())
     }
 
-    @Test fun serverMatchingNormalizesHostCaseAndDefaultPorts() {
-        val target = address.copy(origin = "https://provider")
-        val result = XtreamApi(FakeReader(live, info)).refresh(source, target, emptyList())
-        val row = channel().copy(streamUrl = "HTTPS://PROVIDER:443/live/test%20user/test%2Bpassword/12.m3u8")
-        assertEquals(7, result.enrich(listOf(row), target).single().catchupDays)
-        assertEquals(row, result.enrich(listOf(row), address).single())
+    @Test fun matchingAccountAndStreamIdReceiveMetadataAcrossCdnHostsAndPorts() {
+        val result = XtreamApi(FakeReader(live, info)).refresh(source, address, emptyList())
+        val channels = listOf(channel()) + listOf(
+            "https://cdn:9443/live/test%20user/test%2Bpassword/12.m3u8",
+            "http://load-balancer/live/test%20user/test%2Bpassword/12.ts",
+            "HTTPS://PROVIDER:443/live/test%20user/test%2Bpassword/12.m3u8",
+        ).map { channel().copy(streamUrl = it) }
+        val enriched = result.enrich(channels, address)
+        assertEquals(channels.size, enriched.size)
+        enriched.forEach { row ->
+            assertEquals("xc", row.catchupType)
+            assertEquals(7, row.catchupDays)
+            assertEquals("TVN.PL", row.tvgId)
+            assertEquals("Europe/Warsaw", row.catchupTimezone)
+        }
     }
 
     @Test fun workingM3uWinsTiesAndLongerRetentionWhileApiCanEnableMore() {

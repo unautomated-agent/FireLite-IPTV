@@ -11,12 +11,24 @@ FireLite ships **no channels or content**. You connect sources you are allowed t
 recently watched, all channels), played with Media3, and can be rewound and fast-forwarded where the stream
 allows it. App updates are installed from inside the app.
 
-Planned (see the concept document): multiple sources (M3U, Xtream Codes, Stalker), a programme guide (XMLTV),
-search, movies and series with posters, seasons, history and resume.
+Start shows the active playlist's history and favourites. Programme Guide offers the XMLTV grid without preview;
+Search finds channels by name. Movies and Series are not exposed as placeholder destinations.
+
+Planned (see the concept document): additional source protocols (Xtream Codes, Stalker), movies and series
+with posters, seasons, history and resume.
 
 ## Live TV
 
 - **Playlist**: Settings, section "Lista kanalow". Users of FireLite 1.x keep their playlist address automatically.
+- **Start**: recent channels and up to 30 favourites from the active playlist; OK starts fullscreen playback.
+  No preview/autoplay runs on Start, Programme Guide, Favourites or Search. Back from their fullscreen player
+  stops the stream and restores the played row; only Live TV returns to a continuing preview.
+- **Programme Guide**: the full-width paged Live TV grid with group switching, but without preview.
+  Rewind/Fast-forward shift the window by one hour; Play/Pause jumps to now. Future/unavailable cells cannot play.
+- **Favourites**: active-playlist favourites, paged with current EPG; OK plays, long OK removes the favourite.
+- **Search**: OK edits the remote-first search field. Queries are debounced 300 ms, limited to 200 channels,
+  and scoped to the active playlist. ASCII case and Polish diacritics are normalized on both sides of LIKE;
+  SQL wildcard characters in names are literal. Other languages' Unicode case folding is not guaranteed.
 - **Browsing**: groups, favourites (Menu button), recently watched. Lists are paged from the database, so tens of
   thousands of channels stay fast.
 - **Watching**: OK starts a channel. Up/Down change the channel. Left/Right jump 10 s where the stream is seekable

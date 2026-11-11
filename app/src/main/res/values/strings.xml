@@ -143,7 +143,4 @@
     <string name="import_error_empty">Lista jest pusta albo to nie jest plik M3U.</string>
     <string name="import_error_no_source">Najpierw dodaj adres listy.</string>
 
-    <!-- Placeholder screens -->
-
-    <!-- Demo content, only used until real sources are connected -->
 </resources>

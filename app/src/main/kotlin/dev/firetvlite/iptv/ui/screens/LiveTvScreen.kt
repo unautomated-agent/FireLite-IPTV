@@ -88,6 +88,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.distinctUntilChanged
+import dev.firetvlite.iptv.playback.CategorySwitch
+import dev.firetvlite.iptv.playback.PlayerMode
+import dev.firetvlite.iptv.ui.components.remotePress
 
 /**
  * Live TV browser: groups on the left, the channels of the selected group in the middle (loaded page by page),
@@ -131,7 +134,7 @@ fun LiveTvScreen(
             val mode by player.mode.collectAsState()
             ChannelBrowser(
                 library = library, player = player,
-                active = active && mode.acceptsPreview,
+                active = active && (mode.acceptsPreview || mode == PlayerMode.Guide || mode == PlayerMode.MainMenu),
                 onPreviewBounds = onPreviewBounds, modifier = modifier,
                 guideOnly = guideOnly, returnTarget = returnTarget,
             )
@@ -185,6 +188,9 @@ private fun ChannelBrowser(
     var focusedTime by remember(selected) { mutableStateOf(now) }
     var programmeFocus by remember(selected) { mutableStateOf(false) }
     var focusedProgramme by remember(selected) { mutableStateOf<ProgrammeEntity?>(null) }
+    fun switchCategory(delta: Int) {
+        CategorySwitch.next(groups.map { it.key }, selected, delta)?.let(library::selectGroup)
+    }
     fun shiftWindow(delta: Long) {
         val next = GuideTimeline.windowStart(windowStart + delta, bounds)
         focusedTime = (focusedTime + next - windowStart).coerceIn(next, next + GuideTimeline.WINDOW - 1)
@@ -257,7 +263,7 @@ private fun ChannelBrowser(
     LaunchedEffect(active, restore?.token) {
         val target = restore ?: return@LaunchedEffect
         if (!active || handledRestore == target.token) return@LaunchedEffect
-        programmeFocus = false
+        programmeFocus = guideOnly
         focusedTime = now
         requestedStart = now / (GuideTimeline.HOUR / 2) * (GuideTimeline.HOUR / 2)
         var group = target.group
@@ -314,8 +320,20 @@ private fun ChannelBrowser(
     Row(
         modifier = modifier
             .fillMaxHeight()
+            .then(if (overlay) Modifier
+                .remotePress(setOf(Key.DirectionCenter, Key.Enter, Key.NumPadEnter), onShort = {
+                    val channel = focusedChannel?.channel
+                    if (!channelsHaveFocus) onShowGroups(!showGroups)
+                    else if (channel != null) scope.launch {
+                        library.zapContext(selected)?.let { player.open(it, focusedIndex, selected) }
+                    }
+                }, onLong = { player.openGuide(selected, focusedChannel?.channel) }) else Modifier)
             .onPreviewKeyEvent { event ->
-                if (overlay || event.type != KeyEventType.KeyDown) false else when (event.key) {
+                if (event.type != KeyEventType.KeyDown) false else if (overlay) when (event.key) {
+                    Key.MediaRewind -> { if (event.nativeKeyEvent.repeatCount == 0) switchCategory(-1); true }
+                    Key.MediaFastForward -> { if (event.nativeKeyEvent.repeatCount == 0) switchCategory(1); true }
+                    else -> false
+                } else when (event.key) {
                     Key.MediaRewind -> { shiftWindow(-GuideTimeline.HOUR); true }
                     Key.MediaFastForward -> { shiftWindow(GuideTimeline.HOUR); true }
                     Key.MediaPlayPause -> {
@@ -374,11 +392,11 @@ private fun ChannelBrowser(
         }
 
         Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
-            if (!overlay) GuideHeader(windowStart) else FLText(
-                text = stringResource(R.string.live_channels),
-                style = FireLiteTheme.typography.headline,
-                modifier = Modifier.padding(start = 4.dp, bottom = 8.dp),
-            )
+            if (!overlay) GuideHeader(windowStart) else FocusSurface(
+                onClick = { onShowGroups(!showGroups) }, modifier = Modifier.fillMaxWidth(), focusedScale = 1.02f) {
+                FLText("‹  ${groupLabel(selected)}  ›", style = FireLiteTheme.typography.title,
+                    modifier = Modifier.padding(12.dp), maxLines = 1)
+            }
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 if (pagingItems.itemCount == 0 && pagingItems.loadState.refresh is LoadState.NotLoading) {
                     FLText(

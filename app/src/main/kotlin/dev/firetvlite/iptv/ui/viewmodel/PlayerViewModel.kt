@@ -23,6 +23,11 @@ import dev.firetvlite.iptv.playback.ZapMath
 import dev.firetvlite.iptv.playback.ChannelTimeline
 import dev.firetvlite.iptv.playback.TimelineAction
 import dev.firetvlite.iptv.playback.TimelineItem
+import dev.firetvlite.iptv.playback.PreviousChannel
+import dev.firetvlite.iptv.playback.StartupResume
+import dev.firetvlite.iptv.playback.PlaybackSourcePolicy
+import dev.firetvlite.iptv.playback.AudioTrackChoice
+import dev.firetvlite.iptv.data.library.QueryZapContext
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -35,6 +40,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -83,6 +89,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var previewJob: Job? = null
     private var activeChannel: ChannelEntity? = null
     private var activeIndex = 0
+    private val channelDao = container.database.channelDao()
+    private val previous = PreviousChannel<ChannelEntity> { it.streamUrl }
+    private var watchedSourceId: Long? = null
+    private var startupPending = true
+    private var startupJob: Job? = null
 
     private val mutableChannel = MutableStateFlow<ChannelEntity?>(null)
     val channel: StateFlow<ChannelEntity?> = mutableChannel.asStateFlow()
@@ -103,10 +114,30 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     init {
         viewModelScope.launch {
+            sourceDao.observeActive().collect { source ->
+                if (PlaybackSourcePolicy.shouldClose(mutableChannel.value?.sourceId, source?.id)) close()
+            }
+        }
+        startupJob = viewModelScope.launch {
+            val (sourceId, recent) = StartupResume.awaitRecent(
+                sourceDao.observeActive().map { it?.id }.distinctUntilChanged(), channelDao::startupRecent)
+            val last = recent.firstOrNull()
+            val resume = StartupResume.allowed(true, last != null, mutableMode.value, startupPending)
+            if (resume && last != null) {
+                val index = channelDao.allIndex(sourceId, last.streamUrl) ?: return@launch
+                if (startupPending && mutableMode.value == PlayerMode.Closed && sourceDao.active()?.id == sourceId) {
+                    previous.seedRecent(recent)
+                    watchedSourceId = sourceId
+                    open(allChannels(sourceId), index, GroupKey.All)
+                }
+            }
+            startupPending = false
+        }
+        viewModelScope.launch {
             status.collect { state ->
                 val start = archiveStartMs
                 val channel = activeChannel
-                if (state == PlaybackStatus.Ended && start != null && channel != null && mutableMode.value.fullFrame) {
+                if (state == PlaybackStatus.Ended && start != null && channel != null && mutableMode.value.continuesPlayback) {
                     catchupJob?.cancel()
                     pendingSeekMs = null
                     when (val plan = PlaybackTime.archiveContinuation(updateFrame(), start)) {
@@ -144,6 +175,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Opens the player on item [startIndex] of [zap] and starts playing it. */
     fun open(zap: ZapContext, startIndex: Int, group: GroupKey) {
+        startupPending = false
         cancelPreview()
         select(zap, startIndex, group, PlayerMode.Fullscreen)
     }
@@ -177,7 +209,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             if (count == 0) return@launch
             val index = startIndex.coerceIn(0, count - 1)
             val first = zap.at(index) ?: return@launch
-            userAgent = sourceDao.active()?.userAgent ?: LibraryRepository.DEFAULT_USER_AGENT
+            val source = sourceDao.active()
+            if (source?.id != first.sourceId) return@launch
+            userAgent = source.userAgent
             zapContext = zap
             zapCount = count
             zapIndex = index
@@ -200,8 +234,50 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun setMode(mode: PlayerMode) {
         mutableMode.value = mode
-        playback.setPreview(mode == PlayerMode.Preview)
+        playback.setPreview(mode == PlayerMode.Preview || mode == PlayerMode.Guide || mode == PlayerMode.MainMenu)
     }
+
+    fun cancelStartupResume() { startupPending = false; startupJob?.cancel() }
+
+    fun showMainMenu() {
+        cancelPreview()
+        settlePendingZap()
+        closeTimeline()
+        setMode(PlayerMode.MainMenu)
+    }
+
+    fun returnToFullscreen() {
+        cancelPreview()
+        closeTimeline()
+        if (activeChannel != null) setMode(PlayerMode.Fullscreen)
+    }
+
+    fun openGuide(group: GroupKey = playingGroup, channel: ChannelEntity? = activeChannel) {
+        if (channel == null) return
+        cancelPreview()
+        settlePendingZap()
+        closeTimeline()
+        mutableBrowserTarget.value = BrowserTarget(group, channel, ++targetToken)
+        setMode(PlayerMode.Guide)
+    }
+
+    private fun allChannels(sourceId: Long) = QueryZapContext(
+        countQuery = { channelDao.count(sourceId) }, atQuery = { channelDao.allAt(sourceId, it) })
+
+    fun previousChannel() {
+        val channel = previous.previous ?: return
+        openJob?.cancel()
+        openJob = viewModelScope.launch {
+            val source = sourceDao.active() ?: return@launch
+            if (source.id != channel.sourceId) return@launch
+            val index = channelDao.allIndex(source.id, channel.streamUrl) ?: return@launch
+            open(allChannels(source.id), index, GroupKey.All)
+        }
+    }
+
+    fun audioTracks() = playback.audioTracks()
+    fun selectAudioTrack(choice: AudioTrackChoice) = playback.selectAudioTrack(choice)
+    fun isArchive() = archiveStartMs != null
 
     fun backToPreview() {
         if (mutableChannel.value == null) return
@@ -312,6 +388,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun close() {
+        previous.clear()
         closeTimeline()
         cancelPreview()
         openJob?.cancel()
@@ -443,6 +520,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun markWatched(channel: ChannelEntity) {
         if (!mutableMode.value.recordsWatch) return
+        if (watchedSourceId != channel.sourceId) previous.clear()
+        watchedSourceId = channel.sourceId
+        previous.watched(channel)
         viewModelScope.launch {
             userDao.markWatched(RecentEntity(channel.streamUrl, System.currentTimeMillis()))
             userDao.trimRecent()

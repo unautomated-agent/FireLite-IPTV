@@ -15,6 +15,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class XtreamApiTest {
+    @Test fun matchingAccountGetsServerTimezoneEvenWithoutAnApiStreamRow() {
+        val update = dev.firetvlite.iptv.data.playlist.XtreamUpdate("account", "OK", "Europe/Warsaw", emptyList(), true)
+        val declared = channel().copy(catchupType = "xc", catchupDays = 3, tvgId = "TVN.PL")
+        val different = declared.copy(streamUrl = "https://other/live/wrong/account/12.ts")
+        assertEquals(listOf(declared.copy(catchupTimezone = "Europe/Warsaw"), different),
+            update.enrich(listOf(declared, different), address))
+    }
+
     private val address = XtreamAddress("https://provider:8443", "test user", "test+password")
     private val source = SourceEntity(id = 1, name = "Provider", url = address.origin + "/get.php?username=test+user&password=test%2Bpassword", userAgent = "Test")
     private val live = """[{"stream_id":"12","tv_archive":1,"tv_archive_duration":"7","epg_channel_id":"TVN.PL"}]"""
@@ -50,7 +58,7 @@ class XtreamApiTest {
             .single().copy(streamUrl = channel().streamUrl))
     }
 
-    @Test fun enrichmentIsScopedToTheQueriedCredentialsAndStreamId() {
+    @Test fun timezoneIsScopedToCredentialsAndArchiveMetadataToStreamId() {
         val result = XtreamApi(FakeReader(live, info)).refresh(source, address, emptyList())
         val outsiders = listOf(
             "https://provider:8443/live/another-user/test%2Bpassword/12.m3u8",
@@ -66,7 +74,9 @@ class XtreamApiTest {
         assertEquals(7, enriched.first().catchupDays)
         assertEquals("TVN.PL", enriched.first().tvgId)
         assertEquals("Europe/Warsaw", enriched.first().catchupTimezone)
-        assertEquals(outsiders, enriched.drop(1))
+        assertEquals(outsiders.mapIndexed { index, row ->
+            if (index in 4..5) row.copy(catchupTimezone = "Europe/Warsaw") else row
+        }, enriched.drop(1))
         assertTrue(result.enrich(emptyList(), address).isEmpty())
     }
 

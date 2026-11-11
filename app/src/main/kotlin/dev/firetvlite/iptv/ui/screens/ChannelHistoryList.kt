@@ -103,19 +103,15 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
                 FLText(stringResource(R.string.epg_next, "${clockTime(it.start)}–${clockTime(it.stop)}", timelineTitle(it)),
                     style = FireLiteTheme.typography.label, maxLines = 2, color = colors.textSecondary.copy(alpha = 0.6f))
             }
-            LazyColumn(state = listState, modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            LazyColumn(state = listState, modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 itemsIndexed(items) { itemIndex, item ->
                     Column(Modifier.fillMaxWidth()
                         .background(if (itemIndex == index) colors.surfaceHigh.copy(alpha = 0.75f) else Color.Transparent)
-                        .border(2.dp, if (itemIndex == index) Color.White else Color.Transparent).padding(10.dp)) {
-                        FLText(timelineDay(item.start, now), style = FireLiteTheme.typography.label,
-                            color = colors.accent)
-                        FLText(if (item.live) stringResource(R.string.channel_timeline_live)
-                            else "${clockTime(item.start)}–${clockTime(item.stop)}",
-                            style = FireLiteTheme.typography.label,
-                            color = if (item.future) colors.textSecondary.copy(alpha = 0.6f) else colors.textSecondary)
-                        FLText((if (itemIndex == playingIndex) "▶ " else "") + timelineTitle(item),
-                            style = FireLiteTheme.typography.body, maxLines = 2,
+                        .border(2.dp, if (itemIndex == index) Color.White else Color.Transparent)
+                        .padding(horizontal = 10.dp, vertical = 7.dp)) {
+                        FLText((if (itemIndex == playingIndex) "▶ " else "") +
+                            (if (item.live) "" else "${clockTime(item.start)}  ") + timelineTitle(item),
+                            style = FireLiteTheme.typography.label, maxLines = 1,
                             color = if (item.future) colors.textSecondary.copy(alpha = 0.6f) else colors.textPrimary)
                     }
                 }

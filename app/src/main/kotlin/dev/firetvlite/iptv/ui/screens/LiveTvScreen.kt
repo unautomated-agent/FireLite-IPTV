@@ -240,6 +240,7 @@ private fun ChannelBrowser(
     fun rowRequester(row: ChannelRow): FocusRequester =
         rowRequesters.getOrPut(row.channel.id) { FocusRequester() }
     fun focusRow(index: Int) {
+        if (pendingCategoryFocus != null) return
         if (index !in 0 until pagingItems.itemCount) return
         focusJob?.cancel()
         focusJob = scope.launch {
@@ -249,6 +250,7 @@ private fun ChannelBrowser(
         }
     }
     fun focusGroup(index: Int) {
+        if (pendingCategoryFocus != null) return
         if (index !in groups.indices) return
         focusJob?.cancel()
         focusJob = scope.launch {
@@ -259,6 +261,7 @@ private fun ChannelBrowser(
         }
     }
     fun focusChannels() {
+        if (pendingCategoryFocus != null) return
         if (pagingItems.itemCount == 0) return
         focusJob?.cancel()
         focusJob = scope.launch {

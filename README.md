@@ -89,27 +89,39 @@ with posters, seasons, history and resume.
   enters the **archive (catch-up)** at the requested absolute time when the playlist declares it
   (`catchup`, `catchup-source`, `catchup-days`; types default, append, shift,
   flussonic).
-- **Live preview** reuses the single stream and the same PlayerView/ExoPlayer as fullscreen. Focus a channel
-  for 800 ms to switch preview; OK expands it without reconnecting. Back shrinks fullscreen into the browser
-  and restores focus to the playing channel. Leaving the Live tab stops playback.
-- **Fullscreen remote**: Menu or Rewind opens the current channel's programme history; short OK opens the
-  channel overlay; long-press OK toggles favourite without opening the overlay.
-  Back returns to preview. Up/Down or Channel Up/Down zap; Left/Right seek 10 seconds;
-  Play/Pause pauses/resumes live or archive playback; fast-forward seeks 30 seconds or returns to live.
+- **Startup and navigation**: the active playlist's last-watched channel opens fullscreen in live mode;
+  otherwise Home is shown. During playback the rail/tabs are hidden, reachable through the quick menu.
+  Back at the main-menu rail returns to the same stream. Guide/main-menu presentation changes keep the
+  one PlayerView/ExoPlayer mounted, with a small preview, and never reconnect. Startup resume and previous-channel
+  switching use PlaybackController's existing gate: old connections close first, then the unchanged 400 ms grace.
+- **Live preview** reuses that same player. In the initial browser, focusing a channel for 800 ms switches preview;
+  OK expands it without reconnecting. Browsing the main menu while a stream is active does not preview other channels.
+- **Fullscreen remote**: Up opens the compact info banner; Up again expands the full description. Expanded Up/Down
+  scroll; compact Down hides. Both banners hide eight seconds after the last key, and Back closes them.
+  Down without a panel toggles the last two watched channels (including the active playlist's saved recents at startup).
+  Left/Right seek −/+10 seconds;
+  Rewind/FastForward seek −/+60 seconds. Play/Pause toggles on the first event only. Channel Up/Down zap.
+  Short OK opens the channel overlay; long OK opens Program TV at the current/highlighted channel and current time.
+  Back from Program TV returns fullscreen without reconnecting. Back with no panel does nothing.
+  Short Menu opens history. Long Menu opens the quick menu: audio tracks (language/label/codec, selected marked),
+  favourite toggle, main menu and settings. Audio selection uses a session-only Media3 override, cleared for a new stream.
+  Long OK/Menu never also fire their short actions.
   Long-press Left jumps to the current programme's start when catch-up is available. Archive seeks stay inside
   a seekable archive or re-request it after debounce; reaching the live edge returns to live.
 - **Programme history**: a translucent right-side list leaves video full-size behind it. Na żywo is at the top,
-  followed by programmes newest first. Up/Down select; one OK starts the programme from its start (clipped to
+  followed by compact single-line time/title rows, newest first, with details below. Up/Down select; one OK starts the programme from its start (clipped to
   the archive/window limit), including the current programme when rewind is available. Na żywo returns live.
   The next programme is shown dimmed above the list, not selectable. Without archive or a seekable window,
   only Na żywo is selectable. Back or Menu closes without changing playback. Opening/browsing history never
   previews, prefetches or probes a stream; only final OK uses the existing gated playback path.
 - **Overlay remote**: Up/Down browse without zapping; Right on a channel opens its history;
-  OK plays and closes the panel; Menu toggles the focused
+  short OK plays and closes the panel; long OK opens the full guide on the highlighted channel.
+  The top category switcher shows the current group; Rewind/FastForward wrap through previous/next categories.
+  Menu toggles the focused
   channel's favourite. Left reveals groups, Right returns to channels, Left from groups or Back closes the overlay.
 
 EPG progress follows the absolute time of the watched frame, not the stream duration. The info bar shows the
-programme at that time, its successor and a lighter live-edge marker when behind. Server window timestamps
+programme at that time, its successor, description and remaining minutes. Server window timestamps
 are authoritative; otherwise live offset or the archive request's start plus playback position determines time.
 Streams without timestamps use the session start plus position as a best-effort clock. Catch-up cannot create
 history a provider does not serve, and the live HLS window is limited by that provider, not the app's session.

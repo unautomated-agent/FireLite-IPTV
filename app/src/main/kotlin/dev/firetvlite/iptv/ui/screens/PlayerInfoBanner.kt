@@ -1,0 +1,72 @@
+package dev.firetvlite.iptv.ui.screens
+
+import androidx.compose.foundation.ScrollState
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import dev.firetvlite.iptv.data.db.ChannelEntity
+import dev.firetvlite.iptv.data.epg.CurrentAndNext
+import dev.firetvlite.iptv.playback.PlaybackFrame
+import dev.firetvlite.iptv.playback.PlaybackTime
+import dev.firetvlite.iptv.ui.components.ChannelLogo
+import dev.firetvlite.iptv.ui.components.FLText
+import dev.firetvlite.iptv.ui.components.ProgressBar
+import dev.firetvlite.iptv.ui.components.clockTime
+import dev.firetvlite.iptv.ui.components.programmeTimes
+import dev.firetvlite.iptv.ui.theme.FireLiteTheme
+
+@Composable
+internal fun PlayerInfoBanner(channel: ChannelEntity?, frame: PlaybackFrame, guide: CurrentAndNext,
+    expanded: Boolean, scroll: ScrollState, archive: Boolean) {
+    val colors = FireLiteTheme.colors
+    val type = FireLiteTheme.typography
+    Column(Modifier.fillMaxWidth()
+        .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = if (expanded) 0f else 0.7f))))
+        .padding(start = 32.dp, end = 32.dp, top = 36.dp, bottom = 24.dp)) {
+        Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(20.dp))
+            .background(if (expanded) Color.Black.copy(alpha = 0.7f) else Color(0xE615202D))
+            .padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
+                ChannelLogo(channel?.name.orEmpty(), channel?.logoUrl?.takeIf { it.isNotBlank() }, size = 64.dp)
+                Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    FLText(channel?.name.orEmpty(), style = type.title, maxLines = 1)
+                    FLText(channel?.groupName.orEmpty(), style = type.label, color = colors.textSecondary, maxLines = 1)
+                }
+                FLText(if (archive) "ARCHIWUM" else "NA ŻYWO", style = type.label,
+                    color = colors.accent, modifier = Modifier.clip(RoundedCornerShape(6.dp))
+                        .background(colors.accent.copy(alpha = 0.15f)).padding(horizontal = 12.dp, vertical = 6.dp))
+                FLText(clockTime(frame.nowMs), style = type.headline)
+            }
+            val current = guide.current
+            FLText(current?.title ?: "Brak informacji o programie",
+                style = type.headline.copy(fontSize = 28.sp, fontWeight = FontWeight.Bold), maxLines = 2)
+            if (current != null) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    FLText(programmeTimes(current), style = type.body)
+                    FLText("jeszcze ${((current.stop - frame.watchedMs).coerceAtLeast(0) + 59_999) / 60_000} min",
+                        style = type.label, color = colors.textSecondary)
+                }
+                ProgressBar(PlaybackTime.progress(frame.watchedMs, current.start, current.stop))
+                guide.next?.let { FLText("Następnie: ${it.title}", style = type.body, maxLines = 1, color = colors.accent) }
+                if (!current.description.isNullOrBlank()) FLText(current.description.orEmpty(), style = type.body,
+                    maxLines = if (expanded) Int.MAX_VALUE else 3, color = colors.textSecondary,
+                    modifier = if (expanded) Modifier.heightIn(max = 260.dp).verticalScroll(scroll) else Modifier)
+            }
+        }
+    }
+}

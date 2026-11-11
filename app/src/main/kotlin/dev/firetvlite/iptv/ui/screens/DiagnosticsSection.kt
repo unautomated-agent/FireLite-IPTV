@@ -8,6 +8,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -86,11 +88,11 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
         val close = remember { FocusRequester() }
         Dialog(onDismissRequest = { opened = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
             LaunchedEffect(Unit) { close.requestFocusWhenReady() }
-            Column(Modifier.width(1120.dp).background(FireLiteTheme.colors.surface).padding(24.dp),
+            Column(Modifier.width(900.dp).height(500.dp).background(FireLiteTheme.colors.surface).padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 FLText(stringResource(R.string.diagnostics_title), style = FireLiteTheme.typography.headline)
                 FLText(stringResource(R.string.diagnostics_scan), style = FireLiteTheme.typography.label)
-                Row(Modifier.height(390.dp), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                     FocusSurface(onClick = { scope.launch { scroll.animateScrollTo(0) } }, focusedScale = 1f,
                         modifier = Modifier.weight(1f).onPreviewKeyEvent { event ->
                             if (event.type == KeyEventType.KeyDown && event.key in listOf(Key.DirectionUp, Key.DirectionDown)) {
@@ -102,7 +104,7 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
                             modifier = Modifier.fillMaxSize().verticalScroll(scroll).padding(12.dp))
                     }
                     bitmap?.let { Image(it.asImageBitmap(), stringResource(R.string.diagnostics_qr),
-                        Modifier.size(390.dp).background(Color.White)) }
+                        Modifier.fillMaxHeight().aspectRatio(1f).background(Color.White)) }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     PrimaryButton(stringResource(R.string.diagnostics_close), { opened = false }, Modifier.focusRequester(close))

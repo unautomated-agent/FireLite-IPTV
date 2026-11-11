@@ -198,6 +198,45 @@ class PlaybackControllerTest {
         controller.stop()
     }
 
+    @Test fun successfulProgressivePlaybackRetriesItsSourceInTheSameSessionAfterTransientErrors() = runBlocking {
+        val fake = FakePlayer()
+        val trace = mutableListOf<String>()
+        val hlsUrls = mutableListOf<String>()
+        val progressiveUrls = mutableListOf<String>()
+        var sources = 0
+        val controller = PlaybackController(this, { fake.player }, { trace += it }, { hlsUrls += it; MediaItem.EMPTY },
+            setStream = { _, _, _ -> sources++ }, progressiveItem = { progressiveUrls += it; MediaItem.EMPTY })
+        val hls = request.copy(url = "https://example.org/live.m3u8")
+        controller.play(hls)
+        delay(450)
+        fake.listener!!.onPlayerError(TestError(3002))
+        delay(450)
+        fake.state = Player.STATE_READY
+        fake.listener!!.onPlaybackStateChanged(fake.state)
+        fake.state = Player.STATE_BUFFERING
+        fake.listener!!.onPlaybackStateChanged(fake.state)
+        val connections = PlaybackController::class.java.getDeclaredField("connections").let {
+            it.isAccessible = true
+            it.get(controller) as AtomicInteger
+        }
+        connections.set(1)
+        fake.calls.clear()
+        fake.listener!!.onPlayerError(TestError(2001))
+        delay(1600)
+        assertEquals(0, fake.calls.count { it == "prepare" })
+        connections.decrementAndGet()
+        delay(50)
+        assertEquals(1, fake.calls.count { it == "prepare" })
+        fake.listener!!.onPlayerError(TestError(3002))
+        delay(3100)
+        assertEquals(2, trace.count { it == "RECOVER session=1 action=Retry" })
+        assertEquals(0, trace.count { it.endsWith("action=RestoreHls") })
+        assertEquals(2, sources)
+        assertEquals(listOf(hls.url), hlsUrls)
+        assertEquals(listOf(hls.url), progressiveUrls)
+        controller.stop()
+    }
+
     @Test fun segmentErrorsAfterReadyKeepTheHlsSourceEvenAfterBufferingAgain() = runBlocking {
         val fake = FakePlayer()
         val trace = mutableListOf<String>()

@@ -5,10 +5,36 @@ import java.net.URI
 
 internal enum class RecoveryAction { LiveEdge, Progressive, RestoreHls, Retry }
 
-internal object PlaybackRecovery {
-    fun action(code: Int, url: String, fallbackUsed: Boolean, cause: Throwable? = null,
-        hlsEstablished: Boolean = false, progressiveActive: Boolean = false): RecoveryAction {
-        if (progressiveActive) return RecoveryAction.RestoreHls
+internal class PlaybackRecovery {
+    private enum class SourceMode { Original, Progressive }
+
+    private var mode = SourceMode.Original
+    private var successfulMode: SourceMode? = null
+    private var manifestLoaded = false
+    private var fallbackUsed = false
+
+    fun onManifestLoaded() {
+        if (mode == SourceMode.Original) manifestLoaded = true
+    }
+
+    fun onReady() {
+        successfulMode = mode
+    }
+
+    fun onRecovery(action: RecoveryAction) {
+        when (action) {
+            RecoveryAction.Progressive -> {
+                fallbackUsed = true
+                mode = SourceMode.Progressive
+            }
+            RecoveryAction.RestoreHls -> mode = SourceMode.Original
+            else -> Unit
+        }
+    }
+
+    fun action(code: Int, url: String, cause: Throwable? = null): RecoveryAction {
+        if (mode == SourceMode.Progressive) return if (successfulMode == SourceMode.Progressive)
+            RecoveryAction.Retry else RecoveryAction.RestoreHls
         if (code == PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW) return RecoveryAction.LiveEdge
         val hls = runCatching { URI(url).path.lowercase().endsWith(".m3u8") }.getOrDefault(false)
         val causes = HashSet<Throwable>()
@@ -22,7 +48,7 @@ internal object PlaybackRecovery {
             PlaybackException.ERROR_CODE_PARSING_CONTAINER_UNSUPPORTED,
             PlaybackException.ERROR_CODE_PARSING_MANIFEST_MALFORMED,
             PlaybackException.ERROR_CODE_PARSING_MANIFEST_UNSUPPORTED)
-        return if (hls && !hlsEstablished && !fallbackUsed && (parsing || unrecognized))
+        return if (hls && !manifestLoaded && successfulMode == null && !fallbackUsed && (parsing || unrecognized))
             RecoveryAction.Progressive else RecoveryAction.Retry
     }
 }

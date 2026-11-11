@@ -118,9 +118,7 @@ class PlaybackController internal constructor(
     private var startJob: Job? = null
     private var retries = 0
     private var activeSession = 0L
-    private var fallbackUsed = false
-    private var hlsEstablished = false
-    private var progressiveActive = false
+    private var recovery = PlaybackRecovery()
     private var activeRequest: StreamRequest? = null
     private var suspendedRequest: StreamRequest? = null
     private var preview = false
@@ -191,8 +189,8 @@ class PlaybackController internal constructor(
     private val analytics = object : AnalyticsListener {
         override fun onLoadCompleted(eventTime: AnalyticsListener.EventTime, loadEventInfo: LoadEventInfo,
             mediaLoadData: MediaLoadData) {
-            if (activeRequest != null && !progressiveActive && mediaLoadData.dataType == C.DATA_TYPE_MANIFEST)
-                hlsEstablished = true
+            if (activeRequest != null && mediaLoadData.dataType == C.DATA_TYPE_MANIFEST)
+                recovery.onManifestLoaded()
         }
 
         override fun onAudioDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String,
@@ -248,9 +246,7 @@ class PlaybackController internal constructor(
         activeRequest = request
         successfulSignature = null
         retries = 0
-        fallbackUsed = false
-        hlsEstablished = false
-        progressiveActive = false
+        recovery = PlaybackRecovery()
         startJob?.cancel()
         httpFactory.setUserAgent(request.userAgent)
 
@@ -390,7 +386,7 @@ class PlaybackController internal constructor(
         when (player.playbackState) {
             Player.STATE_BUFFERING -> mutableStatus.value = PlaybackStatus.Buffering
             Player.STATE_READY -> {
-                if (!progressiveActive) hlsEstablished = true
+                recovery.onReady()
                 retries = 0
                 mutableStatus.value =
                     if (player.playWhenReady) PlaybackStatus.Playing else PlaybackStatus.Paused
@@ -407,9 +403,7 @@ class PlaybackController internal constructor(
             retries++
             val request = activeRequest ?: return
             val session = activeSession
-            val action = PlaybackRecovery.action(error.errorCode, request.url, fallbackUsed, error.cause,
-                hlsEstablished, progressiveActive)
-            if (action == RecoveryAction.Progressive) fallbackUsed = true
+            val action = recovery.action(error.errorCode, request.url, error.cause)
             mutableStatus.value = PlaybackStatus.Connecting
             startJob?.cancel()
             exo?.stop()
@@ -418,14 +412,13 @@ class PlaybackController internal constructor(
                 awaitConnectionClose()
                 val player = exo ?: return@launch
                 if (activeRequest !== request || activeSession != session) return@launch
+                recovery.onRecovery(action)
                 when (action) {
                     RecoveryAction.LiveEdge -> player.seekToDefaultPosition()
                     RecoveryAction.Progressive -> {
-                        progressiveActive = true
                         setStream(player, progressiveItem(request.url), trackedFactory(session))
                     }
                     RecoveryAction.RestoreHls -> {
-                        progressiveActive = false
                         setStream(player, mediaItem(request.url), trackedFactory(session))
                     }
                     RecoveryAction.Retry -> Unit

@@ -14,5 +14,6 @@ enum class Destination(
     Guide(NavIconKind.Guide, R.string.nav_guide),
     Search(NavIconKind.Search, R.string.nav_search),
     Favorites(NavIconKind.Favorites, R.string.nav_favorites),
+    Films(NavIconKind.Guide, R.string.nav_films),
     Settings(NavIconKind.Settings, R.string.nav_settings),
 }

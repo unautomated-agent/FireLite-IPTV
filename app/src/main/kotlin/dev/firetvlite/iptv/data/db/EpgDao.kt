@@ -16,6 +16,11 @@ private const val PROGRAMME_AT =
 
 @Dao
 interface EpgDao {
+    @Query("SELECT * FROM channel WHERE sourceId=:sourceId ORDER BY position")
+    fun filmChannels(sourceId: Long): Flow<List<ChannelEntity>>
+    @Query("SELECT c.id AS channelId, p.* $MAPPED_PROGRAMMES WHERE c.sourceId=:sourceId " +
+        "AND p.start < :until AND p.stop > :from ORDER BY p.start, c.id")
+    fun filmWindow(sourceId: Long, from: Long, until: Long): Flow<List<ChannelProgramme>>
     @Query("SELECT COUNT(*) FROM channel c JOIN source s ON s.id=c.sourceId " +
         "JOIN channel_epg m ON m.sourceId=c.sourceId AND m.streamUrl=c.streamUrl AND m.generation=s.epgGeneration " +
         "WHERE c.sourceId=:sourceId AND EXISTS(SELECT 1 FROM programme p WHERE p.sourceId=m.sourceId " +

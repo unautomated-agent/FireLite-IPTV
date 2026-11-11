@@ -1,8 +1,11 @@
 package dev.firetvlite.iptv.ui.screens
 
+import dev.firetvlite.iptv.ui.components.ImdbRating
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.focusGroup
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
@@ -18,7 +21,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
@@ -57,6 +59,8 @@ import androidx.compose.ui.unit.dp
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import androidx.paging.LoadState
+import androidx.paging.PagingData
+import androidx.paging.cachedIn
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.db.ChannelRow
 import dev.firetvlite.iptv.data.db.ProgrammeEntity
@@ -66,6 +70,7 @@ import dev.firetvlite.iptv.playback.CatchupUrlBuilder
 import dev.firetvlite.iptv.ui.components.ProgressBar
 import dev.firetvlite.iptv.ui.components.programmeTimes
 import dev.firetvlite.iptv.ui.components.wallClock
+import dev.firetvlite.iptv.ui.components.clockTime
 import dev.firetvlite.iptv.data.library.GroupKey
 import dev.firetvlite.iptv.data.library.ImportState
 import dev.firetvlite.iptv.ui.components.ChannelLogo
@@ -83,6 +88,8 @@ import dev.firetvlite.iptv.ui.viewmodel.PlayerViewModel
 import dev.firetvlite.iptv.ui.viewmodel.BrowserTarget
 import dev.firetvlite.iptv.data.library.ChannelTabPolicy
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOf
@@ -174,12 +181,18 @@ private fun ChannelBrowser(
     val selected by library.selectedGroup.collectAsState()
     val playerRestore by player.browserTarget.collectAsState()
     val restore = if (guideOnly) returnTarget else playerRestore
-    val pagingItems = key(selected) {
-        remember(selected) { library.channels(selected) }.collectAsLazyPagingItems()
-    }
     val scope = rememberCoroutineScope()
+    val channelFlows = remember { mutableMapOf<GroupKey, Flow<PagingData<ChannelRow>>>() }
+    val pagingItems = key(selected) {
+        channelFlows.getOrPut(selected) { library.channels(selected).cachedIn(scope) }.collectAsLazyPagingItems()
+    }
     val groupListState = rememberLazyListState()
-    val channelListState = remember(selected) { LazyListState() }
+    val channelListState = rememberLazyListState()
+    val browserFocus = remember { FocusRequester() }
+    val categoryFocus = remember { CategoryFocusMemory() }
+    val focusGeneration = categoryFocus.generation
+    var pendingCategoryFocus by remember { mutableStateOf<CategoryFocusRequest?>(null) }
+    var focusJob by remember { mutableStateOf<Job?>(null) }
     val now by wallClock()
     val limits by remember(selected) { library.guideLimits(selected) }.collectAsState(initial = 0 to null)
     val bounds = GuideTimeline.bounds(now, limits.first, limits.second)
@@ -189,7 +202,13 @@ private fun ChannelBrowser(
     var programmeFocus by remember(selected) { mutableStateOf(false) }
     var focusedProgramme by remember(selected) { mutableStateOf<ProgrammeEntity?>(null) }
     fun switchCategory(delta: Int) {
-        CategorySwitch.next(groups.map { it.key }, selected, delta)?.let(library::selectGroup)
+        val current = categoryFocus.selection(library.selectedGroup.value)
+        CategorySwitch.next(groups.map { it.key }, current, delta)?.takeIf { it != current }?.let {
+            focusJob?.cancel()
+            pendingCategoryFocus = categoryFocus.begin(it)
+            browserFocus.requestFocus()
+            library.selectGroup(it)
+        }
     }
     fun shiftWindow(delta: Long) {
         val next = GuideTimeline.windowStart(windowStart + delta, bounds)
@@ -211,24 +230,30 @@ private fun ChannelBrowser(
         .collectAsState(initial = emptyList())
     val programmesByChannel = remember(programmes) { programmes.groupBy { it.channelId }.mapValues { (_, entries) -> entries.map { it.programme } } }
     val guideChannels by remember(visibleIds) { library.guideChannels(visibleIds) }.collectAsState(initial = emptySet())
-    val groupRequesters = remember(groups.map { it.key }) { groups.associate { it.key to FocusRequester() } }
+    val groupRequesters = remember { mutableMapOf<GroupKey, FocusRequester>() }
+    groups.forEach { groupRequesters.getOrPut(it.key) { FocusRequester() } }
     var restoreIndex by remember(selected) { mutableStateOf<Int?>(null) }
     var pendingRestore by remember { mutableStateOf<Pair<GroupKey, Int>?>(null) }
     var handledRestore by remember { mutableStateOf<Int?>(null) }
     var channelsHaveFocus by remember { mutableStateOf(false) }
-    val rowRequesters = remember(selected) { HashMap<Int, FocusRequester>() }
-    fun rowRequester(index: Int): FocusRequester = rowRequesters.getOrPut(index) { FocusRequester() }
+    val rowRequesters = remember { HashMap<Long, FocusRequester>() }
+    fun rowRequester(row: ChannelRow): FocusRequester =
+        rowRequesters.getOrPut(row.channel.id) { FocusRequester() }
     fun focusRow(index: Int) {
+        if (pendingCategoryFocus != null) return
         if (index !in 0 until pagingItems.itemCount) return
-        scope.launch {
-            if (channelListState.layoutInfo.visibleItemsInfo.none { it.index == index }) channelListState.scrollToItem(index)
-            snapshotFlow { pagingItems.peek(index) }.filterNotNull().first()
-            rowRequester(index).requestFocusWhenReady()
+        focusJob?.cancel()
+        focusJob = scope.launch {
+            if (channelListState.layoutInfo.visibleItemsInfo.none { it.index == index }) channelListState.animateScrollToItem(index)
+            val row = snapshotFlow { pagingItems.peek(index) }.filterNotNull().first()
+            rowRequester(row).requestFocusWhenReady()
         }
     }
     fun focusGroup(index: Int) {
+        if (pendingCategoryFocus != null) return
         if (index !in groups.indices) return
-        scope.launch {
+        focusJob?.cancel()
+        focusJob = scope.launch {
             if (groupListState.layoutInfo.visibleItemsInfo.none { it.index == index }) {
                 groupListState.scrollToItem(index)
             }
@@ -236,22 +261,44 @@ private fun ChannelBrowser(
         }
     }
     fun focusChannels() {
+        if (pendingCategoryFocus != null) return
         if (pagingItems.itemCount == 0) return
-        scope.launch {
-            val index = restoreIndex ?: 0
-            channelListState.scrollToItem(index)
-            rowRequester(index).requestFocusWhenReady()
+        focusJob?.cancel()
+        focusJob = scope.launch {
+            val target = categoryFocus.target(selected)
+            val index = target?.index(library.channelIndex(selected, target.url), pagingItems.itemCount)
+                ?: (restoreIndex ?: 0).coerceIn(0, pagingItems.itemCount - 1)
+            if (channelListState.layoutInfo.visibleItemsInfo.none { it.index == index }) channelListState.animateScrollToItem(index)
+            val row = snapshotFlow { pagingItems.peek(index) }.filterNotNull().first()
+            rowRequester(row).requestFocusWhenReady()
         }
     }
     fun focusSelectedGroup() {
         focusGroup(groups.indexOfFirst { it.key == selected })
     }
 
-    var focusedChannel by remember(selected) { mutableStateOf<ChannelRow?>(null) }
+    var focusedChannel by remember { mutableStateOf<ChannelRow?>(null) }
     val detailGuide by remember(focusedChannel?.channel?.id, now) {
         focusedChannel?.channel?.id?.let { library.guide(it, now) } ?: flowOf(CurrentAndNext(null, null))
     }.collectAsState(initial = CurrentAndNext(null, null))
-    var focusedIndex by remember(selected) { mutableStateOf(0) }
+    var focusedIndex by remember { mutableStateOf(0) }
+    fun recordFocus(row: ChannelRow, index: Int) {
+        if (library.selectedGroup.value != selected || !categoryFocus.record(selected, focusGeneration,
+                ChannelFocusTarget(row.channel.streamUrl, index))) return
+        focusedChannel = row
+        focusedIndex = index
+    }
+    LaunchedEffect(selected, pagingItems.itemSnapshotList) {
+        val url = categoryFocus.target(selected)?.url ?: return@LaunchedEffect
+        val snapshot = pagingItems.itemSnapshotList
+        val index = snapshot.items.indexOfFirst { it.channel.streamUrl == url }
+        if (index >= 0) {
+            val position = snapshot.placeholdersBefore + index
+            if (categoryFocus.record(selected, focusGeneration, ChannelFocusTarget(url, position))) {
+                focusedIndex = position
+            }
+        }
+    }
     LaunchedEffect(active, focusedChannel?.channel?.streamUrl, focusedIndex, selected, channelsHaveFocus) {
         if (overlay || guideOnly) return@LaunchedEffect
         player.cancelPreview()
@@ -259,6 +306,7 @@ private fun ChannelBrowser(
             library.zapContext(selected)?.let { player.preview(it, focusedIndex, selected) }
         }
     }
+    DisposableEffect(selected) { onDispose { focusJob?.cancel() } }
     DisposableEffect(Unit) { onDispose { if (!overlay) player.cancelPreview() } }
     LaunchedEffect(active, restore?.token) {
         val target = restore ?: return@LaunchedEffect
@@ -285,16 +333,10 @@ private fun ChannelBrowser(
         if (!active || selected != group || index !in 0 until pagingItems.itemCount) return@LaunchedEffect
         restoreIndex = index
         channelListState.scrollToItem(index)
-        snapshotFlow { pagingItems.peek(index) }.filterNotNull().first()
-        repeat(20) {
-            rowRequester(index).requestFocusWhenReady()
-            if (channelsHaveFocus && focusedIndex == index &&
-                focusedChannel?.channel?.streamUrl == restore?.channel?.streamUrl) {
-                handledRestore = restore?.token
-                pendingRestore = null
-                return@LaunchedEffect
-            }
-        }
+        val row = snapshotFlow { pagingItems.peek(index) }.filterNotNull().first()
+        rowRequester(row).requestFocusWhenReady()
+        handledRestore = restore?.token
+        pendingRestore = null
     }
     val initialGroup = remember { library.selectedGroup.value }
     var initialFocusRequested by remember { mutableStateOf(false) }
@@ -311,19 +353,45 @@ private fun ChannelBrowser(
     LaunchedEffect(showGroups) {
         if (overlay && showGroups) focusSelectedGroup()
     }
-    LaunchedEffect(showGroups, pagingItems.itemCount, pendingRestore) {
-        if (overlay && !showGroups && !channelsHaveFocus && handledRestore != null && pendingRestore == null) {
+    LaunchedEffect(showGroups) {
+        if (overlay && !showGroups && handledRestore != null && pendingRestore == null) {
             focusChannels()
+        }
+    }
+    LaunchedEffect(pendingCategoryFocus, selected, pagingItems.loadState.refresh) {
+        val request = pendingCategoryFocus ?: return@LaunchedEffect
+        if (request.group != selected || pagingItems.loadState.refresh !is LoadState.NotLoading) return@LaunchedEffect
+        focusJob?.cancel()
+        focusJob = launch {
+            fun current() = categoryFocus.isCurrent(request) && library.selectedGroup.value == request.group
+            if (!current()) return@launch
+            if (pagingItems.itemCount > 0) {
+                val target = request.target
+                val index = target?.index(library.channelIndex(selected, target.url), pagingItems.itemCount) ?: 0
+                if (!current()) return@launch
+                if (channelListState.layoutInfo.visibleItemsInfo.none { it.index == index }) channelListState.animateScrollToItem(index)
+                val row = snapshotFlow { pagingItems.peek(index) }.filterNotNull().first()
+                if (!current()) return@launch
+                rowRequester(row).requestFocusWhenReady()
+                if (!current()) return@launch
+                if (categoryFocus.complete(request, ChannelFocusTarget(row.channel.streamUrl, index))) {
+                    pendingCategoryFocus = null
+                    focusedChannel = row
+                    focusedIndex = index
+                }
+            } else if (categoryFocus.complete(request)) pendingCategoryFocus = null
         }
     }
 
     Row(
         modifier = modifier
             .fillMaxHeight()
+            .focusRequester(browserFocus)
             .then(if (overlay) Modifier
                 .remotePress(setOf(Key.DirectionCenter, Key.Enter, Key.NumPadEnter), onShort = {
                     val channel = focusedChannel?.channel
-                    if (!channelsHaveFocus) onShowGroups(!showGroups)
+                    if (pendingCategoryFocus != null) Unit
+                    else if (!channelsHaveFocus) onShowGroups(!showGroups)
                     else if (channel != null) scope.launch {
                         library.zapContext(selected)?.let { player.open(it, focusedIndex, selected) }
                     }
@@ -345,6 +413,7 @@ private fun ChannelBrowser(
                     else -> false
                 }
             }
+            .then(if (overlay) Modifier.focusable() else Modifier)
             .padding(start = 16.dp, end = 24.dp, top = 20.dp, bottom = 24.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -381,7 +450,7 @@ private fun ChannelBrowser(
                         group = group,
                         selected = group.key == selected,
                         onFocused = {
-                            if (ChannelTabPolicy.canSelectGroup(restore?.token, handledRestore)) library.selectGroup(group.key)
+                            if (pendingCategoryFocus == null && ChannelTabPolicy.canSelectGroup(restore?.token, handledRestore)) library.selectGroup(group.key)
                         },
                         onClick = { focusChannels() },
                         modifier = Modifier.focusRequester(groupRequesters.getValue(group.key)),
@@ -445,7 +514,7 @@ private fun ChannelBrowser(
                                 },
                                 onVertical = { focusRow(index + it) },
                                 onGroups = { focusSelectedGroup() },
-                                onFocused = { focusedChannel = row; focusedIndex = index },
+                                onFocused = { recordFocus(row, index) },
                                 onDetails = { focusedProgramme = it },
                                 onSelect = { cell ->
                                     scope.launch {
@@ -459,14 +528,14 @@ private fun ChannelBrowser(
                                     }
                                 },
                                 onMenu = { library.toggleFavorite(row.channel.streamUrl) },
-                                modifier = Modifier.focusRequester(rowRequester(index)),
+                                modifier = Modifier.focusRequester(rowRequester(row)),
                             ) else ChannelRowItem(
                                 row = row,
                                 programme = programmesByChannel[row.channel.id]?.maxByOrNull { it.start },
                                 now = now,
                                 translucent = overlay,
-                                modifier = Modifier.focusRequester(rowRequester(index)),
-                                onFocused = { focusedChannel = row; focusedIndex = index },
+                                modifier = Modifier.focusRequester(rowRequester(row)),
+                                onFocused = { recordFocus(row, index) },
                                 onClick = {
                                     scope.launch {
                                         library.zapContext(selected)?.let { player.open(it, index, selected) }
@@ -486,8 +555,16 @@ private fun ChannelBrowser(
                     drawLine(Color(0xFFFF6B6B), Offset(x, 0f), Offset(x, size.height), strokeWidth = 1.dp.toPx())
                 }
             }
-            if (overlay) FLText(stringResource(R.string.channel_timeline_overlay_hint),
-                style = FireLiteTheme.typography.label, modifier = Modifier.padding(top = 8.dp))
+            if (overlay) {
+                detailGuide.next?.takeIf { pendingCategoryFocus == null }?.let {
+                    FLText(stringResource(R.string.channel_next_programme, clockTime(it.start), it.title),
+                        style = FireLiteTheme.typography.label, maxLines = 2,
+                        modifier = Modifier.padding(top = 8.dp))
+                    ImdbRating(it)
+                }
+                FLText(stringResource(R.string.channel_timeline_overlay_hint),
+                    style = FireLiteTheme.typography.label, modifier = Modifier.padding(top = 8.dp))
+            }
         }
 
         if (!overlay && !guideOnly) DetailPanel(row = focusedChannel, guide = detailGuide,
@@ -565,6 +642,7 @@ internal fun ChannelRowItem(
                 if (programme != null) {
                     FLText(text = programme.title, style = FireLiteTheme.typography.label,
                         color = FireLiteTheme.colors.textSecondary, maxLines = 1)
+                    ImdbRating(programme)
                     ProgressBar(PlaybackTime.progress(now, programme.start, programme.stop))
                 }
             }
@@ -613,6 +691,7 @@ private fun DetailPanel(
             programme?.let { current ->
                 FLText(programmeTimes(current), style = FireLiteTheme.typography.label, color = FireLiteTheme.colors.accent)
                 FLText(current.title, style = FireLiteTheme.typography.title, maxLines = 2)
+                ImdbRating(current)
                 current.description?.let { FLText(it, style = FireLiteTheme.typography.label, maxLines = 3) }
             }
             val available = programme != null && programme.start <= now &&

@@ -41,6 +41,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import dev.firetvlite.iptv.CrashReportStore
+import dev.firetvlite.iptv.FireLiteApplication
+import dev.firetvlite.iptv.data.film.omdbKeyStatus
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.db.SourceEntity
 import dev.firetvlite.iptv.data.epg.EpgState
@@ -74,7 +76,11 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
             playback = it.second
         }
     }
-    val report = remember(source, state, stats, crash, playback) { DiagnosticsReport.text(source, state, stats, crash, playback) }
+    val omdbKey by (context.applicationContext as FireLiteApplication).container.films.preferences.key.collectAsState()
+    val report = remember(source, state, stats, crash, playback, omdbKey.isNotBlank()) {
+        context.getString(R.string.omdb_key_diagnostics, context.getString(omdbKeyStatus(omdbKey.isNotBlank()))) +
+            "\n" + DiagnosticsReport.text(source, state, stats, crash, playback)
+    }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         FLText(stringResource(R.string.diagnostics_title), style = FireLiteTheme.typography.headline)
         PrimaryButton(stringResource(R.string.diagnostics_open), { opened = true })

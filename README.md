@@ -108,8 +108,10 @@ with posters, seasons, history and resume.
   Long OK/Menu never also fire their short actions.
   Long-press Left jumps to the current programme's start when catch-up is available. Archive seeks stay inside
   a seekable archive or re-request it after debounce; reaching the live edge returns to live.
-- **Programme history**: a translucent right-side list leaves video full-size behind it. Na żywo is at the top,
-  followed by compact single-line time/title rows, newest first, with details below. Up/Down select; one OK starts the programme from its start (clipped to
+- **Programme history**: a translucent right-side list leaves video full-size behind it. Compact single-line
+  time/title rows run oldest first, with Na żywo at the bottom and initially focused. Rewind/FastForward jump
+  to the previous/next Warsaw calendar day, clamped to the archive range and today; a day header and details
+  follow the selection. Up/Down select; one OK starts the programme from its start (clipped to
   the archive/window limit), including the current programme when rewind is available. Na żywo returns live.
   The next programme is shown dimmed above the list, not selectable. Without archive or a seekable window,
   only Na żywo is selectable. Back or Menu closes without changing playback. Opening/browsing history never
@@ -141,6 +143,30 @@ programme live or a retained catch-up programme from its start; future/unavailab
 The group determines history bounds (at most seven days); future browsing ends at the guide's end, capped
 at three days. Focusing a row always previews live, including after leaving archive playback. The fullscreen
 overlay remains a simple channel list.
+
+## IMDb film ratings
+
+Settings accepts a locally stored, masked OMDb key (free keys: omdbapi.com/apikey.aspx).
+Diagnostics exposes only whether it is configured. Without a key, badges are hidden and
+Najlepsze filmy explains how to enable them. The main menu rail and Home card open this ranking.
+The two windows are rolling 0–24 and 24–48 hours, with currently airing films included in the first.
+Rated films sort by IMDb score, then votes; unrated candidates follow in grey. OK on a future film
+only shows its start time; OK on an airing film uses the normal channel playback path.
+
+Film candidates require a four-digit XMLTV year, 60–240-minute duration, a film/genre category,
+and no episode or series markers. XMLTV imports retain all categories, original titles, years,
+credits and episode numbers. Database migration 6→7 requests a fresh guide without discarding
+the previously published guide. Lookup is limited to mapped channels of the active playlist and
+programme starts in the next 48 hours. Original title is preferred, then Polish title, then ±1 year;
+only movie responses within ±1 year are accepted. Ratings are cached in Room for 30 days,
+negative matches for 7 days. Sequential data requests are spaced by 250 ms and every request,
+including fallbacks, reserves one of 400 persisted daily slots (Warsaw calendar day).
+Import completion, active-source/key changes and hourly process refreshes trigger enrichment;
+cache TTLs avoid unnecessary daily requests. This uses the existing app-process refresh model,
+not an OS job that wakes a stopped application. Network/authentication failures never affect playback.
+
+Debug builds alone read `debug_base_url` from the private `omdb` preferences, for a local fixture;
+release builds always use `https://www.omdbapi.com/`. Never put a real key in fixture files or logs.
 
 ## Hard rule: one stream at a time
 

@@ -39,6 +39,7 @@ import dev.firetvlite.iptv.update.pendingRelease
 fun HomeScreen(
     library: LibraryViewModel, player: PlayerViewModel, active: Boolean, returnTarget: BrowserTarget?,
     updateState: UpdateState, onInstallUpdate: () -> Unit, onLive: () -> Unit, onSettings: () -> Unit,
+    onFilms: () -> Unit,
 ) {
     val recent by library.recentRows.collectAsState()
     val favorites by library.homeFavorites.collectAsState()
@@ -75,6 +76,7 @@ fun HomeScreen(
                     onClick = if (source == null) onSettings else onLive, modifier = Modifier.focusRequester(emptyFocus))
             }
         }
+        item(key = "films") { PrimaryButton(stringResource(R.string.nav_films), onFilms) }
         if (updateState.pendingRelease != null) item { UpdateBanner(updateState, onInstallUpdate) }
     }
 }

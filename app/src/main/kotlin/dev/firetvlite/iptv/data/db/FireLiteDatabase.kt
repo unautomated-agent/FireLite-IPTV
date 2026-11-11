@@ -16,8 +16,10 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ProgrammeEntity::class,
         ChannelEpgEntity::class,
         XtreamChannelEntity::class,
+        FilmRatingEntity::class,
+        FilmBudgetEntity::class,
     ],
-    version = 6,
+    version = 7,
     exportSchema = false,
 )
 abstract class FireLiteDatabase : RoomDatabase() {
@@ -26,8 +28,21 @@ abstract class FireLiteDatabase : RoomDatabase() {
     abstract fun userDao(): UserDao
     abstract fun epgDao(): EpgDao
     abstract fun xtreamDao(): XtreamDao
+    abstract fun filmDao(): FilmDao
 
     companion object {
+        val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE programme ADD COLUMN year INTEGER")
+                db.execSQL("ALTER TABLE programme ADD COLUMN originalTitle TEXT")
+                db.execSQL("ALTER TABLE programme ADD COLUMN credits TEXT")
+                db.execSQL("ALTER TABLE programme ADD COLUMN episodeNum TEXT")
+                db.execSQL("ALTER TABLE programme ADD COLUMN categories TEXT NOT NULL DEFAULT ''")
+                db.execSQL("CREATE TABLE film_rating (cacheKey TEXT NOT NULL PRIMARY KEY, imdbRating REAL, imdbVotes INTEGER NOT NULL, imdbId TEXT, fetchedAt INTEGER NOT NULL)")
+                db.execSQL("CREATE TABLE film_budget (day INTEGER NOT NULL PRIMARY KEY, used INTEGER NOT NULL)")
+                db.execSQL("UPDATE source SET epgRefreshedAt=0")
+            }
+        }
         val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE source ADD COLUMN importedVersionCode INTEGER NOT NULL DEFAULT 0")
@@ -95,7 +110,7 @@ abstract class FireLiteDatabase : RoomDatabase() {
 
         fun create(context: Context): FireLiteDatabase =
             Room.databaseBuilder(context, FireLiteDatabase::class.java, "firelite.db")
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
                 .build()
     }
 }

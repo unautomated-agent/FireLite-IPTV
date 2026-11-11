@@ -14,6 +14,23 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class XmlTvParserTest {
+    @Test fun retainsFilmMetadataAndPrefersPolishAndOriginalXxTitles() = runBlocking {
+        val xml = """<tv><programme channel="Kino" start="20261111190000" stop="20261111210000">
+            <title lang="en">English</title><title lang="pl">Polski film</title><title lang="xx">Original</title>
+            <title lang="en">Other English</title><date>2002</date><category>dramat</category><category>komedia</category>
+            <credits><director>Chris Weitz</director><actor>Hugh Grant</actor></credits><episode-num></episode-num>
+            </programme></tv>"""
+        var p: XmlTvProgramme? = null
+        XmlTvParser.parse(ByteArrayInputStream(xml.toByteArray()), EpgWindow(Long.MIN_VALUE, Long.MAX_VALUE),
+            { _, _ -> }, { p = it })
+        assertEquals("Polski film", p!!.title)
+        assertEquals("Original", p!!.originalTitle)
+        assertEquals(2002, p!!.year)
+        assertEquals("dramat\nkomedia", p!!.categories)
+        assertTrue(p!!.credits!!.contains("Chris Weitz"))
+        assertTrue(p!!.credits!!.contains("Hugh Grant"))
+        assertEquals("", p!!.episodeNum)
+    }
     @Test fun streamsLargeGuideAndCanonicalizesProgrammeChannelIdsForMatching() = runBlocking {
         val xml = "<tv><channel id='TVN.PL'><display-name>TVN</display-name></channel>" +
             "<programme channel='tvn.pl ' start='20261111193000' stop='20261111203000 +0000'><title>News</title></programme>".repeat(10_000) + "</tv>"

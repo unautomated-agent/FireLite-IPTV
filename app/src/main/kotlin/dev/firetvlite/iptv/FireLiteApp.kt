@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -20,10 +21,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.unit.dp
 import dev.firetvlite.iptv.ui.components.FLText
+import dev.firetvlite.iptv.ui.components.WarsawClockBox
+import dev.firetvlite.iptv.ui.components.LocalFilmRatings
+import dev.firetvlite.iptv.ui.screens.FilmRankingsScreen
 import dev.firetvlite.iptv.ui.navigation.AppNavigationRail
 import dev.firetvlite.iptv.ui.navigation.Destination
 import dev.firetvlite.iptv.ui.navigation.RailCollapsedWidth
@@ -50,7 +55,10 @@ fun FireLiteApp(
 ) {
     ReferenceDensity {
         FireLiteTheme {
-            AppShell(updateViewModel, libraryViewModel, playerViewModel)
+            val ratings by libraryViewModel.films.ratings.collectAsState()
+            CompositionLocalProvider(LocalFilmRatings provides ratings) {
+                AppShell(updateViewModel, libraryViewModel, playerViewModel)
+            }
         }
     }
 }
@@ -103,7 +111,7 @@ private fun AppShell(
             targetState = current,
             modifier = Modifier
                 .fillMaxSize()
-                .padding(start = RailCollapsedWidth, top = if (mode == PlayerMode.MainMenu) 148.dp else 0.dp),
+                .padding(start = RailCollapsedWidth, top = if (mode == PlayerMode.MainMenu) 148.dp else 56.dp),
             transitionSpec = {
                 (fadeIn(tween(durationMillis = 260, delayMillis = 60)) +
                     slideInVertically(tween(durationMillis = 300)) { fullHeight -> fullHeight / 28 }) togetherWith
@@ -118,6 +126,7 @@ private fun AppShell(
                     updateState = updateState,
                     onInstallUpdate = updateViewModel::downloadAndInstall,
                     onLive = { navigate(Destination.Live) }, onSettings = { navigate(Destination.Settings) },
+                    onFilms = { navigate(Destination.Films) },
                 )
                 Destination.Live -> LiveTvScreen(
                     library = libraryViewModel,
@@ -151,6 +160,8 @@ private fun AppShell(
                     current == Destination.Favorites && mainMenuVisible, tabReturn, { navigate(Destination.Live) })
                 Destination.Search -> SearchScreen(libraryViewModel, playerViewModel,
                     current == Destination.Search && mainMenuVisible, tabReturn)
+                Destination.Films -> FilmRankingsScreen(libraryViewModel, playerViewModel,
+                    current == Destination.Films && mainMenuVisible, onSettings = { navigate(Destination.Settings) })
             }
         }
 
@@ -171,5 +182,6 @@ private fun AppShell(
                 playerViewModel.showMainMenu()
                 navigate(if (settings) Destination.Settings else Destination.Home)
             })
+        WarsawClockBox(Modifier.align(Alignment.TopStart).padding(16.dp))
     }
 }

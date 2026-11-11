@@ -21,6 +21,11 @@ data class XmlTvProgramme(
     val title: String,
     val description: String?,
     val category: String?,
+    val year: Int? = null,
+    val originalTitle: String? = null,
+    val credits: String? = null,
+    val episodeNum: String? = null,
+    val categories: String = "",
 )
 
 object XmlTvParser {
@@ -96,6 +101,12 @@ object XmlTvParser {
         var polishTitle = false
         var description: String? = null
         var category: String? = null
+        var year: Int? = null
+        var originalTitle: String? = null
+        var originalLanguage: String? = null
+        var credits: String? = null
+        var episodeNum: String? = null
+        val categories = ArrayList<String>()
         val depth = parser.depth
         while (!(parser.next() == XmlPullParser.END_TAG && parser.depth == depth)) {
             if (parser.eventType == XmlPullParser.END_DOCUMENT) throw IOException("Truncated programme")
@@ -105,17 +116,29 @@ object XmlTvParser {
                     val lang = parser.getAttributeValue(null, "lang").orEmpty().lowercase(Locale.ROOT)
                     val polish = lang == "pl" || lang.startsWith("pl-")
                     val value = text(parser, 2_048)
+                    if (lang == "xx" || (lang.startsWith("en") && originalLanguage != "xx")) {
+                        originalTitle = value
+                        originalLanguage = lang
+                    }
                     if (title == null || (polish && !polishTitle)) {
                         title = value
                         polishTitle = polish
                     }
                 }
                 "desc" -> if (description == null) description = text(parser, 65_536) else skip(parser)
-                "category" -> if (category == null) category = text(parser, 512) else skip(parser)
+                "category" -> {
+                    val value = text(parser, 512)
+                    if (category == null) category = value
+                    if (categories.size < 100) categories.add(value)
+                }
+                "date" -> text(parser, 32).let { if (it.matches(Regex("[0-9]{4}"))) year = it.toInt() }
+                "credits" -> credits = readCredits(parser)
+                "episode-num" -> episodeNum = text(parser, 512)
                 else -> skip(parser)
             }
         }
-        return XmlTvProgramme(channel, start, stop, title.orEmpty(), description, category)
+        return XmlTvProgramme(channel, start, stop, title.orEmpty(), description, category,
+            year, originalTitle, credits, episodeNum, categories.joinToString("\n"))
     }
 
     private fun text(parser: XmlPullParser, limit: Int): String {
@@ -128,6 +151,20 @@ object XmlTvParser {
             }
         }
         return value.toString().trim()
+    }
+
+    private fun readCredits(parser: XmlPullParser): String {
+        val depth = parser.depth
+        val entries = ArrayList<String>()
+        while (!(parser.next() == XmlPullParser.END_TAG && parser.depth == depth)) {
+            if (parser.eventType == XmlPullParser.END_DOCUMENT) throw IOException("Truncated credits")
+            if (parser.eventType == XmlPullParser.START_TAG) {
+                val role = parser.name
+                val name = text(parser, 2_048)
+                if (entries.size < 100) entries.add("$role: $name")
+            }
+        }
+        return entries.joinToString("\n")
     }
 
     private fun skip(parser: XmlPullParser) {

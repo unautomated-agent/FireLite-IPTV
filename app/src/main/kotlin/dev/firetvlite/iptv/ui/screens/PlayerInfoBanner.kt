@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -25,8 +26,10 @@ import dev.firetvlite.iptv.playback.PlaybackFrame
 import dev.firetvlite.iptv.playback.PlaybackTime
 import dev.firetvlite.iptv.ui.components.ChannelLogo
 import dev.firetvlite.iptv.ui.components.FLText
+import dev.firetvlite.iptv.ui.components.ImdbRating
 import dev.firetvlite.iptv.ui.components.ProgressBar
 import dev.firetvlite.iptv.ui.components.clockTime
+import dev.firetvlite.iptv.ui.components.minuteClock
 import dev.firetvlite.iptv.ui.components.programmeTimes
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 
@@ -35,6 +38,7 @@ internal fun PlayerInfoBanner(channel: ChannelEntity?, frame: PlaybackFrame, gui
     expanded: Boolean, scroll: ScrollState, archive: Boolean) {
     val colors = FireLiteTheme.colors
     val type = FireLiteTheme.typography
+    val now by minuteClock()
     Column(Modifier.fillMaxWidth()
         .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = if (expanded) 0f else 0.7f))))
         .padding(start = 32.dp, end = 32.dp, top = 36.dp, bottom = 24.dp)) {
@@ -50,12 +54,13 @@ internal fun PlayerInfoBanner(channel: ChannelEntity?, frame: PlaybackFrame, gui
                 FLText(if (archive) "ARCHIWUM" else "NA ŻYWO", style = type.label,
                     color = colors.accent, modifier = Modifier.clip(RoundedCornerShape(6.dp))
                         .background(colors.accent.copy(alpha = 0.15f)).padding(horizontal = 12.dp, vertical = 6.dp))
-                FLText(clockTime(frame.nowMs), style = type.headline)
+                FLText(clockTime(now), style = type.headline)
             }
             val current = guide.current
             FLText(current?.title ?: "Brak informacji o programie",
                 style = type.headline.copy(fontSize = 28.sp, fontWeight = FontWeight.Bold), maxLines = 2)
             if (current != null) {
+                ImdbRating(current)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     FLText(programmeTimes(current), style = type.body)
                     FLText("jeszcze ${((current.stop - frame.watchedMs).coerceAtLeast(0) + 59_999) / 60_000} min",

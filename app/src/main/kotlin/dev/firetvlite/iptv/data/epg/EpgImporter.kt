@@ -55,6 +55,9 @@ internal class EpgImporter(private val database: FireLiteDatabase) {
                                     sourceId = source.id, generation = generation, epgKey = key,
                                     start = programme.start, stop = programme.stop, title = programme.title,
                                     description = programme.description, category = programme.category,
+                                    year = programme.year, originalTitle = programme.originalTitle,
+                                    credits = programme.credits, episodeNum = programme.episodeNum,
+                                    categories = programme.categories,
                                 ))
                                 if (batch.size == 500) {
                                     count += dao.insertProgrammes(batch).count { it != -1L }

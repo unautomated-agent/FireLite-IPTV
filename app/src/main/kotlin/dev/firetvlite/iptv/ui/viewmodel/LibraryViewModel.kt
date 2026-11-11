@@ -50,6 +50,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     private val container = (application as FireLiteApplication).container
     private val repository: LibraryRepository = container.library
+    val films = container.films
     private val channelDao = container.database.channelDao()
     private val userDao = container.database.userDao()
 
@@ -162,6 +163,11 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     fun removeFavorite(streamUrl: String) {
         viewModelScope.launch { userDao.removeFavorite(streamUrl) }
+    }
+
+    suspend fun allChannelIndex(channelId: Long): Int? {
+        val id = source.value?.id ?: return null
+        return channelDao.allIndexById(id, channelId)
     }
 
     suspend fun channelIndex(key: GroupKey, url: String): Int? {

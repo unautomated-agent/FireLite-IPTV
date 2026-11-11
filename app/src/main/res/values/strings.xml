@@ -1,6 +1,23 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Default (and only) UI language: Polish. Resource names are English. -->
 <resources>
+    <string name="nav_films">Najlepsze filmy</string>
+    <string name="films_setup_hint">Ustaw klucz OMDb w Ustawieniach, aby zobaczyć oceny IMDb i ranking filmów.</string>
+    <string name="films_first_window">Najbliższe 24 h</string>
+    <string name="films_second_window">Pojutrze (24–48 h)</string>
+    <string name="films_selected_tab">● %1$s</string>
+    <string name="films_empty">Brak filmów w tym przedziale. Odśwież EPG w Ustawieniach.</string>
+    <string name="films_starts_at">Zaczyna się o %1$s</string>
+    <string name="films_airing_time">NA ŻYWO · %1$s</string>
+    <string name="imdb_rating">IMDb %1$s</string>
+    <string name="imdb_unrated">IMDb —</string>
+    <string name="omdb_key_label">Klucz OMDb (oceny IMDb)</string>
+    <string name="omdb_key_help">Darmowy klucz: omdbapi.com/apikey.aspx</string>
+    <string name="omdb_key_save">Zapisz klucz OMDb</string>
+    <string name="omdb_key_set">ustawiony</string>
+    <string name="omdb_key_missing">brak</string>
+    <string name="omdb_key_diagnostics">Klucz OMDb: %1$s</string>
+    <string name="channel_next_programme">Następnie: %1$s %2$s</string>
     <string name="diagnostics_title">Diagnostyka</string>
     <string name="diagnostics_open">Pokaż raport i kod QR</string>
     <string name="diagnostics_scan">Zeskanuj kod telefonem i prześlij tekst raportu. Dane logowania są ukryte. Góra/Dół przewijają raport.</string>
@@ -106,7 +123,7 @@
     <string name="channel_timeline_start">Początek archiwum</string>
     <string name="channel_timeline_unavailable">Ten kanał nie ma dostępnego archiwum.</string>
     <string name="channel_timeline_future">Ten program jeszcze się nie rozpoczął.</string>
-    <string name="channel_timeline_hint">Góra/Dół: audycja · OK: oglądaj · Wstecz: zamknij</string>
+    <string name="channel_timeline_hint">Góra/Dół: audycja · ⏪/⏩: dzień · OK: oglądaj · Wstecz: zamknij</string>
     <string name="channel_timeline_overlay_hint">Prawo: historia audycji</string>
     <string name="player_seek_unsupported">Przewijanie nie jest dostępne dla tego kanału.</string>
     <string name="player_catchup_unsupported">Archiwum nie działa dla tego kanału.</string>

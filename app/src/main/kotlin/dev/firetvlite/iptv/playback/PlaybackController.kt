@@ -16,6 +16,7 @@ import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import kotlinx.coroutines.CoroutineScope
@@ -94,7 +95,11 @@ class PlaybackController internal constructor(
         val renderers = DefaultRenderersFactory(context).setEnableDecoderFallback(true)
         ExoPlayer.Builder(context, renderers)
             .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
-            .build()
+            .build().apply {
+                trackSelectionParameters = trackSelectionParameters.buildUpon()
+                    .setPreferredAudioLanguages(*AudioPreferences.languages(listOf(Locale.getDefault())).toTypedArray())
+                    .build()
+            }
     }, { Log.d("FireLiteStream", it) }, setStream = { player, item, factory ->
         player.setMediaSource(DefaultMediaSourceFactory(factory).createMediaSource(item))
     }, recordPlayback = diagnosticRecorder(context, scope))
@@ -187,6 +192,12 @@ class PlaybackController internal constructor(
         override fun onAudioDecoderReleased(eventTime: AnalyticsListener.EventTime, decoderName: String) {
             audioDecoder = null
         }
+
+        override fun onAudioInputFormatChanged(eventTime: AnalyticsListener.EventTime, format: Format,
+            decoderReuseEvaluation: DecoderReuseEvaluation?) { recordSuccess() }
+
+        override fun onVideoInputFormatChanged(eventTime: AnalyticsListener.EventTime, format: Format,
+            decoderReuseEvaluation: DecoderReuseEvaluation?) { recordSuccess() }
     }
 
     private fun describe(format: Format): String =
@@ -273,7 +284,6 @@ class PlaybackController internal constructor(
 
     private fun applyQuality(player: ExoPlayer) {
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-            .setPreferredAudioLanguages(*AudioPreferences.languages(listOf(Locale.getDefault())).toTypedArray())
             .setMaxVideoSize(if (preview) 960 else Int.MAX_VALUE, if (preview) 540 else Int.MAX_VALUE)
             .setMaxVideoBitrate(if (preview) 1_500_000 else Int.MAX_VALUE)
             .build()

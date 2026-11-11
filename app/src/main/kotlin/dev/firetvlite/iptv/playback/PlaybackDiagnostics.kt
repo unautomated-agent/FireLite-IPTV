@@ -31,7 +31,7 @@ internal object PlaybackDiagnosticRecord {
             val hiddenPaths = urls.replace(masked) { match ->
                 runCatching {
                     val uri = URI(match.value)
-                    "${uri.scheme}://${uri.rawAuthority}/[ścieżka ukryta]"
+                    "${uri.scheme}://${uri.rawAuthority}/__path_hidden__"
                 }.getOrDefault("[adres ukryty]")
             }
             return utf8Limit(hiddenPaths.replace(Regex("\\s+"), " "), limit)

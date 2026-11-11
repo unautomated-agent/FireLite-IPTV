@@ -78,6 +78,7 @@ import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 import dev.firetvlite.iptv.ui.viewmodel.PlayerMessage
 import dev.firetvlite.iptv.ui.viewmodel.PlayerViewModel
 import dev.firetvlite.iptv.playback.PlayerMode
+import dev.firetvlite.iptv.playback.RemotePress
 import dev.firetvlite.iptv.ui.viewmodel.LibraryViewModel
 import dev.firetvlite.iptv.ui.viewmodel.ZapPosition
 import kotlinx.coroutines.delay
@@ -145,7 +146,7 @@ private fun PlayerContent(viewModel: PlayerViewModel) {
     val rootFocus = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
     var okJob by remember { mutableStateOf<Job?>(null) }
-    var okFired by remember { mutableStateOf(false) }
+    val okPress = remember { RemotePress() }
     var leftJob by remember { mutableStateOf<Job?>(null) }
     var leftFired by remember { mutableStateOf(false) }
     DisposableEffect(Unit) { onDispose { okJob?.cancel(); leftJob?.cancel() } }
@@ -183,25 +184,25 @@ private fun PlayerContent(viewModel: PlayerViewModel) {
                     return@onPreviewKeyEvent true
                 }
                 if (event.key == Key.Menu) {
-                    if (event.type == KeyEventType.KeyUp) viewModel.openOverlay()
+                    if (event.type == KeyEventType.KeyUp) viewModel.openTimeline()
                     return@onPreviewKeyEvent true
                 }
                 if (event.key == Key.DirectionCenter || event.key == Key.Enter || event.key == Key.NumPadEnter) {
                     if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0) {
                         overlayToken++
                         okJob?.cancel()
-                        okFired = false
+                        okPress.begin()
                         okJob = scope.launch {
                             delay(600)
-                            if (!okFired) { okFired = true; viewModel.toggleFavorite() }
+                            if (okPress.longPress()) viewModel.toggleFavorite()
                         }
-                    } else if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.isLongPress && !okFired) {
-                        okFired = true
+                    } else if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.isLongPress) {
                         okJob?.cancel()
-                        viewModel.toggleFavorite()
+                        if (okPress.longPress()) viewModel.toggleFavorite()
                     } else if (event.type == KeyEventType.KeyUp) {
                         okJob?.cancel()
                         okJob = null
+                        if (okPress.release()) viewModel.openOverlay()
                     }
                     return@onPreviewKeyEvent true
                 }
@@ -224,7 +225,7 @@ private fun PlayerContent(viewModel: PlayerViewModel) {
                         true
                     }
                     Key.MediaPlayPause -> {
-                        viewModel.togglePause()
+                        if (firstPress) viewModel.togglePause()
                         overlayToken++
                         true
                     }

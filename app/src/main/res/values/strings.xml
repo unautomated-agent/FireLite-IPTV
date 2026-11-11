@@ -92,7 +92,7 @@
     <string name="player_connecting">Łączenie…</string>
     <string name="player_error">Ten kanał nie działa (%1$s).\nGóra/Dół – inny kanał, Wstecz – lista.</string>
     <string name="player_ended">Transmisja się zakończyła.</string>
-    <string name="player_hint">Góra/Dół: kanał · Lewo/Prawo: ±10 s · ⏪: oś czasu · ⏩: +30 s\nPrzytrzymaj Lewo: początek audycji · Menu: lista · Przytrzymaj OK: ulubione</string>
+    <string name="player_hint">Góra/Dół lub CH±: kanał · Lewo/Prawo: ±10 s · ⏩: +30 s · Play/Pause: pauza\nMenu/⏪: historia · OK: kanały · Przytrzymaj OK: ulubione · Przytrzymaj Lewo: początek audycji</string>
     <string name="channel_timeline_title">Historia audycji · %1$s</string>
     <string name="channel_timeline_live">Na żywo</string>
     <string name="channel_timeline_hour">Przedział godzinowy</string>

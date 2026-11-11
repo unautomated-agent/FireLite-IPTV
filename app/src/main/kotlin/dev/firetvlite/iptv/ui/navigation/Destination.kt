@@ -12,8 +12,6 @@ enum class Destination(
     Home(NavIconKind.Home, R.string.nav_home),
     Live(NavIconKind.Live, R.string.nav_live),
     Guide(NavIconKind.Guide, R.string.nav_guide),
-    Movies(NavIconKind.Movies, R.string.nav_movies),
-    Series(NavIconKind.Series, R.string.nav_series),
     Search(NavIconKind.Search, R.string.nav_search),
     Favorites(NavIconKind.Favorites, R.string.nav_favorites),
     Settings(NavIconKind.Settings, R.string.nav_settings),

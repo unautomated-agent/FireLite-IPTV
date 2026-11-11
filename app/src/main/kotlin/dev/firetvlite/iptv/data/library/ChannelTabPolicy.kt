@@ -1,6 +1,15 @@
 package dev.firetvlite.iptv.data.library
 
 object ChannelTabPolicy {
+    fun collectionFocusIndex(count: Int, removedIndex: Int?, restoredIndex: Int?, initialized: Boolean,
+        preferHeader: Boolean): Int? = when {
+        initialized && removedIndex == null -> null
+        count == 0 -> -1
+        removedIndex != null -> removedIndex.coerceIn(0, count - 1)
+        preferHeader -> -1
+        else -> (restoredIndex ?: 0).coerceIn(0, count - 1)
+    }
+
     fun canSelectGroup(restoreToken: Int?, handledToken: Int?): Boolean =
         restoreToken == null || restoreToken == handledToken
 

@@ -13,6 +13,8 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -30,6 +32,7 @@ import androidx.paging.compose.itemKey
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.db.ChannelRow
 import dev.firetvlite.iptv.data.db.ProgrammeEntity
+import dev.firetvlite.iptv.data.library.ChannelTabPolicy
 import dev.firetvlite.iptv.playback.RemotePress
 import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.PrimaryButton
@@ -58,6 +61,8 @@ internal fun ChannelListScreen(
     val state = rememberLazyListState()
     val requesters = remember(source?.id) { mutableMapOf<Long, FocusRequester>() }
     val fallback = remember { FocusRequester() }
+    var focusInitialized by remember(active, returnTarget?.token, source?.id) { mutableStateOf(false) }
+    var removedIndex by remember(active, returnTarget?.token, source?.id) { mutableStateOf<Int?>(null) }
     val now by wallClock()
     val visibleIds = state.layoutInfo.visibleItemsInfo.mapNotNull { info ->
         if (info.index < rows.itemCount) rows.peek(info.index)?.channel?.id else null
@@ -66,12 +71,20 @@ internal fun ChannelListScreen(
     val byChannel = programmes.associateBy { it.channelId }
     LaunchedEffect(active, returnTarget?.token, rows.itemCount, source?.id) {
         if (!active) return@LaunchedEffect
-        if (rows.itemCount == 0 || (header != null && returnTarget == null)) fallback.requestFocusWhenReady()
-        else {
-            val index = returnTarget?.channel?.streamUrl?.let { findIndex(it) }?.coerceIn(0, rows.itemCount - 1) ?: 0
-            state.scrollToItem(index)
+        val restoredIndex = if (!focusInitialized && removedIndex == null) {
+            returnTarget?.channel?.streamUrl?.let { findIndex(it) }
+        } else null
+        val index = ChannelTabPolicy.collectionFocusIndex(rows.itemCount, removedIndex, restoredIndex,
+            focusInitialized, header != null && returnTarget == null) ?: return@LaunchedEffect
+        if (index < 0) {
+            fallback.requestFocusWhenReady()
+            focusInitialized = header != null
+        } else {
+            if (removedIndex == null) state.scrollToItem(index)
             val row = snapshotFlow { rows.peek(index) }.filterNotNull().first()
             requesters.getOrPut(row.channel.id) { FocusRequester() }.requestFocusWhenReady()
+            focusInitialized = true
+            removedIndex = null
         }
     }
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -85,8 +98,11 @@ internal fun ChannelListScreen(
             items(rows.itemCount, key = rows.itemKey { it.channel.id }) { index ->
                 rows[index]?.let { row ->
                     CollectionRow(row, byChannel[row.channel.id]?.programme, now,
-                        onClick = { onPlay(row, index) }, onMenu = { library.toggleFavorite(row.channel.streamUrl) },
-                        onLongClick = onLongClick?.let { { it(row) } },
+                        onClick = { onPlay(row, index) }, onMenu = {
+                            if (onLongClick != null) removedIndex = index
+                            library.toggleFavorite(row.channel.streamUrl)
+                        },
+                        onLongClick = onLongClick?.let { { removedIndex = index; it(row) } },
                         modifier = Modifier.focusRequester(requesters.getOrPut(row.channel.id) { FocusRequester() }))
                 }
             }

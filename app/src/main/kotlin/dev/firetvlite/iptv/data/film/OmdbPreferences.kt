@@ -2,6 +2,7 @@ package dev.firetvlite.iptv.data.film
 
 import android.content.Context
 import dev.firetvlite.iptv.BuildConfig
+import dev.firetvlite.iptv.R
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
@@ -18,4 +19,4 @@ class OmdbPreferences(context: Context) {
         ?: "https://www.omdbapi.com/" else "https://www.omdbapi.com/"
 }
 
-fun omdbKeyStatus(configured: Boolean): String = if (configured) "ustawiony" else "brak"
+fun omdbKeyStatus(configured: Boolean): Int = if (configured) R.string.omdb_key_set else R.string.omdb_key_missing

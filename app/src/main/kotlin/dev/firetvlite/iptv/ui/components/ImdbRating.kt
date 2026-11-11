@@ -3,6 +3,8 @@ package dev.firetvlite.iptv.ui.components
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
+import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.db.FilmRatingEntity
 import dev.firetvlite.iptv.data.db.ProgrammeEntity
 import dev.firetvlite.iptv.data.film.Films
@@ -15,7 +17,7 @@ val LocalFilmRatings = staticCompositionLocalOf<Map<String, FilmRatingEntity>> {
 fun imdbSuffix(programme: ProgrammeEntity?): String {
     if (programme == null || !Films.candidate(programme)) return ""
     val rating = LocalFilmRatings.current[Films.key(programme)]?.imdbRating ?: return ""
-    return " · IMDb ${String.format(Locale.ROOT, "%.1f", rating)}"
+    return " · " + stringResource(R.string.imdb_rating, String.format(Locale.ROOT, "%.1f", rating))
 }
 
 @Composable

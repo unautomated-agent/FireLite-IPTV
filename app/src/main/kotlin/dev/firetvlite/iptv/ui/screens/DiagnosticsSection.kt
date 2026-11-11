@@ -78,7 +78,8 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
     }
     val omdbKey by (context.applicationContext as FireLiteApplication).container.films.preferences.key.collectAsState()
     val report = remember(source, state, stats, crash, playback, omdbKey.isNotBlank()) {
-        "Klucz OMDb: ${omdbKeyStatus(omdbKey.isNotBlank())}\n" + DiagnosticsReport.text(source, state, stats, crash, playback)
+        context.getString(R.string.omdb_key_diagnostics, context.getString(omdbKeyStatus(omdbKey.isNotBlank()))) +
+            "\n" + DiagnosticsReport.text(source, state, stats, crash, playback)
     }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         FLText(stringResource(R.string.diagnostics_title), style = FireLiteTheme.typography.headline)

@@ -537,7 +537,7 @@ private fun ChannelBrowser(
             }
             if (overlay) {
                 detailGuide.next?.takeIf { pendingCategoryFocus == null }?.let {
-                    FLText("Następnie: ${clockTime(it.start)} ${it.title}",
+                    FLText(stringResource(R.string.channel_next_programme, clockTime(it.start), it.title),
                         style = FireLiteTheme.typography.label, maxLines = 2,
                         modifier = Modifier.padding(top = 8.dp))
                     ImdbRating(it)

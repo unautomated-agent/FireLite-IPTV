@@ -4,6 +4,7 @@ import dev.firetvlite.iptv.data.db.ChannelEntity
 import dev.firetvlite.iptv.data.db.FilmRatingEntity
 import dev.firetvlite.iptv.data.db.ProgrammeEntity
 import dev.firetvlite.iptv.data.film.*
+import dev.firetvlite.iptv.R
 import java.time.Instant
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.flow.flowOf
@@ -179,8 +180,8 @@ class FilmsTest {
         assertEquals(OmdbResult.Missing, OmdbHttpClient.decode("""{"Response":"False","Error":"Movie not found!"}"""))
         assertEquals(OmdbResult.Failed, OmdbHttpClient.decode("""{"Response":"False","Error":"Invalid API key!"}"""))
         assertEquals(OmdbResult.Failed, OmdbHttpClient.decode("garbage"))
-        assertEquals("ustawiony", omdbKeyStatus(true))
-        assertEquals("brak", omdbKeyStatus(false))
+        assertEquals(R.string.omdb_key_set, omdbKeyStatus(true))
+        assertEquals(R.string.omdb_key_missing, omdbKeyStatus(false))
     }
     private fun channel() = ChannelEntity(id = 1, sourceId = 1, position = 0, name = "Kino", groupName = "Filmy",
         streamUrl = "unused", logoUrl = null, tvgId = null, catchupType = null, catchupSource = null, catchupDays = 0)

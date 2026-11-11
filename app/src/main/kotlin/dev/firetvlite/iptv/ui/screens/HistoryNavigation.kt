@@ -36,12 +36,12 @@ internal object HistoryNavigation {
         return HistoryFocus(items[index].start, items[index].live)
     }
 
-    fun dayLabel(time: Long, now: Long): String {
+    fun dayLabel(time: Long, now: Long, todayLabel: String, yesterdayLabel: String): String {
         val day = Instant.ofEpochMilli(time).atZone(zone).toLocalDate()
         val today = Instant.ofEpochMilli(now).atZone(zone).toLocalDate()
         return when (day) {
-            today -> "Dziś"
-            today.minusDays(1) -> "Wczoraj"
+            today -> todayLabel
+            today.minusDays(1) -> yesterdayLabel
             else -> day.dayOfWeek.getDisplayName(TextStyle.SHORT, polish).removeSuffix(".")
                 .replaceFirstChar { it.titlecase(polish) } + " " + dateFormat.format(day)
         }

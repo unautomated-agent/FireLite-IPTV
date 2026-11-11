@@ -10,6 +10,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.FireLiteApplication
 import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.LabeledTextField
@@ -22,8 +24,8 @@ internal fun OmdbSettings() {
     val key by preferences.key.collectAsState()
     var draft by remember(key) { mutableStateOf(key) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        LabeledTextField("Klucz OMDb (oceny IMDb)", draft, { draft = it }, secret = true)
-        FLText("Darmowy klucz: omdbapi.com/apikey.aspx", style = FireLiteTheme.typography.label)
-        PrimaryButton("Zapisz klucz OMDb", { preferences.save(draft) })
+        LabeledTextField(stringResource(R.string.omdb_key_label), draft, { draft = it }, secret = true)
+        FLText(stringResource(R.string.omdb_key_help), style = FireLiteTheme.typography.label)
+        PrimaryButton(stringResource(R.string.omdb_key_save), { preferences.save(draft) })
     }
 }

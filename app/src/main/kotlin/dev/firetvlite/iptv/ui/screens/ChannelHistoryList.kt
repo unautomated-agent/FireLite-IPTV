@@ -63,6 +63,8 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
     var atStart by remember(target) { mutableStateOf(false) }
     val index = focus.index(items)
     val focused = items[index]
+    val dayLabel = HistoryNavigation.dayLabel(focused.start, now,
+        stringResource(R.string.channel_timeline_today), stringResource(R.string.channel_timeline_yesterday))
     val frame by player.frame.collectAsState()
     val playingIndex = if (target.playing) ChannelTimeline.historyFocusIndex(items, frame.watchedMs) else -1
     val requester = remember { FocusRequester() }
@@ -113,7 +115,7 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
                 FLText(stringResource(R.string.epg_next, "${clockTime(it.start)}–${clockTime(it.stop)}", timelineTitle(it)),
                     style = FireLiteTheme.typography.label, maxLines = 2, color = colors.textSecondary.copy(alpha = 0.6f))
             }
-            FLText(HistoryNavigation.dayLabel(focused.start, now), style = FireLiteTheme.typography.title,
+            FLText(dayLabel, style = FireLiteTheme.typography.title,
                 color = colors.accent)
             LazyColumn(state = listState, modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 itemsIndexed(items, key = { _, item -> if (item.live) "live" else "past:${item.start}" }) { itemIndex, item ->
@@ -128,7 +130,7 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
                     }
                 }
             }
-            FLText("${HistoryNavigation.dayLabel(focused.start, now)} · " +
+            FLText("$dayLabel · " +
                 (if (focused.live) "" else "${clockTime(focused.start)}–${clockTime(focused.stop)} · ") + timelineTitle(focused),
                 style = FireLiteTheme.typography.body, maxLines = 1)
             ImdbRating(focused.programme)

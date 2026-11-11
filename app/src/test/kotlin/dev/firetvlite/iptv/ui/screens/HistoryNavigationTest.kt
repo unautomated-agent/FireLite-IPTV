@@ -47,9 +47,14 @@ class HistoryNavigationTest {
     }
 
     @Test fun headersUseWarsawDatesAndPolishNames() {
-        assertEquals("Dziś", HistoryNavigation.dayLabel(now, now))
-        assertEquals("Wczoraj", HistoryNavigation.dayLabel(now - ChannelTimeline.DAY, now))
-        assertEquals("Pon 9.11", HistoryNavigation.dayLabel(now - 2 * ChannelTimeline.DAY, now))
-        assertEquals("Dziś", HistoryNavigation.dayLabel(time("2026-11-10T23:30:00Z"), time("2026-11-11T00:30:00Z")))
+        assertEquals("Dziś", HistoryNavigation.dayLabel(now, now, "Dziś", "Wczoraj"))
+        assertEquals("Wczoraj", HistoryNavigation.dayLabel(now - ChannelTimeline.DAY, now, "Dziś", "Wczoraj"))
+        assertEquals("Pon 9.11", HistoryNavigation.dayLabel(now - 2 * ChannelTimeline.DAY, now, "Dziś", "Wczoraj"))
+        assertEquals("Dziś", HistoryNavigation.dayLabel(time("2026-11-10T23:30:00Z"), time("2026-11-11T00:30:00Z"), "Dziś", "Wczoraj"))
+    }
+
+    @Test fun relativeHeadersUseResourceSuppliedLabels() {
+        assertEquals("today resource", HistoryNavigation.dayLabel(now, now, "today resource", "yesterday resource"))
+        assertEquals("yesterday resource", HistoryNavigation.dayLabel(now - ChannelTimeline.DAY, now, "today resource", "yesterday resource"))
     }
 }

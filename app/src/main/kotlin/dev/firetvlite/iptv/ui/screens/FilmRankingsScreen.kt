@@ -28,6 +28,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInputModeManager
 import androidx.compose.ui.input.InputMode
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.film.Films
 import dev.firetvlite.iptv.data.film.rankedFilms
 import dev.firetvlite.iptv.ui.components.ChannelLogo
@@ -67,19 +69,20 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
         }
     }
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        FLText("Najlepsze filmy", style = FireLiteTheme.typography.display)
+        FLText(stringResource(R.string.nav_films), style = FireLiteTheme.typography.display)
         if (key.isBlank()) {
-            FLText("Ustaw klucz OMDb w Ustawieniach, aby zobaczyć oceny IMDb i ranking filmów.", style = FireLiteTheme.typography.body)
-            FLText("Darmowy klucz: omdbapi.com/apikey.aspx", style = FireLiteTheme.typography.label)
-            PrimaryButton("Ustawienia", onSettings, Modifier.focusRequester(settingsFocus))
+            FLText(stringResource(R.string.films_setup_hint), style = FireLiteTheme.typography.body)
+            FLText(stringResource(R.string.omdb_key_help), style = FireLiteTheme.typography.label)
+            PrimaryButton(stringResource(R.string.nav_settings), onSettings, Modifier.focusRequester(settingsFocus))
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                listOf("Najbliższe 24 h", "Pojutrze (24–48 h)").forEachIndexed { index, title ->
-                    PrimaryButton((if (tab == index) "● " else "") + title, { tab = index },
+                listOf(R.string.films_first_window, R.string.films_second_window).forEachIndexed { index, resource ->
+                    val title = stringResource(resource)
+                    PrimaryButton(if (tab == index) stringResource(R.string.films_selected_tab, title) else title, { tab = index },
                         Modifier.focusRequester(tabFocus[index]))
                 }
             }
-            if (rows.isEmpty()) FLText("Brak filmów w tym przedziale. Odśwież EPG w Ustawieniach.", style = FireLiteTheme.typography.body)
+            if (rows.isEmpty()) FLText(stringResource(R.string.films_empty), style = FireLiteTheme.typography.body)
             LazyColumn(state = states[tab], verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(rows, key = { it.identity }) { film ->
                     val p = film.programme
@@ -91,18 +94,19 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
                             scope.launch {
                                 openFilmChannel(film.channel, library::channelIndex, library::zapContext, player::open)
                             }
-                        } else Toast.makeText(context, "Zaczyna się o ${clockTime(p.start)}", Toast.LENGTH_SHORT).show()
+                        } else Toast.makeText(context, context.getString(R.string.films_starts_at, clockTime(p.start)), Toast.LENGTH_SHORT).show()
                     }, modifier = Modifier.fillMaxWidth(), focusedScale = 1.01f) {
                         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                            FLText(score?.let { "IMDb ${String.format(Locale.ROOT, "%.1f", it)}" } ?: "IMDb —",
+                            FLText(if (score != null) stringResource(R.string.imdb_rating, String.format(Locale.ROOT, "%.1f", score))
+                                else stringResource(R.string.imdb_unrated),
                                 style = FireLiteTheme.typography.title, color = if (score != null) Color(0xFFF5C518) else colors.textSecondary)
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 FLText(p.title, style = FireLiteTheme.typography.title,
                                     color = if (score == null) colors.textSecondary else colors.textPrimary, maxLines = 1)
                                 FLText(listOfNotNull(p.originalTitle, p.year?.toString()).joinToString(" · "),
                                     style = FireLiteTheme.typography.label, color = colors.textSecondary, maxLines = 1)
-                                FLText((if (airing) "NA ŻYWO · " else "") + Films.time(p.start),
+                                FLText(if (airing) stringResource(R.string.films_airing_time, Films.time(p.start)) else Films.time(p.start),
                                     style = FireLiteTheme.typography.label, color = colors.accent)
                                 if (airing) ProgressBar(((now - p.start).toFloat() / (p.stop - p.start)).coerceIn(0f, 1f))
                             }

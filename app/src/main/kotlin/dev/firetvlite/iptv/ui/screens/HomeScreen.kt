@@ -76,7 +76,7 @@ fun HomeScreen(
                     onClick = if (source == null) onSettings else onLive, modifier = Modifier.focusRequester(emptyFocus))
             }
         }
-        item(key = "films") { PrimaryButton("Najlepsze filmy", onFilms) }
+        item(key = "films") { PrimaryButton(stringResource(R.string.nav_films), onFilms) }
         if (updateState.pendingRelease != null) item { UpdateBanner(updateState, onInstallUpdate) }
     }
 }

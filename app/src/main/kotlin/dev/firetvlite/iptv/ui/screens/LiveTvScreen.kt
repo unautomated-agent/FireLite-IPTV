@@ -57,6 +57,12 @@ import androidx.paging.compose.itemKey
 import androidx.paging.LoadState
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.db.ChannelRow
+import dev.firetvlite.iptv.data.db.ProgrammeEntity
+import dev.firetvlite.iptv.data.epg.CurrentAndNext
+import dev.firetvlite.iptv.playback.PlaybackTime
+import dev.firetvlite.iptv.ui.components.ProgressBar
+import dev.firetvlite.iptv.ui.components.programmeTimes
+import dev.firetvlite.iptv.ui.components.wallClock
 import dev.firetvlite.iptv.data.library.GroupKey
 import dev.firetvlite.iptv.data.library.ImportState
 import dev.firetvlite.iptv.ui.components.ChannelLogo
@@ -74,6 +80,9 @@ import dev.firetvlite.iptv.ui.viewmodel.PlayerViewModel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 /**
  * Live TV browser: groups on the left, the channels of the selected group in the middle (loaded page by page),
@@ -131,7 +140,7 @@ fun PlayerChannelOverlay(library: LibraryViewModel, player: PlayerViewModel) {
             library = library, player = player, active = true,
             overlay = true, showGroups = showGroups, onShowGroups = { showGroups = it },
             modifier = Modifier.fillMaxWidth(if (showGroups) 0.66f else 0.42f).fillMaxHeight()
-                .background(Brush.horizontalGradient(listOf(Color(0xDD101820), Color(0xF2101820))))
+                .background(Brush.horizontalGradient(listOf(Color(0xBF101820), Color(0xD2101820))))
                 .focusProperties { exit = { FocusRequester.Cancel } }.focusGroup(),
         )
     }
@@ -157,6 +166,18 @@ private fun ChannelBrowser(
     val scope = rememberCoroutineScope()
     val groupListState = rememberLazyListState()
     val channelListState = remember(selected) { LazyListState() }
+    val now by wallClock()
+    var visibleIds by remember(selected) { mutableStateOf<List<Long>>(emptyList()) }
+    LaunchedEffect(selected, pagingItems) {
+        snapshotFlow {
+            channelListState.layoutInfo.visibleItemsInfo.mapNotNull { info ->
+                if (info.index < pagingItems.itemCount) pagingItems.peek(info.index)?.channel?.id else null
+            }
+        }.distinctUntilChanged().collect { visibleIds = it }
+    }
+    val programmes by remember(visibleIds, now) { library.currentProgrammes(visibleIds, now) }
+        .collectAsState(initial = emptyList())
+    val currentProgrammes = programmes.groupBy { it.channelId }.mapValues { (_, entries) -> entries.maxBy { it.programme.start }.programme }
     val groupRequesters = remember(groups.map { it.key }) { groups.associate { it.key to FocusRequester() } }
     val firstChannelFocus = remember(selected) { FocusRequester() }
     val restoreFocus = remember(selected) { FocusRequester() }
@@ -186,6 +207,9 @@ private fun ChannelBrowser(
     }
 
     var focusedChannel by remember(selected) { mutableStateOf<ChannelRow?>(null) }
+    val detailGuide by remember(focusedChannel?.channel?.id, now) {
+        focusedChannel?.channel?.id?.let { library.guide(it, now) } ?: flowOf(CurrentAndNext(null, null))
+    }.collectAsState(initial = CurrentAndNext(null, null))
     var focusedIndex by remember(selected) { mutableStateOf(0) }
     LaunchedEffect(active, focusedChannel?.channel?.streamUrl, focusedIndex, selected, channelsHaveFocus) {
         if (overlay) return@LaunchedEffect
@@ -282,6 +306,7 @@ private fun ChannelBrowser(
                         onFocused = { library.selectGroup(group.key) },
                         onClick = { focusChannels() },
                         modifier = Modifier.focusRequester(groupRequesters.getValue(group.key)),
+                        translucent = overlay,
                     )
                 }
             }
@@ -319,6 +344,9 @@ private fun ChannelBrowser(
                         if (row != null) {
                             ChannelRowItem(
                                 row = row,
+                                programme = currentProgrammes[row.channel.id],
+                                now = now,
+                                translucent = overlay,
                                 modifier = when (index) {
                                     restoreIndex -> Modifier.focusRequester(restoreFocus)
                                     0 -> Modifier.focusRequester(firstChannelFocus)
@@ -333,14 +361,14 @@ private fun ChannelBrowser(
                                 onMenu = { library.toggleFavorite(row.channel.streamUrl) },
                             )
                         } else {
-                            Spacer(Modifier.fillMaxWidth().height(56.dp))
+                            Spacer(Modifier.fillMaxWidth().height(80.dp))
                         }
                     }
                 }
             }
         }
 
-        if (!overlay) DetailPanel(row = focusedChannel, onPreviewBounds = onPreviewBounds, modifier = Modifier.width(236.dp))
+        if (!overlay) DetailPanel(row = focusedChannel, guide = detailGuide, onPreviewBounds = onPreviewBounds, modifier = Modifier.width(236.dp))
     }
 }
 
@@ -351,13 +379,16 @@ private fun GroupRow(
     onFocused: () -> Unit,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    translucent: Boolean = false,
 ) {
     FocusSurface(
         onClick = onClick,
         onFocusChanged = { focused -> if (focused) onFocused() },
         modifier = modifier.fillMaxWidth(),
         background = SolidColor(
-            if (selected) FireLiteTheme.colors.surfaceHigh else FireLiteTheme.colors.surface,
+            if (translucent) {
+                if (selected) FireLiteTheme.colors.accent.copy(alpha = 0.12f) else Color.Transparent
+            } else if (selected) FireLiteTheme.colors.surfaceHigh else FireLiteTheme.colors.surface,
         ),
     ) {
         Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
@@ -379,6 +410,9 @@ private fun GroupRow(
 @Composable
 private fun ChannelRowItem(
     row: ChannelRow,
+    programme: ProgrammeEntity?,
+    now: Long,
+    translucent: Boolean,
     onFocused: () -> Unit,
     onClick: () -> Unit,
     onMenu: () -> Unit,
@@ -389,9 +423,10 @@ private fun ChannelRowItem(
         onClick = onClick,
         onFocusChanged = { focused -> if (focused) onFocused() },
         onMenuKey = onMenu,
+        background = SolidColor(if (translucent) Color.Transparent else FireLiteTheme.colors.surface),
         modifier = modifier
             .fillMaxWidth()
-            .height(56.dp),
+            .height(80.dp),
     ) {
         Row(
             modifier = Modifier
@@ -401,12 +436,14 @@ private fun ChannelRowItem(
             horizontalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             ChannelLogo(name = channel.name, logoUrl = channel.logoUrl)
-            FLText(
-                text = channel.name,
-                style = FireLiteTheme.typography.title,
-                maxLines = 1,
-                modifier = Modifier.weight(1f),
-            )
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                FLText(text = channel.name, style = FireLiteTheme.typography.title, maxLines = 1)
+                if (programme != null) {
+                    FLText(text = programme.title, style = FireLiteTheme.typography.label,
+                        color = FireLiteTheme.colors.textSecondary, maxLines = 1)
+                    ProgressBar(PlaybackTime.progress(now, programme.start, programme.stop))
+                }
+            }
             if (channel.catchupDays > 0) {
                 FLText(
                     text = stringResource(R.string.badge_catchup),
@@ -428,6 +465,7 @@ private fun ChannelRowItem(
 @Composable
 private fun DetailPanel(
     row: ChannelRow?,
+    guide: CurrentAndNext,
     onPreviewBounds: (Rect) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -443,9 +481,7 @@ private fun DetailPanel(
             .onGloballyPositioned { onPreviewBounds(it.boundsInRoot()) })
         if (row != null) {
             val channel = row.channel
-            ChannelLogo(name = channel.name, logoUrl = channel.logoUrl, size = 72.dp)
-            Spacer(modifier = Modifier.height(4.dp))
-            FLText(text = channel.name, style = FireLiteTheme.typography.headline, maxLines = 3)
+            FLText(text = channel.name, style = FireLiteTheme.typography.headline, maxLines = 2)
             FLText(
                 text = stringResource(R.string.detail_group, groupLabel(GroupKey.Named(channel.groupName))),
                 style = FireLiteTheme.typography.body,
@@ -457,6 +493,15 @@ private fun DetailPanel(
                     style = FireLiteTheme.typography.body,
                     color = FireLiteTheme.colors.accent,
                 )
+            }
+            guide.current?.let { current ->
+                FLText(programmeTimes(current), style = FireLiteTheme.typography.label, color = FireLiteTheme.colors.accent)
+                FLText(current.title, style = FireLiteTheme.typography.title, maxLines = 2)
+                current.description?.let { FLText(it, style = FireLiteTheme.typography.label, maxLines = 3) }
+            }
+            guide.next?.let { next ->
+                FLText(stringResource(R.string.epg_next, programmeTimes(next), next.title),
+                    style = FireLiteTheme.typography.label, maxLines = 3)
             }
         }
         Spacer(modifier = Modifier.weight(1f))

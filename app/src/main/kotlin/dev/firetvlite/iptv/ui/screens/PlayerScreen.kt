@@ -62,6 +62,11 @@ import androidx.media3.ui.PlayerView
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.db.ChannelEntity
 import dev.firetvlite.iptv.playback.PlaybackSnapshot
+import dev.firetvlite.iptv.playback.PlaybackFrame
+import dev.firetvlite.iptv.playback.PlaybackTime
+import dev.firetvlite.iptv.data.epg.CurrentAndNext
+import dev.firetvlite.iptv.ui.components.clockTime
+import dev.firetvlite.iptv.ui.components.programmeTimes
 import dev.firetvlite.iptv.playback.PlaybackStatus
 import dev.firetvlite.iptv.ui.components.ChannelLogo
 import dev.firetvlite.iptv.ui.components.FLText
@@ -80,7 +85,6 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 
 private const val OVERLAY_VISIBLE_MS = 5_000L
-private const val SNAPSHOT_INTERVAL_MS = 500L
 private const val SEEK_STEP_MS = 10_000L
 
 @Composable
@@ -91,7 +95,7 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
     val density = LocalDensity.current
     val full = mode.fullFrame
     val video = when {
-        full -> Modifier.fillMaxSize()
+        full -> Modifier
         mode == PlayerMode.Preview && previewBounds != null -> Modifier
             .offset { IntOffset(previewBounds.left.toInt(), previewBounds.top.toInt()) }
             .size(with(density) { previewBounds.width.toDp() }, with(density) { previewBounds.height.toDp() })
@@ -115,7 +119,7 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
             },
             update = { view -> if (view.player !== player) view.player = player },
             onRelease = { view -> view.player = null },
-            modifier = video,
+            modifier = if (full) Modifier.matchParentSize() else video,
         )
         if (mode == PlayerMode.Preview) Box(video) { StatusLayer(status) }
         if (mode == PlayerMode.Fullscreen) PlayerContent(viewModel)
@@ -129,17 +133,19 @@ private fun PlayerContent(viewModel: PlayerViewModel) {
     val channel by viewModel.channel.collectAsState()
     val position by viewModel.position.collectAsState()
     val isFavorite by viewModel.isFavorite.collectAsState()
-    val catchupOffset by viewModel.catchupOffsetMinutes.collectAsState()
+    val frame by viewModel.frame.collectAsState()
+    val guide by viewModel.programme.collectAsState()
     val message by viewModel.message.collectAsState()
 
     var overlayVisible by remember { mutableStateOf(true) }
     var overlayToken by remember { mutableIntStateOf(0) }
-    var snapshot by remember { mutableStateOf(PlaybackSnapshot.EMPTY) }
     val rootFocus = remember { FocusRequester() }
     val scope = rememberCoroutineScope()
     var okJob by remember { mutableStateOf<Job?>(null) }
     var okFired by remember { mutableStateOf(false) }
-    DisposableEffect(Unit) { onDispose { okJob?.cancel() } }
+    var leftJob by remember { mutableStateOf<Job?>(null) }
+    var leftFired by remember { mutableStateOf(false) }
+    DisposableEffect(Unit) { onDispose { okJob?.cancel(); leftJob?.cancel() } }
 
     LaunchedEffect(Unit) { rootFocus.requestFocusWhenReady() }
 
@@ -149,18 +155,30 @@ private fun PlayerContent(viewModel: PlayerViewModel) {
         delay(OVERLAY_VISIBLE_MS)
         overlayVisible = false
     }
-    LaunchedEffect(overlayVisible) {
-        while (overlayVisible) {
-            snapshot = viewModel.snapshot()
-            delay(SNAPSHOT_INTERVAL_MS)
-        }
-    }
-
     Box(
         modifier = Modifier
             .fillMaxSize()
             .focusRequester(rootFocus)
             .onPreviewKeyEvent { event ->
+                if (event.key == Key.DirectionLeft) {
+                    if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0) {
+                        overlayToken++
+                        leftFired = false
+                        leftJob?.cancel()
+                        leftJob = scope.launch {
+                            delay(600)
+                            if (!leftFired) { leftFired = true; viewModel.jumpToProgrammeStart() }
+                        }
+                    } else if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.isLongPress && !leftFired) {
+                        leftFired = true
+                        leftJob?.cancel()
+                        viewModel.jumpToProgrammeStart()
+                    } else if (event.type == KeyEventType.KeyUp) {
+                        leftJob?.cancel()
+                        if (!leftFired) viewModel.seek(-SEEK_STEP_MS)
+                    }
+                    return@onPreviewKeyEvent true
+                }
                 if (event.key == Key.Menu) {
                     if (event.type == KeyEventType.KeyUp) viewModel.openOverlay()
                     return@onPreviewKeyEvent true
@@ -194,11 +212,6 @@ private fun PlayerContent(viewModel: PlayerViewModel) {
                     }
                     Key.DirectionDown, Key.ChannelDown -> {
                         if (firstPress) viewModel.zap(1)
-                        overlayToken++
-                        true
-                    }
-                    Key.DirectionLeft -> {
-                        viewModel.seek(-SEEK_STEP_MS)
                         overlayToken++
                         true
                     }
@@ -265,8 +278,8 @@ private fun PlayerContent(viewModel: PlayerViewModel) {
                 channel = channel,
                 position = position,
                 isFavorite = isFavorite,
-                snapshot = snapshot,
-                catchupOffset = catchupOffset,
+                frame = frame,
+                guide = guide,
             )
         }
     }
@@ -328,8 +341,8 @@ private fun InfoBar(
     channel: ChannelEntity?,
     position: ZapPosition,
     isFavorite: Boolean,
-    snapshot: PlaybackSnapshot,
-    catchupOffset: Int,
+    frame: PlaybackFrame,
+    guide: CurrentAndNext,
 ) {
     val colors = FireLiteTheme.colors
     val typography = FireLiteTheme.typography
@@ -379,18 +392,33 @@ private fun InfoBar(
                 )
             }
             FLText(
-                text = timeLabel(snapshot, catchupOffset),
+                text = if (frame.nowMs - frame.watchedMs > PlaybackTime.LIVE_TOLERANCE_MS) {
+                    stringResource(R.string.player_watched_behind, clockTime(frame.watchedMs),
+                        ((frame.nowMs - frame.watchedMs) / 60_000).coerceAtLeast(1))
+                } else stringResource(R.string.player_watched_live, clockTime(frame.watchedMs)),
                 style = typography.title,
-                color = if (catchupOffset > 0) Color(0xFFFFB74D) else colors.textPrimary,
+                color = if (frame.nowMs - frame.watchedMs > PlaybackTime.LIVE_TOLERANCE_MS) Color(0xFFFFB74D) else colors.textPrimary,
             )
         }
 
-        val duration = snapshot.durationMs
-        if (snapshot.seekable && duration != null && duration > 0) {
-            ProgressBar(
-                progress = snapshot.positionMs.toFloat() / duration.toFloat(),
+        val current = guide.current
+        if (current != null) {
+            FLText("${programmeTimes(current)}  ${current.title}", style = typography.title, maxLines = 1)
+            ProgressBar(PlaybackTime.progress(frame.watchedMs, current.start, current.stop),
                 modifier = Modifier.padding(vertical = 2.dp),
-            )
+                liveProgress = if (frame.nowMs - frame.watchedMs > PlaybackTime.LIVE_TOLERANCE_MS)
+                    PlaybackTime.progress(frame.nowMs, current.start, current.stop) else null)
+        } else {
+            val snapshot = frame.snapshot
+            val duration = snapshot.durationMs
+            FLText(timeLabel(snapshot), style = typography.label)
+            if (snapshot.seekable && duration != null && duration > 0) {
+                ProgressBar(progress = snapshot.positionMs.toFloat() / duration.toFloat(),
+                    modifier = Modifier.padding(vertical = 2.dp))
+            }
+        }
+        guide.next?.let { next ->
+            FLText(stringResource(R.string.epg_next, programmeTimes(next), next.title), style = typography.label, maxLines = 1)
         }
         FLText(
             text = stringResource(R.string.player_hint),
@@ -401,8 +429,7 @@ private fun InfoBar(
 }
 
 @Composable
-private fun timeLabel(snapshot: PlaybackSnapshot, catchupOffset: Int): String {
-    if (catchupOffset > 0) return stringResource(R.string.player_archive, catchupOffset)
+private fun timeLabel(snapshot: PlaybackSnapshot): String {
     val behind = snapshot.liveOffsetMs
     if (behind != null) {
         return if (behind < LIVE_TOLERANCE_MS) {

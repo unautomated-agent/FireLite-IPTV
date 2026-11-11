@@ -12,9 +12,12 @@ import dev.firetvlite.iptv.data.library.LibraryRepository
 import dev.firetvlite.iptv.data.library.ZapContext
 import dev.firetvlite.iptv.data.library.GroupKey
 import dev.firetvlite.iptv.playback.CatchupUrlBuilder
-import dev.firetvlite.iptv.playback.PlaybackSnapshot
 import dev.firetvlite.iptv.playback.PlaybackStatus
 import dev.firetvlite.iptv.playback.PlayerMode
+import dev.firetvlite.iptv.playback.PlaybackFrame
+import dev.firetvlite.iptv.playback.PlaybackTime
+import dev.firetvlite.iptv.playback.SeekPlan
+import dev.firetvlite.iptv.data.epg.CurrentAndNext
 import dev.firetvlite.iptv.playback.StreamRequest
 import dev.firetvlite.iptv.playback.ZapMath
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -25,6 +28,9 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -48,6 +54,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val playback = container.playback
     private val userDao = container.database.userDao()
     private val sourceDao = container.database.sourceDao()
+    private val epg = container.epg
 
     val player: StateFlow<ExoPlayer?> = playback.player
     val status: StateFlow<PlaybackStatus> = playback.status
@@ -68,9 +75,25 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val mutablePosition = MutableStateFlow(ZapPosition(0, 0))
     val position: StateFlow<ZapPosition> = mutablePosition.asStateFlow()
 
-    /** Minutes the user went back with the archive, 0 while watching live. */
-    private val mutableCatchupOffset = MutableStateFlow(0)
-    val catchupOffsetMinutes: StateFlow<Int> = mutableCatchupOffset.asStateFlow()
+    private var archiveStartMs: Long? = null
+    private var fallbackStartMs = System.currentTimeMillis()
+    private var pendingSeekMs: Long? = null
+    private val mutableFrame = MutableStateFlow(PlaybackFrame())
+    val frame = mutableFrame.asStateFlow()
+    val programme = combine(channel, frame) { selected, frame -> selected?.id to frame.watchedMs / 1_000 }
+        .distinctUntilChanged()
+        .flatMapLatest { (id, time) ->
+            if (id == null) flowOf(CurrentAndNext(null, null)) else epg.observeCurrentAndNextAt(id, time * 1_000)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), CurrentAndNext(null, null))
+
+    init {
+        viewModelScope.launch {
+            mode.collectLatest { mode ->
+                if (mode == PlayerMode.Closed) mutableFrame.value = PlaybackFrame()
+                else while (true) { updateFrame(); delay(500) }
+            }
+        }
+    }
 
     private val mutableMessage = MutableStateFlow<PlayerMessage?>(null)
     val message: StateFlow<PlayerMessage?> = mutableMessage.asStateFlow()
@@ -114,6 +137,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         openJob?.cancel()
         zapJob?.cancel()
         catchupJob?.cancel()
+        pendingSeekMs = null
         openJob = viewModelScope.launch {
             val count = zap.count()
             if (count == 0) return@launch
@@ -167,6 +191,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         openJob?.cancel()
         zapJob?.cancel()
         catchupJob?.cancel()
+        pendingSeekMs = null
         activeChannel?.let {
             zapIndex = activeIndex
             show(it)
@@ -181,6 +206,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         zapIndex = ZapMath.wrap(zapIndex, delta, zapCount)
         mutablePosition.value = ZapPosition(zapIndex + 1, zapCount)
         catchupJob?.cancel()
+        pendingSeekMs = null
         zapJob?.cancel()
         zapJob = viewModelScope.launch {
             val next = zap.at(zapIndex) ?: return@launch
@@ -201,7 +227,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         mutableBrowserTarget.value = null
         mutableChannel.value = null
         activeChannel = null
-        mutableCatchupOffset.value = 0
+        archiveStartMs = null
+        pendingSeekMs = null
         mutableMessage.value = null
         mutablePosition.value = ZapPosition(0, 0)
         zapCount = 0
@@ -230,57 +257,78 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun resume() = playback.resume()
 
-    fun snapshot(): PlaybackSnapshot = playback.snapshot()
-
-    /** Jumps [deltaMs] inside a seekable stream (arrow keys). Does nothing otherwise. */
-    fun seek(deltaMs: Long) {
-        playback.seekBy(deltaMs)
+    private fun updateFrame(): PlaybackFrame {
+        val now = System.currentTimeMillis()
+        val snapshot = playback.snapshot()
+        return PlaybackFrame(now, PlaybackTime.watched(now, snapshot, archiveStartMs, fallbackStartMs), snapshot)
+            .also { mutableFrame.value = it }
     }
 
-    /**
-     * Rewind / fast-forward keys. A seekable stream jumps by 30 seconds. Otherwise, if the channel offers an
-     * archive (catch-up), the archive is entered in 5 minute steps, and fast-forwarding returns to live.
-     */
-    fun jump(forward: Boolean) {
+    fun seek(deltaMs: Long) {
+        seekAbsolute((pendingSeekMs ?: updateFrame().watchedMs) + deltaMs)
+    }
+
+    fun jump(forward: Boolean) = seek(if (forward) BIG_SEEK_MS else -BIG_SEEK_MS)
+
+    fun jumpToProgrammeStart() {
         val channel = mutableChannel.value ?: return
-        if (playback.snapshot().seekable) {
-            playback.seekBy(if (forward) BIG_SEEK_MS else -BIG_SEEK_MS)
-            return
-        }
         if (!CatchupUrlBuilder.isSupported(channel)) {
             notify(PlayerMessage.SeekUnsupported)
             return
         }
-        val maxMinutes = channel.catchupDays * 24 * 60
-        val step = if (forward) -CATCHUP_STEP_MINUTES else CATCHUP_STEP_MINUTES
-        val offset = (mutableCatchupOffset.value + step).coerceIn(0, maxMinutes)
-        mutableCatchupOffset.value = offset
+        val watched = updateFrame().watchedMs
         catchupJob?.cancel()
+        pendingSeekMs = null
         catchupJob = viewModelScope.launch {
-            delay(CATCHUP_DEBOUNCE_MS)
-            applyCatchup(channel, offset)
+            val current = epg.programmeAt(channel.id, watched)
+            catchupJob = null
+            if (current == null) notify(PlayerMessage.SeekUnsupported) else seekAbsolute(current.start)
         }
     }
 
-    private fun applyCatchup(channel: ChannelEntity, offsetMinutes: Int) {
-        if (offsetMinutes == 0) {
-            playback.play(StreamRequest(channel.streamUrl, userAgent))
-            return
+    private fun seekAbsolute(time: Long) {
+        val channel = mutableChannel.value ?: return
+        val frame = updateFrame()
+        val plan = PlaybackTime.seekPlan(time, frame.nowMs, frame.snapshot, archiveStartMs, fallbackStartMs,
+            channel.catchupDays, CatchupUrlBuilder.isSupported(channel))
+        catchupJob?.cancel()
+        pendingSeekMs = null
+        when (plan) {
+            is SeekPlan.InWindow -> { playback.seekTo(plan.positionMs); updateFrame() }
+            SeekPlan.Live -> {
+                if (archiveStartMs == null) playback.seekToLiveEdge()
+                else scheduleArchive(channel, null)
+            }
+            is SeekPlan.Archive -> scheduleArchive(channel, plan.timeMs)
+            SeekPlan.Unavailable -> notify(PlayerMessage.SeekUnsupported)
         }
+    }
+
+    private fun scheduleArchive(channel: ChannelEntity, time: Long?) {
+        pendingSeekMs = time ?: System.currentTimeMillis()
+        catchupJob = viewModelScope.launch {
+            delay(CATCHUP_DEBOUNCE_MS)
+            pendingSeekMs = null
+            if (time == null) startLive(channel) else applyCatchup(channel, time)
+        }
+    }
+
+    private fun applyCatchup(channel: ChannelEntity, time: Long) {
         val now = System.currentTimeMillis() / 1000
-        val seconds = offsetMinutes * 60L
+        val start = time / 1000
         val url = CatchupUrlBuilder.build(
             channel = channel,
-            startEpochSec = now - seconds,
+            startEpochSec = start,
             nowEpochSec = now,
-            durationSec = seconds,
+            durationSec = (now - start).coerceAtLeast(1),
         )
         if (url == null) {
-            mutableCatchupOffset.value = 0
             notify(PlayerMessage.CatchupUnsupported)
             return
         }
+        archiveStartMs = start * 1000
         playback.play(StreamRequest(url, userAgent))
+        updateFrame()
     }
 
     private fun show(channel: ChannelEntity) {
@@ -291,8 +339,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private fun startLive(channel: ChannelEntity) {
         activeChannel = channel
         activeIndex = zapIndex
-        mutableCatchupOffset.value = 0
+        archiveStartMs = null
+        fallbackStartMs = System.currentTimeMillis()
         playback.play(StreamRequest(channel.streamUrl, userAgent))
+        updateFrame()
         viewModelScope.launch {
             userDao.markWatched(RecentEntity(channel.streamUrl, System.currentTimeMillis()))
             userDao.trimRecent()
@@ -311,7 +361,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private companion object {
         const val ZAP_DEBOUNCE_MS = 400L
         const val CATCHUP_DEBOUNCE_MS = 700L
-        const val CATCHUP_STEP_MINUTES = 5
         const val BIG_SEEK_MS = 30_000L
         const val MESSAGE_MS = 2_500L
     }

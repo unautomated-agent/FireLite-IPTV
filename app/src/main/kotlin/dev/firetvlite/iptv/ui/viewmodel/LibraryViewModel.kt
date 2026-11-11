@@ -133,6 +133,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
         }
     }
 
+    fun currentProgrammes(channelIds: List<Long>, time: Long) = container.epg.programmes(channelIds, time, time + 1)
+
+    fun guide(channelId: Long, time: Long) = container.epg.observeCurrentAndNextAt(channelId, time)
+
     /** The list to walk through with channel up/down when a channel of [key] is opened. */
     suspend fun zapContext(key: GroupKey): ZapContext? {
         val id = source.value?.id ?: return null

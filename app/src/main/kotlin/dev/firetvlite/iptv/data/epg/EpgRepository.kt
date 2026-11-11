@@ -81,10 +81,13 @@ class EpgRepository(private val database: FireLiteDatabase, private val scope: C
             delay(30_000)
         }
     }.flatMapLatest { now ->
-        combine(database.epgDao().observeAt(channelId, now), database.epgDao().observeNext(channelId, now)) {
+        observeCurrentAndNextAt(channelId, now)
+    }
+
+    fun observeCurrentAndNextAt(channelId: Long, time: Long): Flow<CurrentAndNext> =
+        combine(database.epgDao().observeAt(channelId, time), database.epgDao().observeNext(channelId, time)) {
                 current, next -> CurrentAndNext(current, next)
         }
-    }
 
     /** Half-open overlap window [from, until); results include the owning channel ID. */
     fun programmes(channelIds: List<Long>, from: Long, until: Long): Flow<List<ChannelProgramme>> =

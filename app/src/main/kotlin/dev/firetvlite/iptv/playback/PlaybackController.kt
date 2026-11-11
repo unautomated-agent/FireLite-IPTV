@@ -7,6 +7,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.common.Timeline
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
@@ -21,6 +22,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
+import java.io.Closeable
 
 /** What to play. */
 data class StreamRequest(
@@ -38,7 +40,7 @@ sealed interface PlaybackStatus {
     data class Failed(val code: String) : PlaybackStatus
 }
 
-/** Time information of the running stream, polled by the UI while the info bar is visible. */
+/** Position and server window timestamps used to locate the watched frame in the guide. */
 data class PlaybackSnapshot(
     /** True if the user can jump back and forth (HLS with a time-shift window, or an archive stream). */
     val seekable: Boolean,
@@ -46,6 +48,7 @@ data class PlaybackSnapshot(
     val liveOffsetMs: Long?,
     val positionMs: Long,
     val durationMs: Long?,
+    val windowStartMs: Long? = null,
 ) {
     companion object {
         val EMPTY = PlaybackSnapshot(seekable = false, liveOffsetMs = null, positionMs = 0, durationMs = null)
@@ -94,6 +97,7 @@ class PlaybackController internal constructor(
     private var suspendedRequest: StreamRequest? = null
     private var preview = false
     private val connections = AtomicInteger()
+    private val connectionGate = HttpConnectionGate()
     private val trackedFactory = object : HttpDataSource.Factory {
         override fun setDefaultRequestProperties(properties: Map<String, String>): HttpDataSource.Factory {
             httpFactory.setDefaultRequestProperties(properties)
@@ -105,8 +109,10 @@ class PlaybackController internal constructor(
             return object : HttpDataSource by delegate {
                 private var connected = false
                 private var stream = 0
+                private var connection: Closeable? = null
 
                 override fun open(dataSpec: DataSpec): Long {
+                    connection = connectionGate.acquire()
                     stream = dataSpec.uri.toString().hashCode()
                     connected = true
                     trace("HTTP_OPEN stream=$stream active=${connections.incrementAndGet()}")
@@ -125,6 +131,8 @@ class PlaybackController internal constructor(
                         if (connected) {
                             connected = false
                             trace("HTTP_CLOSE stream=$stream active=${connections.decrementAndGet()}")
+                            connection?.close()
+                            connection = null
                         }
                     }
                 }
@@ -243,18 +251,15 @@ class PlaybackController internal constructor(
         exo?.play()
     }
 
-    /** Jumps by [deltaMs] if the stream allows it. Returns false if it is not seekable. */
-    fun seekBy(deltaMs: Long): Boolean {
+    fun seekTo(positionMs: Long): Boolean {
         val player = exo ?: return false
         if (!player.isCurrentMediaItemSeekable) return false
-        val target = (player.currentPosition + deltaMs).coerceAtLeast(0)
-        val duration = player.duration
-        if (deltaMs > 0 && duration != C.TIME_UNSET && target >= duration - LIVE_EDGE_SNAP_MS) {
-            player.seekToDefaultPosition() // past the end of a live window means: back to live
-        } else {
-            player.seekTo(target)
-        }
+        player.seekTo(positionMs.coerceAtLeast(0))
         return true
+    }
+
+    fun seekToLiveEdge() {
+        exo?.seekToDefaultPosition()
     }
 
     fun snapshot(): PlaybackSnapshot {
@@ -264,6 +269,9 @@ class PlaybackController internal constructor(
             liveOffsetMs = player.currentLiveOffset.takeIf { it != C.TIME_UNSET },
             positionMs = player.currentPosition,
             durationMs = player.duration.takeIf { it != C.TIME_UNSET },
+            windowStartMs = if (player.currentTimeline.isEmpty) null else
+                player.currentTimeline.getWindow(player.currentMediaItemIndex, Timeline.Window())
+                    .windowStartTimeMs.takeIf { it != C.TIME_UNSET },
         )
     }
 
@@ -316,6 +324,5 @@ class PlaybackController internal constructor(
         const val CLOSE_GRACE_MS = 400L
         const val RETRY_DELAY_MS = 1_500L
         const val MAX_RETRIES = 3
-        const val LIVE_EDGE_SNAP_MS = 1_500L
     }
 }

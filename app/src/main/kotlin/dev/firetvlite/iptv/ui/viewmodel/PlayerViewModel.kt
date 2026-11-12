@@ -348,7 +348,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             }
             TimelineAction.Live -> {
                 openLiveProgramme(target.zap, target.index, target.group, target.channel,
-                    if (item.live) null else item.programme)
+                    item.programme)
             }
             TimelineAction.Past -> {
                 val channel = target.channel

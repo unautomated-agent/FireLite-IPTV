@@ -15,6 +15,16 @@ internal data class HistoryFocus(val time: Long, val live: Boolean = false) {
 }
 
 internal object HistoryNavigation {
+    data class InitialPosition(val index: Int, val offset: Int)
+
+    fun initialPosition(liveIndex: Int, viewportHeight: Int, rowHeight: Int, spacing: Int): InitialPosition {
+        if (liveIndex <= 0 || viewportHeight <= 0 || rowHeight <= 0) return InitialPosition(liveIndex.coerceAtLeast(0), 0)
+        val stride = rowHeight.toLong() + spacing.coerceAtLeast(0)
+        val target = viewportHeight.toLong() * 3 / 4
+        val before = ((target + stride - 1) / stride).coerceAtMost(liveIndex.toLong()).toInt()
+        return InitialPosition(liveIndex - before, (before * stride - target).coerceAtLeast(0).toInt())
+    }
+
     private val zone = ZoneId.of("Europe/Warsaw")
     private val polish = Locale.forLanguageTag("pl-PL")
     private val dateFormat = DateTimeFormatter.ofPattern("d.MM", polish)

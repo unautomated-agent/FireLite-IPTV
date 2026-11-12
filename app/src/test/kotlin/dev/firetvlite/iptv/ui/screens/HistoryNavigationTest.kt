@@ -10,6 +10,42 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HistoryNavigationTest {
+    @Test fun initialPositionPlacesLiveAtThreeQuartersOfTheViewport() {
+        val position = HistoryNavigation.initialPosition(30, 1000, 50, 0)
+        assertEquals(HistoryNavigation.InitialPosition(15, 0), position)
+        val fractional = HistoryNavigation.initialPosition(30, 1000, 40, 4)
+        assertEquals(HistoryNavigation.InitialPosition(12, 42), fractional)
+        assertEquals(750, (30 - fractional.index) * 44 - fractional.offset)
+    }
+
+    @Test fun initialPositionClampsWhenThereAreFewPastRowsAndHandlesEmptyOrUnmeasuredLists() {
+        assertEquals(HistoryNavigation.InitialPosition(0, 0), HistoryNavigation.initialPosition(2, 1000, 40, 4))
+        assertEquals(HistoryNavigation.InitialPosition(0, 0), HistoryNavigation.initialPosition(-1, 1000, 40, 4))
+        assertEquals(HistoryNavigation.InitialPosition(0, 0), HistoryNavigation.initialPosition(0, 1000, 40, 4))
+        assertEquals(HistoryNavigation.InitialPosition(30, 0), HistoryNavigation.initialPosition(30, 0, 40, 4))
+        assertEquals(HistoryNavigation.InitialPosition(30, 0), HistoryNavigation.initialPosition(30, 1000, 0, 4))
+    }
+
+    @Test fun initialPlacementScalesWithResolutionAndKeepsLiveFocus() {
+        val high = HistoryNavigation.initialPosition(30, 840, 52, 8)
+        val low = HistoryNavigation.initialPosition(30, 560, 34, 6)
+        assertEquals(630, (30 - high.index) * 60 - high.offset)
+        assertEquals(420, (30 - low.index) * 40 - low.offset)
+        assertEquals(items.lastIndex, HistoryFocus(now, live = true).index(items))
+    }
+
+    @Test fun positioningWaitsForRoomAndRunsOnlyOncePerOpenedTarget() {
+        val screen = File("src/main/kotlin/dev/firetvlite/iptv/ui/screens/ChannelHistoryList.kt").readText()
+        assertTrue(screen.contains("LaunchedEffect(target, items, programmes != null)"))
+        assertTrue(screen.contains("if (initiallyPositioned || programmes == null) return@LaunchedEffect"))
+        assertTrue(screen.contains("listState.scrollToItem(position.index, position.offset)"))
+        assertTrue(screen.contains("initiallyPositioned = true"))
+        val model = File("src/main/kotlin/dev/firetvlite/iptv/ui/viewmodel/PlayerViewModel.kt").readText()
+            .substringAfter("fun playTimeline(item: TimelineItem)").substringBefore("TimelineAction.Past ->")
+        assertTrue(model.contains("item.programme)"))
+        assertTrue(!model.contains("if (item.live) null"))
+    }
+
     @Test fun openingMenuReleaseCannotDismissHistoryWithoutANewPress() {
         val menu = RemotePress()
         assertTrue(!menu.release())

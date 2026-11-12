@@ -47,7 +47,7 @@ class FilmEnrichmentTest {
         val store = Store()
         val lookup = FilmLookup(OmdbClient { _, title, _ -> if (title == "First") OmdbResult.Missing else found }, store, { now }) {}
         assertFalse(enrichFilms(listOf(film("First"), film("Second")), "fixture", lookup, { true }) { now })
-        assertEquals(4, store.requests)
+        assertEquals(2, store.requests)
         assertEquals(2, store.rows.size)
     }
 

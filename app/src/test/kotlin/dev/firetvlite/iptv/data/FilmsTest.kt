@@ -7,6 +7,12 @@ import dev.firetvlite.iptv.data.film.*
 import dev.firetvlite.iptv.R
 import java.time.Instant
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.first
 import org.junit.Assert.*
@@ -73,6 +79,45 @@ class FilmsTest {
         assertEquals(Films.key(film()), Films.key(film().copy(originalTitle = " ABOUT A BOY! ")))
         assertEquals("Był sobie chłopiec", Films.queries(film().copy(originalTitle = null)).first().first)
     }
+    @Test fun localOnlyTitlesUseOneRequestButOriginalTitlesRetainAdjacentYearFallbacks() {
+        for (original in listOf(null, "", "  ")) {
+            assertEquals(listOf("Był sobie chłopiec" to 2002), Films.queries(film().copy(originalTitle = original)))
+        }
+        assertTrue(Films.queries(film(year = null)).isEmpty())
+        assertTrue(Films.queries(film("").copy(originalTitle = null)).isEmpty())
+        assertEquals(6, Films.queries(film()).size)
+    }
+
+    @Test fun candidatePriorityMatchesAllThreeTabsWithRecentArchiveBeforeTomorrow() {
+        val archiveChannel = channel().copy(catchupType = "shift", catchupDays = 7)
+        fun showing(title: String, start: Long) = FilmShowing(archiveChannel,
+            film(title).copy(originalTitle = title, start = start, stop = start + 7_200_000), null)
+        val airing = showing("Airing", now - 60_000)
+        val soon = showing("Soon", now + 1000)
+        val tomorrow = showing("Tomorrow", now + Films.DAY)
+        val recent = showing("Recent", now - Films.DAY)
+        val older = showing("Older", now - 2 * Films.DAY)
+        val expired = showing("Expired", now - 8 * Films.DAY)
+        val outside = showing("Outside", now + 2 * Films.DAY)
+        val inputs = listOf(tomorrow, older, expired, soon, outside, recent, airing)
+        assertEquals(listOf(airing, soon, recent, older, tomorrow).map { it.programme }, ratingCandidates(inputs, now))
+        val visible = (0..2).flatMap { rankedFilms(inputs, now, it) }.map { Films.key(it.programme) }.toSet()
+        assertEquals(visible, ratingCandidates(inputs, now).map(Films::key).toSet())
+        val duplicateTomorrow = soon.copy(programme = soon.programme.copy(start = now + Films.DAY, stop = now + Films.DAY + 7_200_000))
+        assertEquals(listOf(soon.programme), ratingCandidates(listOf(duplicateTomorrow, soon), now))
+        assertTrue(ratingCandidates(listOf(recent.copy(channel = channel()), outside, expired), now).isEmpty())
+    }
+
+    @Test fun exactMovieHitStopsAllRemainingFallbacks() = runBlocking {
+        val store = Store()
+        var requests = 0
+        val lookup = FilmLookup(OmdbClient { _, _, _ ->
+            requests++
+            OmdbResult.Found(OmdbMovie("movie", 2002, 7.1, 100, "tt123"))
+        }, store, { now }) {}
+        assertNotNull(lookup.lookup(film(), "fixture", now))
+        assertEquals(1, requests)
+    }
     @Test fun onlyAcceptsMovieAndNearYear() {
         val movie = OmdbMovie("movie", 2002, 7.1, 123, "tt123")
         assertTrue(movie.matches(2001))
@@ -95,6 +140,30 @@ class FilmsTest {
         val ratings = observeFilmRatings(flowOf(listOf(row)), flowOf("fixture"), flowOf(now)) { now + 1001 }.first()
         assertEquals(row, ratings["film"])
         assertTrue(observeFilmRatings(flowOf(listOf(row)), flowOf(""), flowOf(now)) { now + 1001 }.first().isEmpty())
+    }
+
+    @Test fun subscribedRatingsUpdateWhenRoomEmitsWithoutAnotherClockTick() = runBlocking {
+        val programme = film()
+        val row = FilmRatingEntity(Films.key(programme), 7.1, 125, "tt0276751", now + 1000)
+        val rows = MutableStateFlow<List<FilmRatingEntity>>(emptyList())
+        val initial = CompletableDeferred<Unit>()
+        val received = mutableListOf<Map<String, FilmRatingEntity>>()
+        withTimeout(5000) {
+            val observer = launch {
+                observeFilmRatings(rows, flowOf("fixture"), flowOf(now)) { now + 1001 }
+                    .take(2).collect {
+                        received.add(it)
+                        initial.complete(Unit)
+                    }
+            }
+            initial.await()
+            rows.value = listOf(row)
+            observer.join()
+        }
+        assertTrue(received.first().isEmpty())
+        assertEquals(row, received.last()[Films.key(programme)])
+        val showing = FilmShowing(channel(), programme, received.last()[Films.key(programme)])
+        assertEquals(row, rankedFilms(listOf(showing), now, 0).single().rating)
     }
 
     private class Store : FilmStore {

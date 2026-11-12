@@ -31,7 +31,8 @@ object Films {
         val year = p.year ?: return emptyList()
         val titles = listOfNotNull(p.originalTitle?.takeIf { it.isNotBlank() }, p.title.takeIf { it.isNotBlank() })
             .distinctBy(::normalized)
-        return listOf(year, year - 1, year + 1).flatMap { y -> titles.map { it to y } }
+        val years = if (p.originalTitle.isNullOrBlank()) listOf(year) else listOf(year, year - 1, year + 1)
+        return years.flatMap { y -> titles.map { it to y } }
     }
     fun fresh(rating: FilmRatingEntity, now: Long): Boolean = now >= rating.fetchedAt &&
         now - rating.fetchedAt < (if (rating.imdbId == null) 7 else 30) * DAY

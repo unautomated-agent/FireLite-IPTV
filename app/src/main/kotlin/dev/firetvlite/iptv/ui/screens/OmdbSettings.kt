@@ -13,6 +13,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.FireLiteApplication
+import dev.firetvlite.iptv.data.film.omdbIssueMessage
 import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.LabeledTextField
 import dev.firetvlite.iptv.ui.components.PrimaryButton
@@ -22,10 +23,15 @@ import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 internal fun OmdbSettings() {
     val preferences = (LocalContext.current.applicationContext as FireLiteApplication).container.films.preferences
     val key by preferences.key.collectAsState()
+    val error by preferences.currentError.collectAsState()
     var draft by remember(key) { mutableStateOf(key) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         LabeledTextField(stringResource(R.string.omdb_key_label), draft, { draft = it }, secret = true)
         FLText(stringResource(R.string.omdb_key_help), style = FireLiteTheme.typography.label)
+        FLText(stringResource(R.string.omdb_key_activation_help), style = FireLiteTheme.typography.label)
+        omdbIssueMessage(error)?.let { message ->
+            FLText(stringResource(message, error.orEmpty()), style = FireLiteTheme.typography.label)
+        }
         PrimaryButton(stringResource(R.string.omdb_key_save), { preferences.save(draft) })
     }
 }

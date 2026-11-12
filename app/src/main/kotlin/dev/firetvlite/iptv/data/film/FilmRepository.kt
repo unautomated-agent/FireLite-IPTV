@@ -31,10 +31,19 @@ data class FilmShowing(val channel: ChannelEntity, val programme: ProgrammeEntit
 
 fun ratingCandidates(showings: List<FilmShowing>, now: Long): List<ProgrammeEntity> = showings
     .filter { Films.candidate(it.programme) &&
-        ((it.programme.stop > now && it.programme.start < now + 2 * Films.DAY) || Films.archived(it.channel, it.programme, now)) }
-    .sortedBy { if (it.programme.stop > now) 0 else 1 }
+        (Films.inWindow(it.programme, now, 0) || Films.archived(it.channel, it.programme, now) ||
+            Films.inWindow(it.programme, now, 1)) }
+    .sortedWith(compareBy<FilmShowing> { ratingPriority(it, now) }
+        .thenBy { if (ratingPriority(it, now) == 1) -it.programme.stop else it.programme.start }
+        .thenBy { it.channel.position }.thenBy { it.channel.id })
     .map { it.programme }
     .distinctBy(Films::key)
+
+private fun ratingPriority(showing: FilmShowing, now: Long): Int = when {
+    Films.inWindow(showing.programme, now, 0) -> 0
+    Films.archived(showing.channel, showing.programme, now) -> 1
+    else -> 2
+}
 
 fun rankedFilms(films: List<FilmShowing>, now: Long, tab: Int): List<FilmShowing> = films
     .filter { Films.candidate(it.programme) && if (tab == Films.ARCHIVE_TAB) Films.archived(it.channel, it.programme, now)
@@ -78,7 +87,7 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
 
     init {
         scope.launch(Dispatchers.IO) {
-            combine(database.sourceDao().observeActive(), preferences.key, epg.states) { source, key, _ -> source to key }
+            combine(database.sourceDao().observeActive(), preferences.refresh, epg.states) { source, _, _ -> source to preferences.key.value }
                 .collectLatest { (source, key) ->
                     if (source == null || key.isBlank()) return@collectLatest
                     while (true) {

@@ -15,8 +15,7 @@ import org.json.JSONObject
 class OmdbHttpClient(private val baseUrl: () -> String = { "https://www.omdbapi.com/" }) : OmdbClient {
     override suspend fun lookup(key: String, title: String, year: Int): OmdbResult = withContext(Dispatchers.IO) {
         try {
-            val query = listOf("apikey" to key, "t" to title, "y" to year.toString(), "type" to "movie")
-                .joinToString("&") { (k, v) -> "$k=${URLEncoder.encode(v, "UTF-8")}" }
+            val query = "apikey=${URLEncoder.encode(key, "UTF-8")}&${movieQuery(title, year)}"
             val connection = URL(baseUrl().trimEnd('/') + "/?" + query).openConnection() as HttpURLConnection
             connection.connectTimeout = 10_000
             connection.readTimeout = 10_000
@@ -35,6 +34,10 @@ class OmdbHttpClient(private val baseUrl: () -> String = { "https://www.omdbapi.
     }
 
     companion object {
+        internal fun movieQuery(title: String, year: Int): String =
+            listOf("t" to title, "y" to year.toString(), "type" to "movie")
+                .joinToString("&") { (k, v) -> "$k=${URLEncoder.encode(v, "UTF-8")}" }
+
         internal const val MAX_BODY_BYTES = 64 * 1024
 
         internal fun readBody(input: InputStream, nanoTime: () -> Long = System::nanoTime): String {

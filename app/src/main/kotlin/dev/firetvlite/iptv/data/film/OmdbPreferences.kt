@@ -22,6 +22,8 @@ class OmdbPreferences internal constructor(private val prefs: SharedPreferences,
         prefs.getString("last_error", "—").orEmpty()).today(clock()))
     val stats = mutableStats.asStateFlow()
 
+    init { quotaDelay(clock()) }
+
     @Synchronized
     private fun updateStats(change: (OmdbStats) -> OmdbStats) {
         val value = change(mutableStats.value)
@@ -59,7 +61,11 @@ class OmdbPreferences internal constructor(private val prefs: SharedPreferences,
             .atStartOfDay(Films.zone).toInstant().toEpochMilli()
         prefs.edit().putLong("quota_until", until).apply()
     }
-    fun quotaDelay(now: Long): Long = (prefs.getLong("quota_until", 0) - now).coerceAtLeast(0)
+    fun quotaDelay(now: Long): Long {
+        val remaining = (prefs.getLong("quota_until", 0) - now).coerceAtLeast(0)
+        if (remaining == 0L && mutableError.value == "REMOTE_LIMIT") setError(null)
+        return remaining
+    }
     fun baseUrl(): String = if (BuildConfig.DEBUG) prefs.getString("debug_base_url", null)
         ?: "https://www.omdbapi.com/" else "https://www.omdbapi.com/"
 }

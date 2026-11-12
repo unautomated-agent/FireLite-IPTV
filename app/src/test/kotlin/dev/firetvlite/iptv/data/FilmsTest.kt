@@ -79,6 +79,45 @@ class FilmsTest {
         assertEquals(Films.key(film()), Films.key(film().copy(originalTitle = " ABOUT A BOY! ")))
         assertEquals("Był sobie chłopiec", Films.queries(film().copy(originalTitle = null)).first().first)
     }
+    @Test fun localOnlyTitlesUseOneRequestButOriginalTitlesRetainAdjacentYearFallbacks() {
+        for (original in listOf(null, "", "  ")) {
+            assertEquals(listOf("Był sobie chłopiec" to 2002), Films.queries(film().copy(originalTitle = original)))
+        }
+        assertTrue(Films.queries(film(year = null)).isEmpty())
+        assertTrue(Films.queries(film("").copy(originalTitle = null)).isEmpty())
+        assertEquals(6, Films.queries(film()).size)
+    }
+
+    @Test fun candidatePriorityMatchesAllThreeTabsWithRecentArchiveBeforeTomorrow() {
+        val archiveChannel = channel().copy(catchupType = "shift", catchupDays = 7)
+        fun showing(title: String, start: Long) = FilmShowing(archiveChannel,
+            film(title).copy(originalTitle = title, start = start, stop = start + 7_200_000), null)
+        val airing = showing("Airing", now - 60_000)
+        val soon = showing("Soon", now + 1000)
+        val tomorrow = showing("Tomorrow", now + Films.DAY)
+        val recent = showing("Recent", now - Films.DAY)
+        val older = showing("Older", now - 2 * Films.DAY)
+        val expired = showing("Expired", now - 8 * Films.DAY)
+        val outside = showing("Outside", now + 2 * Films.DAY)
+        val inputs = listOf(tomorrow, older, expired, soon, outside, recent, airing)
+        assertEquals(listOf(airing, soon, recent, older, tomorrow).map { it.programme }, ratingCandidates(inputs, now))
+        val visible = (0..2).flatMap { rankedFilms(inputs, now, it) }.map { Films.key(it.programme) }.toSet()
+        assertEquals(visible, ratingCandidates(inputs, now).map(Films::key).toSet())
+        val duplicateTomorrow = soon.copy(programme = soon.programme.copy(start = now + Films.DAY, stop = now + Films.DAY + 7_200_000))
+        assertEquals(listOf(soon.programme), ratingCandidates(listOf(duplicateTomorrow, soon), now))
+        assertTrue(ratingCandidates(listOf(recent.copy(channel = channel()), outside, expired), now).isEmpty())
+    }
+
+    @Test fun exactMovieHitStopsAllRemainingFallbacks() = runBlocking {
+        val store = Store()
+        var requests = 0
+        val lookup = FilmLookup(OmdbClient { _, _, _ ->
+            requests++
+            OmdbResult.Found(OmdbMovie("movie", 2002, 7.1, 100, "tt123"))
+        }, store, { now }) {}
+        assertNotNull(lookup.lookup(film(), "fixture", now))
+        assertEquals(1, requests)
+    }
     @Test fun onlyAcceptsMovieAndNearYear() {
         val movie = OmdbMovie("movie", 2002, 7.1, 123, "tt123")
         assertTrue(movie.matches(2001))

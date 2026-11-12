@@ -22,11 +22,14 @@ not the device's database order. Public feed download time is frozen for reprodu
 
 ## Fifteen real queries
 
-These are exact first-request parameters, excluding the unavailable API key.
+These are exact first-request parameters from the initial snapshot, excluding the unavailable API key.
 For each row the production fallback order is: original then Polish title at the given
 year, then the same titles at year minus one, then year plus one. When no original is
 available only the Polish/display title is sent. Duplicate normalized titles are removed.
 The harness exports **every exact fallback query** as well as these first requests.
+
+After the budget follow-up, local-only titles use the exact year only; original-title
+candidates retain adjacent-year fallbacks. The table's first requests remain unchanged.
 
 | Polish/display title | XMLTV original | First query |
 |---|---|---|
@@ -115,3 +118,104 @@ bash ./gradlew -I /home/ubuntu/firelite-local-repositories.init.gradle \
 Use a current audit time for a fresh download; the frozen feed will eventually expire.
 Without `FIRELITE_REAL_EPG`, the optional real-feed audit is skipped; ordinary deterministic
 film, parser, HTTP, preference and rendering-format tests remain offline.
+
+## Follow-up: playlist scope, priority and 400-request budget
+
+### Scope hypothesis disproved
+
+The 469-candidate initial audit was whole-feed future coverage, **not the production queue**.
+`EpgDao.filmWindow(sourceId, from, until)` uses `MAPPED_PROGRAMMES`:
+
+```sql
+FROM channel c JOIN source s ON s.id = c.sourceId
+JOIN channel_epg m ON m.sourceId = c.sourceId AND m.streamUrl = c.streamUrl
+  AND s.epgGeneration = m.generation
+JOIN programme p ON p.sourceId = m.sourceId AND p.generation = m.generation
+  AND p.epgKey = m.epgKey
+WHERE c.sourceId = :sourceId AND p.start < :until AND p.stop > :from
+ORDER BY p.start, c.id
+```
+
+`FilmRepository` calls this with the active source ID and resolves results against that
+source's `filmChannels`. Rankings use the same query and channel lookup. Unmatched public
+EPG channels therefore cannot spend the user's budget. A SQLite control using the extracted
+production query returned only the matched current-generation active-source row; an unmatched
+programme, another source and a stale generation were excluded. No DAO change was necessary.
+
+### Confirmed scheduling defect and change
+
+Previously `ratingCandidates` stably partitioned the SQL order into the entire upcoming
+48 hours, then archive. Thus 24–48h films could exhaust the budget before archive got a turn.
+The new order is **airing/next-24h → archive → 24–48h**. Upcoming films sort by start;
+archive sorts by most recent stop, with playlist position/channel ID breaking ties.
+Deduplication happens after prioritization, preserving the highest-priority showing.
+Candidates use exactly the union of the three ranking windows; expired/unsupported catch-up
+and out-of-window films are excluded.
+
+Successful movie matches already stopped all remaining fallbacks; a regression test now
+explicitly covers this. Local-only titles now use **one exact-year request rather than three**.
+Original-title candidates retain original/local exact-year and adjacent-year fallbacks
+(up to six). This preserves original-title/year tolerance while trading away adjacent-year
+coverage for local-only titles to conserve budget. Neither the 400/day cap nor caching changed.
+
+### Real-feed simulation (not authenticated OMDb results)
+
+`RealEpgBudgetAuditTest` uses production XMLTV parsing, candidate selection, `rankedFilms`,
+query policy and `FilmLookup` with fake responses/store budget. The old schedule/query policy
+is frozen in the harness for comparison. Input is sorted like SQL (`start, channel ID`), not
+the feed's channel-alphabetic programme blocks. Cross-channel duplicate films share a cache
+key; a lookup benefits every matching showing, regardless of its representative channel ID.
+
+Same frozen audit time as above; include available archive history with a **synthetic seven-day
+shift catch-up setting on every selected channel**, not a claim about provider capabilities.
+The feed has 447 channels and 864 film showings in this wider interval. Cold-cache scenarios:
+
+* **core7:** TVP1, Polsat, TVN, TVN7, Kino Polska, CANAL+1, HBO; 107 distinct visible films.
+* **synthetic229:** those seven plus the lexicographically first 222 other feed IDs;
+  469 distinct visible films. This deterministic stress subset is **not the user's unknown
+  229-channel mapping**, nor a claim to reconstruct a typical playlist. Full IDs are exported.
+* **all447:** counterfactual where every feed channel is actually in the playlist; 707 films.
+
+Within at most 400 requests, distinct ranking-visible films receiving at least one query:
+
+| Selected channels | Response assumption | Before | After | Requests before → after |
+|---|---|---:|---:|---:|
+| core7 | Every first request hits | 107 | 107 | 107 → 107 |
+| core7 | Every request misses | 95 (94 completed) | 107 (all completed) | 400 → 324 |
+| synthetic229 | Every first request hits | 400 | 400 | 400 → 400 |
+| synthetic229 | Every request misses | 74 (73 completed) | 79 (78 completed) | 400 → 400 |
+| all447 counterfactual | Every first request hits | 400 | 400 | 400 → 400 |
+| all447 counterfactual | Every request misses | 74 (73 completed) | 80 (all completed) | 400 → 400 |
+
+In the synthetic229 first-hit scenario, per-tab coverage `[next24h, 24–48h, archive]`
+changes from **[158, 164, 121] to [158, 95, 190]**: archive coverage gains 69 films at the
+intentional expense of tomorrow's coverage. Counts overlap when the same film is in multiple tabs.
+For core7 with all misses, archive coverage rises from 30 to all 42 visible archive films.
+All-miss counts are queries/negative-cache completions, **not successful ratings**.
+
+Requests *before* the first lookup benefiting a film visible on each named channel,
+synthetic229; range from all earlier first-request hits to all earlier requests missing:
+
+| Channel | Before range | After range |
+|---|---:|---:|
+| HBO | 6–33 | 6–31 |
+| CANAL+1 | 7–39 | 7–37 |
+| Kino Polska | 22–120 | 22–112 |
+| Polsat | 74–405 | 74–379 |
+| TVN7 | 47–261 | 47–247 |
+| TVP1 | 187–996 | 220–1050 |
+| TVN | 203–1083 | 240–1125 |
+
+Values above 399 mean the daily budget can be exhausted before that lookup. These are
+scenario endpoints, not measured hit probabilities. Giving archive the requested priority
+can delay some channels' first benefiting film; this is not a promise every channel improves.
+HBO/CANAL+/Kino Polska still receive early queries, disproving a blanket explanation that
+all such channels necessarily sit behind hundreds of unrelated requests.
+
+**Conclusion:** playlist leakage is not present; wrong archive priority and avoidable
+local-only fallback costs are fixed. Budget starvation of individual films is reachable and
+demonstrated, but it does not establish why the real device had no ratings at all. Actual
+229-channel IDs, catch-up configuration, cache and OMDb responses remain unavailable.
+
+Run `*RealEpgBudgetAuditTest` with the same feed/time environment variables, additionally
+setting `FIRELITE_BUDGET_AUDIT_OUTPUT` to an output path. It makes no network requests.

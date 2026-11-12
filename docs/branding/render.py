@@ -60,7 +60,8 @@ def artwork(names, icon=False):
         element(clip, "rect", x="18", y="18", width="72", height="72", rx="16")
         group.set("clip-path", "url(#mask)")
     for name in names:
-        paths(ET.parse(RES / "drawable" / f"{name}.xml").getroot(), group, defs)
+        master = Path(__file__).with_name("banner.xml") if name == "banner" else RES / "drawable" / f"{name}.xml"
+        paths(ET.parse(master).getroot(), group, defs)
     return ET.tostring(svg)
 
 
@@ -82,6 +83,8 @@ def main():
         render(icon, RES / f"mipmap-{density}/ic_launcher.png", size, size)
     for density, width, height in [("xhdpi", 320, 180), ("xxhdpi", 480, 270), ("xxxhdpi", 640, 360)]:
         render(banner, RES / f"drawable-{density}/banner.png", width, height)
+    render(banner, RES / "drawable/banner.png", 160, 90)
+    render(banner, RES / "drawable-nodpi/fire_tv_launcher.png", 1280, 720)
     if args.previews:
         render(icon, args.previews / "icon-512.png", 512, 512)
         render(banner, args.previews / "banner-1280x720.png", 1280, 720)

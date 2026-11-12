@@ -1,7 +1,7 @@
 package dev.firetvlite.iptv.playback
 
 import com.google.zxing.BinaryBitmap
-import com.google.zxing.MultiFormatReader
+import com.google.zxing.qrcode.QRCodeReader
 import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 import dev.firetvlite.iptv.data.library.DiagnosticsReport
@@ -127,7 +127,7 @@ class PlaybackDiagnosticsTest {
             val pixels = IntArray(matrix.width * matrix.height) { i ->
                 if (matrix[i % matrix.width, i / matrix.width]) 0xff000000.toInt() else -1
             }
-            val decoded = MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(
+            val decoded = QRCodeReader().decode(BinaryBitmap(HybridBinarizer(
                 RGBLuminanceSource(matrix.width, matrix.height, pixels)))).text
             assertEquals(payload, decoded)
             for (output in listOf(saved, summary, report, payload, decoded)) {
@@ -160,10 +160,12 @@ class PlaybackDiagnosticsTest {
             val payload = DiagnosticsReport.payload(report)
             val matrix = DiagnosticsReport.qr(report)
             val pixels = IntArray(matrix.width * matrix.height) { i -> if (matrix[i % matrix.width, i / matrix.width]) 0xff000000.toInt() else -1 }
-            val decoded = MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(matrix.width, matrix.height, pixels)))).text
+            val decoded = QRCodeReader().decode(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(matrix.width, matrix.height, pixels)))).text
             assertEquals(payload, decoded)
             assertTrue(payload.toByteArray().size <= DiagnosticsReport.QR_BYTES)
-            for (line in evidence + phases) assertTrue(decoded, decoded.contains(line))
+            val shareableEvidence = evidence.map { it.replace("1800000000000", "08:00:00Z") }
+            for (line in shareableEvidence + phases) assertTrue(decoded, decoded.contains(line))
+            assertFalse(Regex("\\d{7,}").containsMatchIn(decoded))
         }
     }
 
@@ -184,16 +186,18 @@ class PlaybackDiagnosticsTest {
         val payload = DiagnosticsReport.payload(report)
         val matrix = DiagnosticsReport.qr(report)
         val pixels = IntArray(matrix.width * matrix.height) { i -> if (matrix[i % matrix.width, i / matrix.width]) 0xff000000.toInt() else -1 }
-        val decoded = MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(matrix.width, matrix.height, pixels)))).text
+        val decoded = QRCodeReader().decode(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(matrix.width, matrix.height, pixels)))).text
         assertEquals(payload, decoded)
         assertEquals(payload, DiagnosticsReport.payload(payload))
         assertTrue(decoded.toByteArray().size <= DiagnosticsReport.QR_BYTES)
-        for (line in phases + readiness + listOf("START_TIMEOUT", "Lista: Review playlist", "Kanały: 42",
+        val shareableReadiness = listOf("A ready=false in=2_147_483_647 out=0", "V ready=true in=2_147_483_647 out=2_147_483_646")
+        for (line in phases + shareableReadiness + listOf("START_TIMEOUT", "Lista: Review playlist", "Kanały: 42",
                 "M3U atrybuty archiwum: 7", "M3U User-Agent: własny (ukryty)", "M3U DEVICE TYPE: FIRE_TV",
                 "EPG: guide[.]org/__path_hidden__", "Ostatni raport błędu:", "crash-marker")) {
             assertTrue(decoded, decoded.contains(line))
         }
         assertFalse(decoded.contains("private-code"))
+        assertFalse(Regex("\\d{7,}").containsMatchIn(decoded))
         assertFalse(Regex("(?i)https?://|www\\.|\\w+\\.(com|org|pl|net|tv)\\b").containsMatchIn(decoded))
     }
 }

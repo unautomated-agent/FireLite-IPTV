@@ -12,6 +12,8 @@ import dev.firetvlite.iptv.data.playlist.XtreamAddress
 import java.net.URI
 import java.net.URLDecoder
 import java.time.Instant
+import java.time.ZoneOffset
+import java.time.format.DateTimeFormatter
 import dev.firetvlite.iptv.playback.utf8Limit
 
 data class SourceDiagnostics(val channelCount: Int = 0, val matched: Int = 0,
@@ -80,6 +82,21 @@ object DiagnosticRedactor {
 object DiagnosticsReport {
     const val QR_BYTES = 1800
 
+    private val compactInstant = DateTimeFormatter.ofPattern("MM-dd HH:mm:ss'Z'").withZone(ZoneOffset.UTC)
+    private val windowTime = DateTimeFormatter.ofPattern("HH:mm:ss'Z'").withZone(ZoneOffset.UTC)
+
+    private fun readableNumbers(text: String): String {
+        val instants = text.replace(Regex("\\b\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:\\d{2})")) {
+            runCatching { compactInstant.format(Instant.parse(it.value)) }.getOrDefault(it.value)
+        }
+        val windows = instants.replace(Regex("(Window start=)(-?\\d{7,})")) {
+            val time = runCatching { windowTime.format(Instant.ofEpochMilli(it.groupValues[2].toLong())) }
+                .getOrDefault(it.groupValues[2])
+            it.groupValues[1] + time
+        }
+        return windows.replace(Regex("\\d{7,}")) { it.value.reversed().chunked(3).joinToString("_").reversed() }
+    }
+
     private val essentialPrefixes = listOf(
         "FireLite ·", "Ostatni błąd odtwarzania:", "Ostatnie poprawne odtwarzanie:", "Channel:",
         "Startup:", "STOPPING_PREVIOUS=", "CLOSE_GRACE=", "WAITING_PREVIOUS_CONNECTION=",
@@ -126,11 +143,12 @@ object DiagnosticsReport {
                     (if (uri.port >= 0) ":${uri.port}" else "") + uri.rawPath.orEmpty() +
                     (uri.rawQuery?.let { "?$it" } ?: "")
         }
-        return withoutSchemes.replace(Regex("(?i)(?:[\\p{L}\\p{N}](?:[\\p{L}\\p{N}-]*[\\p{L}\\p{N}])?\\.)+[\\p{L}][\\p{L}\\p{N}-]*")) {
+        val defanged = withoutSchemes.replace(Regex("(?i)(?:[\\p{L}\\p{N}](?:[\\p{L}\\p{N}-]*[\\p{L}\\p{N}])?\\.)+[\\p{L}][\\p{L}\\p{N}-]*")) {
             it.value.replace(".", "[.]")
         }.replace(Regex("(?<!\\w)(?:[0-9]{1,3}\\.){3}[0-9]{1,3}(?!\\w)")) { it.value.replace(".", "[.]") }
             .replace(Regex("(?i)https?://"), "")
             .replace(Regex("(?i)www\\."), "www[.]")
+        return readableNumbers(defanged)
     }
 
     fun text(source: SourceEntity?, state: EpgState?, stats: SourceDiagnostics, crash: String?, playback: String = ""): String {

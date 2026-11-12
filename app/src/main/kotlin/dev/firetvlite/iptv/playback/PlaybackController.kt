@@ -127,6 +127,8 @@ class PlaybackController internal constructor(
     private var exo: ExoPlayer? = null
     private var startJob: Job? = null
     private var startupJob: Job? = null
+    private var progressJob: Job? = null
+    private var rendered = false
     private var startupTiming: StartupTiming? = null
     private var retries = 0
     @Volatile private var activeSession = 0L
@@ -270,8 +272,52 @@ class PlaybackController internal constructor(
 
     private fun renderingStarted() {
         if (activeRequest == null) return
+        rendered = true
         retries = 0
         clearStartupWatch()
+    }
+
+    private fun clearProgressWatch() {
+        progressJob?.cancel()
+        progressJob = null
+        mutableStartupDelayed.value = false
+    }
+
+    private fun progressPosition(player: ExoPlayer): Long = player.currentPosition +
+        if (player.currentTimeline.isEmpty) 0 else player.currentTimeline
+            .getWindow(player.currentMediaItemIndex, Timeline.Window()).positionInFirstPeriodMs
+
+    private fun watchProgress(code: String) {
+        val request = activeRequest ?: return
+        val player = exo ?: return
+        clearProgressWatch()
+        progressJob = scope.launch {
+            var position = progressPosition(player)
+            var since = System.nanoTime()
+            var reported = false
+            while (activeRequest === request) {
+                delay(minOf(250L, startupTimeoutMs.coerceAtLeast(1)))
+                if (player.playbackState == Player.STATE_IDLE || player.playbackState == Player.STATE_ENDED) break
+                val next = progressPosition(player)
+                if (player.playWhenReady && player.playbackState == Player.STATE_READY && next > position) break
+                if (!player.playWhenReady) {
+                    since = System.nanoTime()
+                    mutableStartupDelayed.value = false
+                } else if (!reported && (System.nanoTime() - since) / 1_000_000 >= startupTimeoutMs) {
+                    recordPlayback(true, diagnostic(code = code, details = listOf(
+                        "Channel: ${request.channelName.ifBlank { "unknown" }}",
+                        "Player: ${player.playbackState}; pos=${player.currentPosition}; buffered=${player.bufferedPosition}",
+                        "Source: $sourceType", "openHTTP=${connections.get()}",
+                        "HTTP: ${lastHttp?.takeIf { it.first == activeSession }?.second ?: "not available"}",
+                    )))
+                    mutableStartupDelayed.value = true
+                    reported = true
+                }
+                position = next
+            }
+            mutableStartupDelayed.value = false
+            progressJob = null
+        }
     }
 
     private fun clearStartupWatch() {
@@ -340,6 +386,8 @@ class PlaybackController internal constructor(
     /** Plays [request]. A request for the stream that is already active does nothing. */
     fun play(request: StreamRequest) {
         if (gate.onRequest(request.url) == StreamGate.Action.Ignore) return
+        clearProgressWatch()
+        rendered = false
         activeRequest = request
         successfulSignature = null
         retries = 0
@@ -394,6 +442,7 @@ class PlaybackController internal constructor(
     }
 
     private fun failPreparation(cause: Throwable) {
+        clearProgressWatch()
         clearStartupWatch()
         val error = preparationError(cause)
         recordPlayback(true, diagnostic(error))
@@ -405,6 +454,8 @@ class PlaybackController internal constructor(
 
     /** Closes the stream for good. */
     fun stop() {
+        clearProgressWatch()
+        rendered = false
         clearStartupWatch()
         startJob?.cancel()
         startJob = null
@@ -485,11 +536,13 @@ class PlaybackController internal constructor(
         if (!player.isCurrentMediaItemSeekable) return false
         val duration = player.duration.takeIf { it != C.TIME_UNSET && it > 0 }
         player.seekTo(positionMs.coerceIn(0, duration?.minus(1) ?: Long.MAX_VALUE))
+        watchProgress("SEEK_TIMEOUT")
         return true
     }
 
     fun seekToLiveEdge() {
         exo?.seekToDefaultPosition()
+        watchProgress("SEEK_TIMEOUT")
     }
 
     fun snapshot(): PlaybackSnapshot {
@@ -522,7 +575,10 @@ class PlaybackController internal constructor(
         val player = exo ?: return
         if (activeRequest == null) return
         when (player.playbackState) {
-            Player.STATE_BUFFERING -> mutableStatus.value = PlaybackStatus.Buffering
+            Player.STATE_BUFFERING -> {
+                mutableStatus.value = PlaybackStatus.Buffering
+                if (rendered && progressJob == null) watchProgress("REBUFFER_TIMEOUT")
+            }
             Player.STATE_READY -> {
                 recovery.onReady()
                 mutableStatus.value =
@@ -535,6 +591,7 @@ class PlaybackController internal constructor(
 
     private fun handleError(error: PlaybackException) {
         if (activeRequest == null) return
+        clearProgressWatch()
         startupError = error
         recordPlayback(true, diagnostic(error))
         if (retries < MAX_RETRIES) {

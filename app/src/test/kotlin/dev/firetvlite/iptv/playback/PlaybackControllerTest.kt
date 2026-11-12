@@ -7,6 +7,7 @@ import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Format
 import androidx.media3.common.Tracks
+import androidx.media3.common.Timeline
 import android.os.Bundle
 import java.lang.reflect.Proxy
 import java.util.concurrent.atomic.AtomicInteger
@@ -504,6 +505,68 @@ class PlaybackControllerTest {
         controller.stop()
     }
 
+    @Test fun seekWatchRecordsOnceAndClearsOnProgressWithoutOpeningOrStopping(): Unit = runBlocking {
+        val fake = FakePlayer()
+        val records = mutableListOf<String>()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            recordPlayback = { failed, text -> if (failed) records += text }, startupTimeoutMs = 60)
+        controller.play(request)
+        fake.state = Player.STATE_READY
+        fake.listener!!.onRenderedFirstFrame()
+        controller.seekTo(5000)
+        fake.state = Player.STATE_BUFFERING
+        delay(180)
+        assertEquals(1, records.size)
+        assertEquals(true, records.single().contains("SEEK_TIMEOUT"))
+        assertEquals(true, controller.startupDelayed.value)
+        assertEquals(1, fake.calls.count { it == "stop" })
+        assertEquals(0, fake.calls.count { it == "prepare" })
+        fake.state = Player.STATE_READY
+        fake.position += 1000
+        delay(80)
+        assertEquals(false, controller.startupDelayed.value)
+        controller.stop()
+    }
+
+    @Test fun rebufferWatchHonorsPauseAndSeekGenerationsAndCancelsOnStop(): Unit = runBlocking {
+        val fake = FakePlayer()
+        val records = mutableListOf<String>()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            recordPlayback = { failed, text -> if (failed) records += text }, startupTimeoutMs = 80)
+        controller.play(request)
+        fake.state = Player.STATE_READY
+        fake.listener!!.onRenderedFirstFrame()
+        fake.state = Player.STATE_BUFFERING
+        fake.listener!!.onPlaybackStateChanged(fake.state)
+        fake.playing = false
+        delay(120)
+        assertEquals(0, records.size)
+        fake.playing = true
+        delay(180)
+        assertEquals(true, records.single().contains("REBUFFER_TIMEOUT"))
+        controller.seekToLiveEdge()
+        delay(40)
+        controller.seekTo(1000)
+        delay(50)
+        assertEquals(1, records.size)
+        controller.stop()
+        delay(120)
+        assertEquals(1, records.size)
+        assertEquals(false, controller.startupDelayed.value)
+    }
+
+    @Test fun seeksRejectUnsupportedAndClampToCurrentWindow(): Unit = runBlocking {
+        val fake = FakePlayer()
+        val controller = PlaybackController(this) { fake.player }
+        assertEquals(false, controller.seekTo(1000))
+        controller.play(request)
+        controller.seekTo(-10)
+        assertEquals(0L, fake.seekPosition)
+        controller.seekTo(60_000)
+        assertEquals(29_999L, fake.seekPosition)
+        controller.stop()
+    }
+
     private class FakePlayer {
         val calls = mutableListOf<String>()
         var parameters = TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT
@@ -512,6 +575,9 @@ class PlaybackControllerTest {
         var prepareFailure: Throwable? = null
         var tracks: Tracks = Tracks.EMPTY
         var videoFormat: Format? = null
+        var position = 0L
+        var seekPosition = 0L
+        var playing = true
         val player = Proxy.newProxyInstance(
             ExoPlayer::class.java.classLoader,
             arrayOf(ExoPlayer::class.java),
@@ -527,6 +593,12 @@ class PlaybackControllerTest {
                 "getCurrentTracks" -> tracks
                 "getVideoFormat" -> videoFormat
                 "getBufferedPosition" -> 2500L
+                "getCurrentPosition" -> position
+                "getCurrentTimeline" -> Timeline.EMPTY
+                "getPlayWhenReady" -> playing
+                "getDuration" -> 30_000L
+                "isCurrentMediaItemSeekable" -> true
+                "seekTo" -> { seekPosition = args!![0] as Long; calls += method.name; null }
                 "prepare" -> { calls += method.name; prepareFailure?.let { throw it }; null }
                 else -> {
                     calls += method.name

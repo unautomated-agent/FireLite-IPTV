@@ -8,7 +8,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HttpConnectionGateTest {
-    @Test fun requestsWithinOneSessionWaitForThePreviousConnectionToClose() {
+    @Test fun requestsWithinOneSessionCanOpenBeforeThePreviousConnectionCloses() {
         val gate = HttpConnectionGate()
         val session = gate.nextSession()
         val first = gate.acquire(session)
@@ -21,28 +21,35 @@ class HttpConnectionGateTest {
         second.start()
         try {
             assertTrue(waiting.await(3, TimeUnit.SECONDS))
-            assertFalse(opened.await(50, TimeUnit.MILLISECONDS))
-            first.close(); first.close()
+            assertTrue(opened.await(3, TimeUnit.SECONDS))
         } finally { first.close() }
         assertTrue(opened.await(3, TimeUnit.SECONDS))
         second.join(3_000)
         assertFalse(second.isAlive)
     }
 
-    @Test fun changingChannelCancelsAQueuedRequestFromTheOldSession() {
+    @Test fun aNewSessionWaitsUntilAllPreviousSessionConnectionsClose() {
         val gate = HttpConnectionGate()
         val old = gate.nextSession()
         val first = gate.acquire(old)
-        val cancelled = CountDownLatch(1)
+        val segment = gate.acquire(old)
+        val next = gate.nextSession()
+        val waiting = CountDownLatch(1)
+        val opened = CountDownLatch(1)
         val waiter = Thread {
-            try { gate.acquire(old).use { error("Old session opened") } }
-            catch (expected: InterruptedIOException) { cancelled.countDown() }
+            waiting.countDown()
+            gate.acquire(next).use { opened.countDown() }
         }
         waiter.start()
-        val next = gate.nextSession()
-        try { assertTrue(cancelled.await(3, TimeUnit.SECONDS)) }
-        finally { first.close(); waiter.join(3_000) }
-        gate.acquire(next).close()
+        try {
+            assertTrue(waiting.await(3, TimeUnit.SECONDS))
+            assertFalse(opened.await(50, TimeUnit.MILLISECONDS))
+            first.close(); first.close()
+            assertFalse(opened.await(50, TimeUnit.MILLISECONDS))
+        } finally { first.close(); segment.close() }
+        assertTrue(opened.await(3, TimeUnit.SECONDS))
+        waiter.join(3_000)
+        assertFalse(waiter.isAlive)
     }
 
     @Test fun cancelledWaitersDoNotOpenOrLeakThePermit() {

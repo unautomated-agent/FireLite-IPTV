@@ -8,6 +8,7 @@ internal class HttpConnectionGate {
     private val lock = Object()
     private var generation = 0L
     private var active = 0
+    private var activeSession = 0L
 
     fun nextSession(): Long = synchronized(lock) {
         (++generation).also { lock.notifyAll() }
@@ -16,13 +17,14 @@ internal class HttpConnectionGate {
     fun acquire(session: Long): Closeable {
         synchronized(lock) {
             try {
-                while (session == generation && active > 0) lock.wait()
+                while (session == generation && active > 0 && activeSession != session) lock.wait()
             } catch (error: InterruptedException) {
                 Thread.currentThread().interrupt()
                 throw InterruptedIOException("Stream connection cancelled").apply { initCause(error) }
             }
             if (session != generation) throw InterruptedIOException("Stream session superseded")
             active++
+            activeSession = session
         }
         val released = AtomicBoolean()
         return Closeable {

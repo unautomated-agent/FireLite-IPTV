@@ -75,7 +75,7 @@ data class PlaybackSnapshot(
 
 /**
  * The only place in the app that opens a stream. It owns exactly one [ExoPlayer] and therefore at most one
- * streaming session with the provider. HTTP requests within that session are serialized.
+ * streaming session with the provider. HTTP requests within that session may overlap.
  *
  * How the rule "never two streams" is kept:
  * 1. [StreamGate] drops a request for the stream that is already active.

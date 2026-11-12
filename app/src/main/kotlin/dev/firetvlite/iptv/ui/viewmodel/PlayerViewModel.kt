@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.exoplayer.ExoPlayer
 import dev.firetvlite.iptv.FireLiteApplication
 import dev.firetvlite.iptv.data.db.ChannelEntity
+import dev.firetvlite.iptv.data.db.ProgrammeEntity
 import dev.firetvlite.iptv.data.db.FavoriteEntity
 import dev.firetvlite.iptv.data.db.RecentEntity
 import dev.firetvlite.iptv.data.library.LibraryRepository
@@ -21,6 +22,7 @@ import dev.firetvlite.iptv.data.epg.CurrentAndNext
 import dev.firetvlite.iptv.playback.StreamRequest
 import dev.firetvlite.iptv.playback.ZapMath
 import dev.firetvlite.iptv.playback.ChannelTimeline
+import dev.firetvlite.iptv.playback.ProgrammePlayback
 import dev.firetvlite.iptv.playback.TimelineAction
 import dev.firetvlite.iptv.playback.TimelineItem
 import dev.firetvlite.iptv.playback.PreviousChannel
@@ -227,7 +229,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             if (archiveTime != null) {
                 activeChannel = first
                 activeIndex = index
-                applyCatchup(first, archiveTime)
+                applyCatchup(first, archiveTime, restartIfActive = true)
             } else if (!sameChannel || archiveStartMs != null || status.value is PlaybackStatus.Failed) startLive(first)
             markWatched(first)
         }
@@ -311,20 +313,38 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun closeTimeline() { mutableTimeline.value = null }
 
+    fun openLiveProgramme(zap: ZapContext, index: Int, group: GroupKey, channel: ChannelEntity, programme: ProgrammeEntity?) {
+        closeTimeline()
+        if (activeChannel?.streamUrl == channel.streamUrl && archiveStartMs == null) {
+            val position = ProgrammePlayback.bufferedStart(programme, updateFrame(), sameLiveChannel = true,
+                supportsCatchup = CatchupUrlBuilder.isSupported(channel))
+            if (position != null) playback.seekTo(position) else playback.seekToLiveEdge()
+        }
+        open(zap, index, group)
+    }
+
     fun playTimeline(item: TimelineItem) {
         val target = mutableTimeline.value ?: return
-        when (ChannelTimeline.action(item)) {
+        val now = System.currentTimeMillis()
+        when (ChannelTimeline.selection(item, now, target.channel.catchupDays, CatchupUrlBuilder.isSupported(target.channel))) {
             TimelineAction.None -> return
-            TimelineAction.Live -> {
+            TimelineAction.Archive -> {
                 closeTimeline()
-                if (activeChannel?.streamUrl == target.channel.streamUrl && archiveStartMs == null)
-                    playback.seekToLiveEdge()
-                open(target.zap, target.index, target.group)
+                openArchive(target.zap, target.index, target.group, item.programme!!.start)
+            }
+            TimelineAction.Live -> {
+                openLiveProgramme(target.zap, target.index, target.group, target.channel,
+                    if (item.live) null else item.programme)
             }
             TimelineAction.Past -> {
                 val channel = target.channel
                 if (CatchupUrlBuilder.isSupported(channel) && channel.catchupDays > 0) {
-                    val limit = System.currentTimeMillis() - channel.catchupDays.toLong() * ChannelTimeline.DAY
+                    if (item.programme != null) {
+                        closeTimeline()
+                        open(target.zap, target.index, target.group)
+                        return
+                    }
+                    val limit = now - channel.catchupDays.toLong() * ChannelTimeline.DAY
                     if (item.stop <= limit) return
                     closeTimeline()
                     openArchive(target.zap, target.index, target.group, maxOf(item.start, limit))
@@ -333,6 +353,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     if (!frame.snapshot.seekable) { notify(PlayerMessage.SeekUnsupported); return }
                     closeTimeline()
                     seekAbsolute(maxOf(item.start, frame.watchedMs - frame.snapshot.positionMs))
+                } else {
+                    closeTimeline()
+                    open(target.zap, target.index, target.group)
                 }
             }
         }
@@ -478,7 +501,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun applyCatchup(channel: ChannelEntity, time: Long) {
+    private fun applyCatchup(channel: ChannelEntity, time: Long, restartIfActive: Boolean = false) {
         val now = System.currentTimeMillis() / 1000
         val start = time / 1000
         val url = CatchupUrlBuilder.build(
@@ -492,7 +515,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
         archiveStartMs = start * 1000
-        playback.play(StreamRequest(url, userAgent, archive = true, channelName = channel.name))
+        val request = StreamRequest(url, userAgent, archive = true, channelName = channel.name)
+        if (restartIfActive) playback.playArchiveFromStart(request) else playback.play(request)
         updateFrame()
     }
 

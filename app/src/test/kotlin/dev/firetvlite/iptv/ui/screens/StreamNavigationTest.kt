@@ -46,13 +46,25 @@ class StreamNavigationTest {
     }
 
     @Test fun quickMenuHasExactlyTheRequestedActionsInOrderForBothFavoriteStates() {
-        val actions = listOf(QuickMenuAction.Audio, QuickMenuAction.Favorite, QuickMenuAction.Guide,
-            QuickMenuAction.Films, QuickMenuAction.Settings)
+        val actions = listOf(QuickMenuAction.Films, QuickMenuAction.Settings, QuickMenuAction.Favorite, QuickMenuAction.Audio)
         assertEquals(actions, quickMenuItems(false).map { it.first })
         assertEquals(actions, quickMenuItems(true).map { it.first })
-        assertEquals(listOf(R.string.quick_menu_audio, R.string.quick_menu_add_favorite, R.string.nav_guide,
-            R.string.nav_films, R.string.nav_settings), quickMenuItems(false).map { it.second })
-        assertEquals(R.string.quick_menu_remove_favorite, quickMenuItems(true)[1].second)
+        assertEquals(listOf(R.string.nav_films, R.string.nav_settings, R.string.quick_menu_add_favorite,
+            R.string.quick_menu_audio), quickMenuItems(false).map { it.second })
+        assertEquals(R.string.quick_menu_remove_favorite, quickMenuItems(true)[2].second)
+    }
+
+    @Test fun quickMenuFocusAndAudioBackAreIndependentOfTrackAndFavoriteUpdates() {
+        val menu = File("src/main/kotlin/dev/firetvlite/iptv/ui/screens/PlayerQuickMenu.kt").readText()
+        assertTrue(menu.contains("LaunchedEffect(audio, active)"))
+        assertTrue(menu.contains("QuickMenuAction.Films -> Modifier.focusRequester(firstFocus)"))
+        assertTrue(menu.contains("if (audio) { returningFromAudio = true; audio = false } else onClose()"))
+        assertTrue(menu.contains("if (audio) submenuFocus else if (returningFromAudio) audioFocus else firstFocus"))
+        assertTrue(menu.contains("if (active && event.key == Key.Back)"))
+        assertTrue(menu.contains("if (tracks.isEmpty())"))
+        assertFalse(menu.contains("openGuide("))
+        assertFalse(menu.contains("startLive("))
+        assertFalse(menu.contains("viewModel.open("))
     }
 
     @Test fun noResumableChannelOpensSettingsRegardlessOfPreviousPanel() {

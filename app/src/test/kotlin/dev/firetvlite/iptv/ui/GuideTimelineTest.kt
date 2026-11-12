@@ -82,6 +82,8 @@ class GuideTimelineTest {
 
     @Test fun onlyCurrentOrRetainedSupportedPastProgrammesArePlayable() {
         assertEquals(GuideAction.Live, GuideTimeline.action(programme(now - 1, now + 1), now, 0, false))
+        assertEquals(GuideAction.Archive, GuideTimeline.action(programme(now - 1, now + 1), now, 1, true))
+        assertEquals(GuideAction.Archive, GuideTimeline.action(programme(now, now + 1), now, 1, true))
         val past = programme(now - 60_000, now)
         assertEquals(GuideAction.Archive, GuideTimeline.action(past, now, 1, true))
         assertEquals(GuideAction.Details, GuideTimeline.action(past, now, 1, false))
@@ -89,5 +91,13 @@ class GuideTimelineTest {
         assertEquals(GuideAction.Details, GuideTimeline.action(programme(now - GuideTimeline.DAY - 1, now - 1), now, 1, true))
         assertEquals(GuideAction.Details, GuideTimeline.action(programme(now + 1, now + 60_000), now, 1, true))
         assertEquals(GuideAction.Live, GuideTimeline.action(null, now, 0, false))
+    }
+
+    @Test fun archiveBoundaryUsesProgrammeStartRatherThanVisibleCellStart() {
+        val limit = now - GuideTimeline.DAY
+        assertEquals(GuideAction.Archive, GuideTimeline.action(programme(limit, now - 1), now, 1, true))
+        assertEquals(GuideAction.Details, GuideTimeline.action(programme(limit - 1, now - 1), now, 1, true))
+        assertEquals(GuideAction.Live, GuideTimeline.action(programme(limit - 1, now + 1), now, 1, true))
+        assertEquals(GuideAction.Details, GuideTimeline.action(programme(now, now), now, 1, true))
     }
 }

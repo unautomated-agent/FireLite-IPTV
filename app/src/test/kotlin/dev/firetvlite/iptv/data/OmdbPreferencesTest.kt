@@ -9,6 +9,18 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class OmdbPreferencesTest {
+    @Test fun sampleUrlIsNormalizedAndActivationLinkCannotOverwriteAnExistingKeyOrRefresh() {
+        val backend = Backend()
+        val preferences = OmdbPreferences(backend.preferences)
+        assertTrue(preferences.save("https://www.omdbapi.com/?apikey=fixture&t=Movie"))
+        assertEquals("fixture", preferences.key.value)
+        val refresh = preferences.refresh.value
+        assertFalse(preferences.save("https://www.omdbapi.com/apikey.aspx?VERIFYKEY=activation-token"))
+        assertEquals("fixture", preferences.key.value)
+        assertEquals("fixture", OmdbPreferences(backend.preferences).key.value)
+        assertEquals(refresh, preferences.refresh.value)
+    }
+
     @Test fun successfulLookupClearsCurrentFailureButRetainsLastErrorForDiagnostics() {
         val backend = Backend()
         val now = 1_800_000_000_000L

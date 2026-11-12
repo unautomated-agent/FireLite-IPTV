@@ -25,12 +25,11 @@ fun guideBackAction(mode: PlayerMode, hasChannel: Boolean, keyUp: Boolean, cance
     else -> GuideBackAction.Exit
 }
 
-enum class QuickMenuAction { Audio, Favorite, Guide, Films, Settings }
+enum class QuickMenuAction { Films, Settings, Favorite, Audio }
 
 fun quickMenuItems(favorite: Boolean): List<Pair<QuickMenuAction, Int>> = listOf(
-    QuickMenuAction.Audio to R.string.quick_menu_audio,
-    QuickMenuAction.Favorite to if (favorite) R.string.quick_menu_remove_favorite else R.string.quick_menu_add_favorite,
-    QuickMenuAction.Guide to R.string.nav_guide,
     QuickMenuAction.Films to R.string.nav_films,
     QuickMenuAction.Settings to R.string.nav_settings,
+    QuickMenuAction.Favorite to if (favorite) R.string.quick_menu_remove_favorite else R.string.quick_menu_add_favorite,
+    QuickMenuAction.Audio to R.string.quick_menu_audio,
 )

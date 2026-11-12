@@ -11,7 +11,7 @@ data class TimelineItem(
     val live: Boolean = false,
 )
 
-enum class TimelineAction { Live, Past, None }
+enum class TimelineAction { Live, Archive, Past, None }
 
 object ChannelTimeline {
     const val HOUR = 3_600_000L
@@ -78,5 +78,11 @@ object ChannelTimeline {
         item.future -> TimelineAction.None
         item.live || item.current -> TimelineAction.Live
         else -> TimelineAction.Past
+    }
+
+    fun selection(item: TimelineItem, now: Long, catchupDays: Int, supportsCatchup: Boolean): TimelineAction = when {
+        item.live -> TimelineAction.Live
+        item.programme != null -> ProgrammePlayback.action(item.programme, now, catchupDays, supportsCatchup)
+        else -> action(item)
     }
 }

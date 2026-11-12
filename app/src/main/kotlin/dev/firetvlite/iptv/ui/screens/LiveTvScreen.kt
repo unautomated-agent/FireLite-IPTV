@@ -585,7 +585,7 @@ private fun ChannelBrowser(
                                             cell?.let { focusedTime.coerceIn(it.start, it.stop - 1) } ?: now, cell != null && row.channel.id in guideChannels)
                                         if (action != GuideAction.Details) library.zapContext(selected)?.let {
                                             if (action == GuideAction.Archive) player.openArchive(it, index, selected, programme!!.start)
-                                            else player.open(it, index, selected)
+                                            else player.openLiveProgramme(it, index, selected, row.channel, programme)
                                         }
                                     }
                                 },

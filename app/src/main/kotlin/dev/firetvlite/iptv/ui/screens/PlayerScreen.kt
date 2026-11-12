@@ -12,7 +12,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -116,6 +118,10 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
                 descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                 setKeepContentOnPlayerReset(true)
+                addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+                    rebindVideoSurfaceOnResize(this.player, right - left, bottom - top,
+                        oldRight - oldLeft, oldBottom - oldTop) { this.player = it }
+                }
             }
         }, update = { view ->
             if (view.player !== player) view.player = player
@@ -212,9 +218,12 @@ private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSet
             PlayerInfoBanner(channel, frame, guide, controls.banner == BannerState.Expanded, scroll, viewModel.isArchive())
         }
     }
-    if (quickMenu) PlayerQuickMenu(viewModel, onClose = { quickMenu = false },
-        onGuide = { quickMenu = false; viewModel.openGuide() },
-        onFilms = { quickMenu = false; onFilms() }, onSettings = { quickMenu = false; onSettings() })
+    AnimatedVisibility(quickMenu,
+        enter = fadeIn(tween(200)) + slideInHorizontally(tween(200)) { it / 3 },
+        exit = fadeOut(tween(200)) + slideOutHorizontally(tween(200)) { it / 3 }) {
+        PlayerQuickMenu(viewModel, active = quickMenu, onClose = { quickMenu = false },
+            onFilms = { quickMenu = false; onFilms() }, onSettings = { quickMenu = false; onSettings() })
+    }
 }
 
 @Composable

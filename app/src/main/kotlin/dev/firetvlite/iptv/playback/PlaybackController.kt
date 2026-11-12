@@ -389,6 +389,16 @@ class PlaybackController internal constructor(
         return true
     }
 
+    fun playArchiveFromStart(request: StreamRequest) {
+        val player = exo
+        if (request.archive && request == activeRequest && player != null && startJob?.isActive != true) {
+            player.seekTo(0L)
+            watchProgress("SEEK_TIMEOUT")
+        } else {
+            play(request)
+        }
+    }
+
     /** Plays [request]. A request for the stream that is already active does nothing. */
     fun play(request: StreamRequest) {
         if (gate.onRequest(request.url) == StreamGate.Action.Ignore) return

@@ -28,7 +28,8 @@
     <string name="omdb_key_label">Klucz OMDb (oceny IMDb)</string>
     <string name="omdb_key_help">Darmowy klucz: omdbapi.com/apikey.aspx</string>
     <string name="omdb_key_activation_help">Darmowy klucz wymaga aktywacji linkiem z wiadomości e-mail. Po aktywacji zapisz go ponownie, aby od razu ponowić pobieranie ocen.</string>
-    <string name="omdb_issue_auth">OMDb odrzuciło klucz (%1$s). Sprawdź klucz i jego aktywację e-mail, a następnie zapisz go ponownie w Ustawieniach.</string>
+    <string name="omdb_issue_auth">OMDb odrzuciło klucz (%1$s). Wpisz krótki klucz z wiersza „Here is your key”, nie link. Otwórz raz link aktywacyjny z e-maila w przeglądarce, a następnie zapisz klucz ponownie.</string>
+    <string name="omdb_key_activation_link">To jest link aktywacyjny, nie klucz API. Otwórz go raz w przeglądarce, a tutaj wpisz krótki klucz z wiersza „Here is your key” w wiadomości e-mail. Dotychczasowy klucz nie został zmieniony.</string>
     <string name="omdb_issue_limit">Osiągnięto limit zapytań OMDb (%1$s). Oceny z pamięci nadal są dostępne; nowe zostaną pobrane po odnowieniu limitu.</string>
     <string name="omdb_issue_error">Nie udało się pobrać ocen OMDb (%1$s). Szczegóły w diagnostyce.</string>
     <string name="omdb_key_save">Zapisz klucz OMDb</string>
@@ -50,6 +51,10 @@
     <string name="quick_menu_audio">Ścieżka dźwiękowa</string>
     <string name="quick_menu_back">‹ Wstecz</string>
     <string name="quick_menu_no_audio">Brak dostępnych ścieżek dźwiękowych</string>
+    <string name="quick_menu_no_programme">Brak informacji o audycji</string>
+    <string name="quick_menu_is_favorite">W ulubionych</string>
+    <string name="quick_menu_not_favorite">Poza ulubionymi</string>
+    <string name="quick_menu_audio_selected">Wybrana ścieżka</string>
     <string name="quick_menu_add_favorite">Dodaj do ulubionych</string>
     <string name="quick_menu_remove_favorite">Usuń z ulubionych</string>
     <string name="settings_watch_live">TV na żywo — wybierz kanał</string>

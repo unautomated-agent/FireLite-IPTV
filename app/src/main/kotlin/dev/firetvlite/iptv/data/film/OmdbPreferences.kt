@@ -42,12 +42,13 @@ class OmdbPreferences internal constructor(private val prefs: SharedPreferences,
         prefs.edit().putString("current_error", safe).apply()
         mutableError.value = safe
     }
-    fun save(key: String) {
-        val value = key.trim()
+    fun save(key: String): Boolean {
+        val value = normalizeOmdbKey(key) ?: return false
         prefs.edit().putString("key", value).apply()
         mutableKey.value = value
         setError(null)
         mutableRefresh.value += 1
+        return true
     }
     fun baseUrl(): String = if (BuildConfig.DEBUG) prefs.getString("debug_base_url", null)
         ?: "https://www.omdbapi.com/" else "https://www.omdbapi.com/"

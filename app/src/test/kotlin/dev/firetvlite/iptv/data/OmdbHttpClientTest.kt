@@ -60,11 +60,11 @@ class OmdbHttpClientTest {
             val client = OmdbHttpClient { "http://127.0.0.1:${server.localPort}/" }
             assertEquals(OmdbResult.Missing, client.lookup("fixture", "Film", 2002))
             response.set(200 to ByteArray(OmdbHttpClient.MAX_BODY_BYTES + 1) { 32 })
-            assertEquals(OmdbResult.Failed, client.lookup("fixture", "Film", 2002))
+            assertEquals(OmdbResult.Failed(), client.lookup("fixture", "Film", 2002))
             response.set(200 to byteArrayOf())
-            assertEquals(OmdbResult.Failed, client.lookup("fixture", "Film", 2002))
+            assertEquals(OmdbResult.Failed("BAD_RESPONSE"), client.lookup("fixture", "Film", 2002))
             response.set(503 to byteArrayOf())
-            assertEquals(OmdbResult.Failed, client.lookup("fixture", "Film", 2002))
+            assertEquals(OmdbResult.Failed("HTTP_503"), client.lookup("fixture", "Film", 2002))
             serving.get(10, TimeUnit.SECONDS)
         } finally { server.close() }
     }

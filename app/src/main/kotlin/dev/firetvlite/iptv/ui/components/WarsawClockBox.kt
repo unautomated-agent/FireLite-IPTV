@@ -18,6 +18,8 @@ import kotlinx.coroutines.delay
 
 internal const val CLOCK_CORNER_DP = 4
 internal const val CLOCK_BACKGROUND_ALPHA = 0.4f
+internal const val CLOCK_HORIZONTAL_PADDING_DP = 6
+internal const val CLOCK_VERTICAL_PADDING_DP = 2
 
 @Composable
 internal fun minuteClock() = produceState(System.currentTimeMillis()) {
@@ -38,5 +40,5 @@ internal fun WarsawClockBox(modifier: Modifier = Modifier) {
         color = FireLiteTheme.colors.textPrimary, maxLines = 1,
         modifier = modifier.clip(RoundedCornerShape(CLOCK_CORNER_DP.dp))
             .background(Color.Black.copy(alpha = CLOCK_BACKGROUND_ALPHA))
-            .padding(horizontal = 12.dp, vertical = 6.dp))
+            .padding(horizontal = CLOCK_HORIZONTAL_PADDING_DP.dp, vertical = CLOCK_VERTICAL_PADDING_DP.dp))
 }

@@ -12,7 +12,9 @@
     <string name="films_archive_remaining">Dostępny jeszcze: %1$d godz. %2$d min</string>
     <string name="films_archive_expired">Ten film nie jest już dostępny w archiwum.</string>
     <string name="films_selected_tab">● %1$s</string>
-    <string name="films_empty">Brak filmów w tym przedziale. Odśwież EPG w Ustawieniach.</string>
+    <string name="films_empty">Brak filmów w tym przedziale.</string>
+    <string name="films_loading">Wczytywanie rankingu i ocen IMDb…</string>
+    <string name="films_missing_epg">Brak EPG dla kanałów tej listy. Odśwież EPG w Ustawieniach.</string>
     <string name="films_starts_at">Zaczyna się o %1$s</string>
     <string name="films_airing_time">NA ŻYWO · %1$s</string>
     <string name="imdb_rating">IMDb %1$s/10</string>
@@ -29,6 +31,7 @@
     <string name="omdb_key_set">ustawiony</string>
     <string name="omdb_key_missing">brak</string>
     <string name="omdb_key_diagnostics">Klucz OMDb: %1$s</string>
+    <string name="omdb_stats_diagnostics">OMDb: dziś=%1$d · trafienia=%2$d · brak=%3$d · błąd=%4$s</string>
     <string name="channel_next_programme">Następnie: %1$s %2$s</string>
     <string name="diagnostics_title">Diagnostyka</string>
     <string name="diagnostics_open">Pokaż raport i kod QR</string>
@@ -103,7 +106,9 @@
     <string name="live_empty_group">Brak kanałów w tej grupie.</string>
     <string name="live_hint">Zatrzymaj fokus – podgląd · OK – pełny ekran · Menu – ulubione</string>
     <string name="detail_group">Grupa: %1$s</string>
-    <string name="badge_catchup">ARCHIWUM</string>
+    <string name="channel_row_next_programme">Następnie %1$s %2$s</string>
+    <string name="player_archive_mode">Odtwarzanie z archiwum</string>
+    <string name="player_live_mode">NA ŻYWO</string>
     <plurals name="catchup_days">
         <item quantity="one">%d dzień wstecz</item>
         <item quantity="few">%d dni wstecz</item>
@@ -138,7 +143,6 @@
     <string name="channel_timeline_unavailable">Ten kanał nie ma dostępnego archiwum.</string>
     <string name="channel_timeline_future">Zaczyna się o %1$s</string>
     <string name="channel_timeline_hint">Góra/Dół: audycja · ⏪/⏩: dzień · OK: oglądaj · Wstecz: zamknij</string>
-    <string name="channel_timeline_overlay_hint">Prawo: historia audycji</string>
     <string name="player_seek_unsupported">Przewijanie nie jest dostępne dla tego kanału.</string>
     <string name="player_catchup_unsupported">Archiwum nie działa dla tego kanału.</string>
 

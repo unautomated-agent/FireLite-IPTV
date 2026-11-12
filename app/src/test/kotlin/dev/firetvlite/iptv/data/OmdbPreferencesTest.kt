@@ -1,0 +1,57 @@
+package dev.firetvlite.iptv.data
+
+import android.content.SharedPreferences
+import dev.firetvlite.iptv.data.film.OmdbPreferences
+import dev.firetvlite.iptv.data.film.OmdbResult
+import java.lang.reflect.Proxy
+import org.junit.Assert.*
+import org.junit.Test
+
+class OmdbPreferencesTest {
+    @Test fun requestStatsPersistWithoutCountingKeyConfigurationAsValidation() {
+        val backend = Backend()
+        val now = 1_800_000_000_000L
+        val preferences = OmdbPreferences(backend.preferences) { now }
+        assertTrue(preferences.key.value.isBlank())
+        assertEquals(0, preferences.stats.value.requests)
+        preferences.save(" fixture ")
+        assertEquals("fixture", preferences.key.value)
+        assertEquals(0, preferences.stats.value.requests)
+        preferences.requested(now)
+        preferences.completed(OmdbResult.Missing, now)
+        preferences.requested(now)
+        preferences.completed(OmdbResult.Failed("AUTH"), now)
+        val reopened = OmdbPreferences(backend.preferences) { now }
+        assertEquals(preferences.stats.value, reopened.stats.value)
+        assertEquals(2, reopened.stats.value.requests)
+        assertEquals(1, reopened.stats.value.misses)
+        assertEquals("AUTH", reopened.stats.value.lastError)
+        val tomorrow = OmdbPreferences(backend.preferences) { now + 86_400_000 }
+        assertEquals(0, tomorrow.stats.value.requests)
+        assertEquals("fixture", tomorrow.key.value)
+    }
+
+    private class Backend {
+        private val values = mutableMapOf<String, Any?>()
+        val preferences: SharedPreferences
+        init {
+            lateinit var editor: SharedPreferences.Editor
+            editor = Proxy.newProxyInstance(SharedPreferences.Editor::class.java.classLoader,
+                arrayOf(SharedPreferences.Editor::class.java)) { _, method, args ->
+                when (method.name) {
+                    "putLong", "putInt", "putString" -> { values[args!![0] as String] = args[1]; editor }
+                    "apply" -> null
+                    else -> error("Unexpected editor method: ${method.name}")
+                }
+            } as SharedPreferences.Editor
+            preferences = Proxy.newProxyInstance(SharedPreferences::class.java.classLoader,
+                arrayOf(SharedPreferences::class.java)) { _, method, args ->
+                when (method.name) {
+                    "getLong", "getInt", "getString" -> values[args!![0] as String] ?: args[1]
+                    "edit" -> editor
+                    else -> error("Unexpected preferences method: ${method.name}")
+                }
+            } as SharedPreferences
+        }
+    }
+}

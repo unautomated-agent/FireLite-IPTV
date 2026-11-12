@@ -129,7 +129,7 @@ class FilmsTest {
     }
     @Test fun failuresDoNotPoisonCacheAndMissingResultsAreNegativeCached() = runBlocking {
         val store = Store()
-        val failed = FilmLookup(OmdbClient { _, _, _ -> OmdbResult.Failed }, store, { now }) {}
+        val failed = FilmLookup(OmdbClient { _, _, _ -> OmdbResult.Failed() }, store, { now }) {}
         assertNull(failed.lookup(film(), "fixture", now))
         assertTrue(store.rows.isEmpty())
         var calls = 0
@@ -180,8 +180,8 @@ class FilmsTest {
         val result = OmdbHttpClient.decode("""{"Response":"True","Type":"movie","Year":"2002","imdbRating":"7.1","imdbVotes":"123,456","imdbID":"tt123"}""") as OmdbResult.Found
         assertEquals(123456L, result.movie.votes)
         assertEquals(OmdbResult.Missing, OmdbHttpClient.decode("""{"Response":"False","Error":"Movie not found!"}"""))
-        assertEquals(OmdbResult.Failed, OmdbHttpClient.decode("""{"Response":"False","Error":"Invalid API key!"}"""))
-        assertEquals(OmdbResult.Failed, OmdbHttpClient.decode("garbage"))
+        assertEquals(OmdbResult.Failed("AUTH"), OmdbHttpClient.decode("""{"Response":"False","Error":"Invalid API key!"}"""))
+        assertEquals(OmdbResult.Failed("BAD_RESPONSE"), OmdbHttpClient.decode("garbage"))
         assertEquals(R.string.omdb_key_set, omdbKeyStatus(true))
         assertEquals(R.string.omdb_key_missing, omdbKeyStatus(false))
     }

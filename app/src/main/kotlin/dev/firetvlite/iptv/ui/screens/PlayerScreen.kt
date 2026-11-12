@@ -12,7 +12,9 @@ import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.focusable
@@ -212,9 +214,12 @@ private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSet
             PlayerInfoBanner(channel, frame, guide, controls.banner == BannerState.Expanded, scroll, viewModel.isArchive())
         }
     }
-    if (quickMenu) PlayerQuickMenu(viewModel, onClose = { quickMenu = false },
-        onGuide = { quickMenu = false; viewModel.openGuide() },
-        onFilms = { quickMenu = false; onFilms() }, onSettings = { quickMenu = false; onSettings() })
+    AnimatedVisibility(quickMenu,
+        enter = fadeIn(tween(200)) + slideInHorizontally(tween(200)) { it / 3 },
+        exit = fadeOut(tween(200)) + slideOutHorizontally(tween(200)) { it / 3 }) {
+        PlayerQuickMenu(viewModel, active = quickMenu, onClose = { quickMenu = false },
+            onFilms = { quickMenu = false; onFilms() }, onSettings = { quickMenu = false; onSettings() })
+    }
 }
 
 @Composable

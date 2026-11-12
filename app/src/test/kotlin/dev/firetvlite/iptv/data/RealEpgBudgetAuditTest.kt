@@ -60,7 +60,7 @@ class RealEpgBudgetAuditTest {
         val store = object : FilmStore {
             override suspend fun cached(key: String) = rows[key]
             override suspend fun save(rating: FilmRatingEntity) { rows[rating.cacheKey] = rating }
-            override suspend fun reserve(day: Long): Boolean = (requests < 400).also { if (it) requests++ }
+            override suspend fun reserve(day: Long): Boolean = (requests < Films.DAILY_BUDGET).also { if (it) requests++ }
         }
         for (p in candidates) {
             val lookup = FilmLookup(OmdbClient { _, _, year ->

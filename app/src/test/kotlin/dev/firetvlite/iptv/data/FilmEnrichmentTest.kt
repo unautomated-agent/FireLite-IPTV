@@ -26,7 +26,7 @@ class FilmEnrichmentTest {
         var requests = 0
         override suspend fun cached(key: String) = rows[key]
         override suspend fun save(rating: FilmRatingEntity) { rows[rating.cacheKey] = rating }
-        override suspend fun reserve(day: Long) = if (requests < 400) { requests++; true } else false
+        override suspend fun reserve(day: Long) = if (requests < Films.DAILY_BUDGET) { requests++; true } else false
     }
 
     @Test fun transientFailureDoesNotStarveLaterFilmsAndIsRetriedWithoutPoisoningCache() = runBlocking {
@@ -202,10 +202,10 @@ class FilmEnrichmentTest {
         assertFalse(enrichFilms(listOf(film("First")), "fixture", lookup, { false }) { now })
         assertFalse(enrichFilms(listOf(film("First")), "", lookup, { true }) { now })
         assertEquals("NO_KEY", lookup.lastError)
-        store.requests = 400
+        store.requests = Films.DAILY_BUDGET
         assertFalse(enrichFilms(listOf(film("First")), "fixture", lookup, { true }) { now })
         assertEquals("LOCAL_BUDGET", lookup.lastError)
-        assertEquals(400, store.requests)
+        assertEquals(Films.DAILY_BUDGET, store.requests)
         assertFalse(enrichFilms(emptyList(), "fixture", lookup, { true }) { now })
         assertNull(lookup.lastError)
         try {

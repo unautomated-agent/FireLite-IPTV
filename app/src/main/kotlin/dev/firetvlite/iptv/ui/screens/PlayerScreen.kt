@@ -63,6 +63,7 @@ import dev.firetvlite.iptv.playback.BannerState
 import dev.firetvlite.iptv.playback.PlaybackStatus
 import dev.firetvlite.iptv.playback.PlayerMode
 import dev.firetvlite.iptv.playback.ScreenAwakePolicy
+import dev.firetvlite.iptv.playback.SeekGesture
 import dev.firetvlite.iptv.playback.TvAction
 import dev.firetvlite.iptv.playback.TvKey
 import dev.firetvlite.iptv.playback.TvPlayerControls
@@ -157,6 +158,10 @@ private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSet
     val guide by viewModel.programme.collectAsState()
     val message by viewModel.message.collectAsState()
     var controls by remember { mutableStateOf(TvPlayerControls()) }
+    val seekGesture = remember { SeekGesture() }
+    DisposableEffect(viewModel, channel?.id) {
+        onDispose { seekGesture.cancel(); viewModel.cancelSeek() }
+    }
     LaunchedEffect(controls.banner) { onBannerVisible(controls.banner != BannerState.Hidden) }
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
@@ -168,7 +173,7 @@ private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSet
         when (result.second) {
             TvAction.None -> Unit
             TvAction.PreviousChannel -> viewModel.previousChannel()
-            TvAction.Back10, TvAction.Forward10, TvAction.Back60, TvAction.Forward60 -> viewModel.seek(result.second.seekMs!!)
+            TvAction.Back10, TvAction.Forward10, TvAction.Back60, TvAction.Forward60 -> Unit
             TvAction.TogglePause -> viewModel.togglePause()
             TvAction.Channels -> viewModel.openOverlay()
             TvAction.Guide -> viewModel.openGuide()
@@ -178,7 +183,10 @@ private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSet
             TvAction.ScrollDown -> scope.launch { scroll.animateScrollBy(100f) }
         }
     }
-    LaunchedEffect(quickMenu) { if (!quickMenu) focus.requestFocusWhenReady() }
+    LaunchedEffect(quickMenu) {
+        if (!quickMenu) focus.requestFocusWhenReady()
+        else { seekGesture.cancel(); viewModel.cancelSeek() }
+    }
     LaunchedEffect(controls.deadline, controls.banner) {
         if (controls.banner == BannerState.Compact) {
             delay((controls.deadline - SystemClock.uptimeMillis()).coerceAtLeast(0))
@@ -193,15 +201,34 @@ private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSet
         .onPreviewKeyEvent { if (!quickMenu) controls = controls.touch(SystemClock.uptimeMillis()); false }
         .remotePress(setOf(Key.DirectionCenter, Key.Enter, Key.NumPadEnter), { key(TvKey.Ok) }, { key(TvKey.LongOk) })
         .remotePress(setOf(Key.Menu), { key(TvKey.Menu) }, { key(TvKey.LongMenu) })
-        .remotePress(setOf(Key.DirectionLeft), { key(TvKey.Left) }, { viewModel.jumpToProgrammeStart() })
+        .onPreviewKeyEvent { event ->
+            val mapped = when (event.key) {
+                Key.DirectionLeft -> TvKey.Left
+                Key.DirectionRight -> TvKey.Right
+                Key.MediaRewind -> TvKey.Rewind
+                Key.MediaFastForward -> TvKey.FastForward
+                else -> null
+            }
+            if (mapped == null || quickMenu) false else {
+                if (event.type == KeyEventType.KeyDown) {
+                    val repeat = event.nativeKeyEvent.repeatCount != 0
+                    if (!repeat) viewModel.beginSeek()
+                    seekGesture.press(mapped, SystemClock.uptimeMillis(), repeat)
+                    key(mapped, repeat)
+                } else if (event.type == KeyEventType.KeyUp) {
+                    if (event.nativeKeyEvent.isCanceled) {
+                        seekGesture.cancel()
+                        viewModel.cancelSeek()
+                    } else seekGesture.release(mapped)?.let(viewModel::finishSeek)
+                }
+                true
+            }
+        }
         .onPreviewKeyEvent { event ->
             if (event.type != KeyEventType.KeyDown) false else {
                 val mapped = when (event.key) {
                     Key.DirectionUp -> TvKey.Up
                     Key.DirectionDown -> TvKey.Down
-                    Key.DirectionRight -> TvKey.Right
-                    Key.MediaRewind -> TvKey.Rewind
-                    Key.MediaFastForward -> TvKey.FastForward
                     Key.MediaPlayPause -> TvKey.PlayPause
                     else -> null
                 }

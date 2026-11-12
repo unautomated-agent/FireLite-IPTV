@@ -6,6 +6,7 @@ import androidx.room.PrimaryKey
 import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
+import dev.firetvlite.iptv.data.film.Films
 import kotlinx.coroutines.flow.Flow
 
 @Entity(tableName = "film_rating")
@@ -25,6 +26,6 @@ interface FilmDao {
     suspend fun save(rating: FilmRatingEntity)
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun budget(budget: FilmBudgetEntity)
-    @Query("UPDATE film_budget SET used=used+1 WHERE day=:day AND used<400")
+    @Query("UPDATE film_budget SET used=used+1 WHERE day=:day AND used<${Films.DAILY_BUDGET}")
     suspend fun reserve(day: Long): Int
 }

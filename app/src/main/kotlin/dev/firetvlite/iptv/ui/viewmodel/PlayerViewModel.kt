@@ -235,30 +235,30 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun setMode(mode: PlayerMode) {
         mutableMode.value = mode
-        playback.setPreview(mode == PlayerMode.Preview || mode == PlayerMode.Guide || mode == PlayerMode.MainMenu)
+        playback.setPreview(mode == PlayerMode.Preview || mode == PlayerMode.Guide || mode == PlayerMode.Panel)
     }
 
     fun cancelStartupResume() { startupPending = false; startupJob?.cancel() }
 
-    fun showMainMenu() {
+    fun showPanel() {
         cancelPreview()
         settlePendingZap()
         closeTimeline()
-        setMode(PlayerMode.MainMenu)
+        setMode(PlayerMode.Panel)
     }
 
     fun returnToFullscreen() {
         cancelPreview()
         closeTimeline()
-        if (activeChannel != null) setMode(PlayerMode.Fullscreen)
+        setMode(mutableMode.value.afterScreen(activeChannel != null))
     }
 
     fun openGuide(group: GroupKey = playingGroup, channel: ChannelEntity? = activeChannel) {
-        if (channel == null) return
+        cancelStartupResume()
         cancelPreview()
         settlePendingZap()
         closeTimeline()
-        mutableBrowserTarget.value = BrowserTarget(group, channel, ++targetToken)
+        mutableBrowserTarget.value = channel?.let { BrowserTarget(group, it, ++targetToken) }
         setMode(PlayerMode.Guide)
     }
 
@@ -280,15 +280,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun selectAudioTrack(choice: AudioTrackChoice) = playback.selectAudioTrack(choice)
     fun isArchive() = archiveStartMs != null
 
-    fun backToPreview() {
-        if (mutableChannel.value == null) return
-        cancelPreview()
-        settlePendingZap()
-        setMode(mutableMode.value.afterBack())
-        if (archiveStartMs != null) activeChannel?.let(::startLive)
-        restoreChannel()
-    }
-
     fun openOverlay() {
         if (mutableMode.value != PlayerMode.Fullscreen) return
         settlePendingZap()
@@ -298,13 +289,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun closeOverlay() {
         if (mutableMode.value == PlayerMode.Overlay) setMode(mutableMode.value.afterBack())
-    }
-
-    fun closeToTab(): BrowserTarget? {
-        restoreChannel()
-        val target = mutableBrowserTarget.value
-        close()
-        return target
     }
 
     fun openTimeline(

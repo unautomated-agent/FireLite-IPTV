@@ -30,6 +30,10 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import dev.firetvlite.iptv.R
+import dev.firetvlite.iptv.ui.navigation.QuickMenuAction
+import dev.firetvlite.iptv.ui.navigation.quickMenuItems
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import dev.firetvlite.iptv.ui.components.FLText
@@ -40,7 +44,8 @@ import dev.firetvlite.iptv.ui.viewmodel.PlayerViewModel
 
 @Composable
 @OptIn(ExperimentalComposeUiApi::class)
-internal fun PlayerQuickMenu(viewModel: PlayerViewModel, onClose: () -> Unit, onMainMenu: (Boolean) -> Unit) {
+internal fun PlayerQuickMenu(viewModel: PlayerViewModel, onClose: () -> Unit,
+    onGuide: () -> Unit, onFilms: () -> Unit, onSettings: () -> Unit) {
     val player by viewModel.player.collectAsState()
     val favorite by viewModel.isFavorite.collectAsState()
     var revision by remember { mutableIntStateOf(0) }
@@ -58,10 +63,10 @@ internal fun PlayerQuickMenu(viewModel: PlayerViewModel, onClose: () -> Unit, on
         Column(Modifier.width(590.dp).background(FireLiteTheme.colors.surface, FireLiteTheme.shapes.medium)
             .padding(28.dp).focusProperties { exit = { FocusRequester.Cancel } }.focusGroup(),
             verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            FLText(if (audio) "Ścieżka dźwiękowa" else "Szybkie menu", style = FireLiteTheme.typography.headline)
+            FLText(stringResource(if (audio) R.string.quick_menu_audio else R.string.quick_menu_title), style = FireLiteTheme.typography.headline)
             if (audio) {
-                QuickMenuRow("‹ Wstecz", { audio = false }, Modifier.focusRequester(focus))
-                if (tracks.isEmpty()) FLText("Brak dostępnych ścieżek dźwiękowych", style = FireLiteTheme.typography.body)
+                QuickMenuRow(stringResource(R.string.quick_menu_back), { audio = false }, Modifier.focusRequester(focus))
+                if (tracks.isEmpty()) FLText(stringResource(R.string.quick_menu_no_audio), style = FireLiteTheme.typography.body)
                 LazyColumn(Modifier.heightIn(max = 330.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(tracks, key = { "${it.group}:${it.index}" }) { track ->
                         QuickMenuRow((if (track.selected) "✓  " else "    ") + track.title,
@@ -69,10 +74,17 @@ internal fun PlayerQuickMenu(viewModel: PlayerViewModel, onClose: () -> Unit, on
                     }
                 }
             } else {
-                QuickMenuRow("Ścieżka dźwiękowa", { audio = true }, Modifier.focusRequester(focus))
-                QuickMenuRow(if (favorite) "Usuń z ulubionych" else "Dodaj do ulubionych", viewModel::toggleFavorite)
-                QuickMenuRow("Menu główne", { onMainMenu(false) })
-                QuickMenuRow("Ustawienia", { onMainMenu(true) })
+                quickMenuItems(favorite).forEach { (action, title) ->
+                    QuickMenuRow(stringResource(title), {
+                        when (action) {
+                            QuickMenuAction.Audio -> audio = true
+                            QuickMenuAction.Favorite -> viewModel.toggleFavorite()
+                            QuickMenuAction.Guide -> onGuide()
+                            QuickMenuAction.Films -> onFilms()
+                            QuickMenuAction.Settings -> onSettings()
+                        }
+                    }, if (action == QuickMenuAction.Audio) Modifier.focusRequester(focus) else Modifier)
+                }
             }
         }
     }

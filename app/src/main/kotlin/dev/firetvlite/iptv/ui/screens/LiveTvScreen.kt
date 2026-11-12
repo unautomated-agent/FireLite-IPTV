@@ -151,7 +151,7 @@ fun LiveTvScreen(
             val mode by player.mode.collectAsState()
             ChannelBrowser(
                 library = library, player = player,
-                active = active && (mode.acceptsPreview || mode == PlayerMode.Guide || mode == PlayerMode.MainMenu),
+                active = active && (mode.acceptsPreview || mode == PlayerMode.Guide || mode == PlayerMode.Panel),
                 onPreviewBounds = onPreviewBounds, modifier = modifier,
                 guideOnly = guideOnly, returnTarget = returnTarget,
             )

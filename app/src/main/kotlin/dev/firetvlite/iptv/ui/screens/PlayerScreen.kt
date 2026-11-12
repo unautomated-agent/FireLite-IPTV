@@ -74,7 +74,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 @Composable
-fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBounds: Rect?, onMainMenu: (Boolean) -> Unit) {
+fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBounds: Rect?, onFilms: () -> Unit, onSettings: () -> Unit) {
     val mode by viewModel.mode.collectAsState()
     val player by viewModel.player.collectAsState()
     val status by viewModel.status.collectAsState()
@@ -98,7 +98,7 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
     Box(Modifier.fillMaxSize()) {
         val video = when {
             mode.fullFrame -> Modifier.matchParentSize()
-            mode == PlayerMode.Guide || mode == PlayerMode.MainMenu ->
+            mode == PlayerMode.Guide || mode == PlayerMode.Panel ->
                 Modifier.align(Alignment.TopEnd).padding(12.dp).size(228.dp, 128.dp)
             mode == PlayerMode.Preview && previewBounds != null -> Modifier
                 .offset { IntOffset(previewBounds.left.toInt(), previewBounds.top.toInt()) }
@@ -120,7 +120,7 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
             view.keepScreenOn = keepAwake
         }, onRelease = { view -> view.keepScreenOn = false; view.player = null }, modifier = video)
         if (mode == PlayerMode.Preview) Box(video) { StatusLayer(status) }
-        if (mode == PlayerMode.Fullscreen && timeline == null) PlayerContent(viewModel, onMainMenu)
+        if (mode == PlayerMode.Fullscreen && timeline == null) PlayerContent(viewModel, onFilms, onSettings)
         if (mode == PlayerMode.Overlay) PlayerChannelOverlay(library, viewModel)
         timeline?.let { ChannelHistoryList(it, viewModel, library) }
         if (startupDelayed && mode != PlayerMode.Closed) FLText(stringResource(R.string.player_start_delayed),
@@ -131,7 +131,7 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
 }
 
 @Composable
-private fun PlayerContent(viewModel: PlayerViewModel, onMainMenu: (Boolean) -> Unit) {
+private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSettings: () -> Unit) {
     val status by viewModel.status.collectAsState()
     val channel by viewModel.channel.collectAsState()
     val frame by viewModel.frame.collectAsState()
@@ -210,7 +210,9 @@ private fun PlayerContent(viewModel: PlayerViewModel, onMainMenu: (Boolean) -> U
             PlayerInfoBanner(channel, frame, guide, controls.banner == BannerState.Expanded, scroll, viewModel.isArchive())
         }
     }
-    if (quickMenu) PlayerQuickMenu(viewModel, onClose = { quickMenu = false }, onMainMenu = onMainMenu)
+    if (quickMenu) PlayerQuickMenu(viewModel, onClose = { quickMenu = false },
+        onGuide = { quickMenu = false; viewModel.openGuide() },
+        onFilms = { quickMenu = false; onFilms() }, onSettings = { quickMenu = false; onSettings() })
 }
 
 @Composable

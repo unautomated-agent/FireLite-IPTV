@@ -21,6 +21,7 @@ class RealEpgAuditTest {
         assumeTrue("Set FIRELITE_REAL_EPG to a downloaded XMLTV gzip", path != null)
         val now = Instant.parse(System.getenv("FIRELITE_EPG_AUDIT_NOW") ?: Instant.now().toString()).toEpochMilli()
         val showings = mutableListOf<FilmShowing>()
+        val previous = mutableListOf<ProgrammeEntity>()
         var programmes = 0
         var originalTitles = 0
         File(path!!).inputStream().use { input ->
@@ -29,6 +30,8 @@ class RealEpgAuditTest {
                 val programme = ProgrammeEntity(sourceId = 1, generation = "audit", epgKey = p.channelId,
                     start = p.start, stop = p.stop, title = p.title, description = p.description, category = p.category,
                     year = p.year, originalTitle = p.originalTitle, episodeNum = p.episodeNum, categories = p.categories)
+                if (programme.stop - programme.start in 60 * 60_000L..240 * 60_000L &&
+                    Films.candidate(programme.copy(stop = programme.start + 120 * 60_000L))) previous.add(programme)
                 if (Films.candidate(programme)) {
                     if (!p.originalTitle.isNullOrBlank()) originalTitles++
                     val channel = ChannelEntity(id = showings.size.toLong() + 1, sourceId = 1, position = 0,
@@ -39,10 +42,12 @@ class RealEpgAuditTest {
             }
         }
         val candidates = ratingCandidates(showings, now)
+        val previousCandidates = previous.distinctBy(Films::key)
         val report = buildString {
             appendLine("Window UTC: ${Instant.ofEpochMilli(now)} to ${Instant.ofEpochMilli(now + 2 * Films.DAY)}")
             appendLine("Programmes=$programmes; film showings=${showings.size}; showings with original=$originalTitles")
             appendLine("Unique enrichment candidates=${candidates.size}; with original=${candidates.count { !it.originalTitle.isNullOrBlank() }}")
+            appendLine("Duration filter before/after: showings=${previous.size}/${showings.size}; unique=${previousCandidates.size}/${candidates.size}; maximum fallback requests=${previousCandidates.sumOf { Films.queries(it).size }}/${candidates.sumOf { Films.queries(it).size }}")
             candidates.forEachIndexed { index, p ->
                 appendLine("${index + 1}. ${p.title} | original=${p.originalTitle ?: "—"} | year=${p.year} | channel=${p.epgKey}")
                 appendLine(Films.queries(p).joinToString(" ; ") { (title, year) ->

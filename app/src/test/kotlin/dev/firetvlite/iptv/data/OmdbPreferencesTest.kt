@@ -5,10 +5,39 @@ import dev.firetvlite.iptv.data.film.OmdbPreferences
 import dev.firetvlite.iptv.data.film.OmdbResult
 import dev.firetvlite.iptv.data.film.OmdbMovie
 import java.lang.reflect.Proxy
+import java.time.Instant
 import org.junit.Assert.*
 import org.junit.Test
 
 class OmdbPreferencesTest {
+    @Test fun remoteQuotaPauseSurvivesRestartAndSameKeySaveUntilWarsawMidnightAcrossDst() {
+        val backend = Backend()
+        val now = Instant.parse("2026-03-28T23:30:00Z").toEpochMilli()
+        val midnight = Instant.parse("2026-03-29T22:00:00Z").toEpochMilli()
+        val preferences = OmdbPreferences(backend.preferences) { now }
+        preferences.save("fixture")
+        assertEquals(0L, preferences.quotaDelay(now))
+        preferences.completed(OmdbResult.Failed("REMOTE_LIMIT"), now)
+        assertEquals(midnight - now, preferences.quotaDelay(now))
+        val reopened = OmdbPreferences(backend.preferences) { now }
+        assertEquals(midnight - now, reopened.quotaDelay(now))
+        reopened.save("fixture")
+        assertEquals("REMOTE_LIMIT", reopened.currentError.value)
+        assertEquals(1L, reopened.quotaDelay(midnight - 1))
+        assertEquals(0L, reopened.quotaDelay(midnight))
+        assertEquals(0L, reopened.quotaDelay(midnight + 1))
+        reopened.save("different-fixture")
+        assertEquals(0L, reopened.quotaDelay(now))
+        assertNull(reopened.currentError.value)
+    }
+
+    @Test fun invalidKeyAndNetworkErrorsDoNotSetADailyQuotaPause() {
+        val preferences = OmdbPreferences(Backend().preferences)
+        for (code in listOf("AUTH", "HTTP_401", "NETWORK")) {
+            preferences.completed(OmdbResult.Failed(code), 1_800_000_000_000L)
+            assertEquals(0L, preferences.quotaDelay(1_800_000_000_000L))
+        }
+    }
     @Test fun sampleUrlIsNormalizedAndActivationLinkCannotOverwriteAnExistingKeyOrRefresh() {
         val backend = Backend()
         val preferences = OmdbPreferences(backend.preferences)

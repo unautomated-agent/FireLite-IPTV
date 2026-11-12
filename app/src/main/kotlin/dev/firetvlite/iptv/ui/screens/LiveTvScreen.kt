@@ -612,8 +612,6 @@ private fun ChannelBrowser(
                         ImdbRating(it)
                     }
                 }
-                FLText(stringResource(R.string.channel_timeline_overlay_hint),
-                    style = FireLiteTheme.typography.label, modifier = Modifier.padding(top = 8.dp))
             }
         }
 

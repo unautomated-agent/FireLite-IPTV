@@ -188,6 +188,31 @@ class PlaybackDiagnosticsTest {
         assertFalse(Regex("\\d{7,}").containsMatchIn(payload))
     }
 
+    @Test fun pendingTransportPhaseAndWireMetadataSurviveQrCompactionWithoutSensitiveValues() {
+        var time = 0L
+        val session = HlsSession(clock = { time })
+        session.evicted()
+        repeat(12) { index ->
+            val id = session.begin("https://provider/private/123456789.m3u8?token=hidden", androidx.media3.common.C.DATA_TYPE_MANIFEST)
+            session.transport(id, TransportSnapshot(TransportPhase.Connecting, 0, dnsMs = 2, uaFields = 1,
+                reused = false, channelHeaders = true, headerNames = listOf("User-Agent", "Referer")))
+            if (index < 11) { session.response(id, 404); session.end(id) }
+        }
+        time = 9587
+        val store = PlaybackDiagnosticsStore(temporary.root)
+        store.write(true, PlaybackDiagnosticRecord.text("https://provider/private/123456789.m3u8", "live", "START_TIMEOUT",
+            null, "none", "none", null, Instant.EPOCH, session.lines()))
+        val report = DiagnosticsReport.text(null, null, SourceDiagnostics(), "Brak", store.summary())
+        val payload = DiagnosticsReport.payload(report + "\n" + "unrelated detail ".repeat(1000))
+        assertTrue(payload, payload.contains("Transport pending: connecting 9587ms"))
+        assertTrue(payload, payload.contains("per-channel=true names=User-Agent,Referer"))
+        assertTrue(payload, payload.contains("reuse=no ua=1"))
+        assertEquals(12, payload.lines().count { it.startsWith("HLS request:") })
+        assertTrue(payload.toByteArray().size <= DiagnosticsReport.QR_BYTES)
+        for (secret in listOf("https://", "private", "123456789", "token", "hidden")) assertFalse(payload.contains(secret))
+        assertFalse(Regex("\\d{7,}").containsMatchIn(payload))
+    }
+
     @Test fun maximumTimeoutAndCrashKeepEssentialLaterSectionsInDecodedQr() {
         val phases = StartupTiming { 0L }.detail().lines()
         val readiness = listOf("A ready=false in=2147483647 out=0", "V ready=true in=2147483647 out=2147483646")

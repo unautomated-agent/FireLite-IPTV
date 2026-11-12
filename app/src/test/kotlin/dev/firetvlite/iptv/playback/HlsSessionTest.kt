@@ -7,6 +7,28 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HlsSessionTest {
+    @Test fun pendingTraceDistinguishesConnectionFromResponseAndDropsLateUpdatesOutsideTheBound() {
+        var time = 0L
+        val session = HlsSession(clock = { time })
+        val id = session.begin("https://private.example/secret.m3u8", C.DATA_TYPE_MANIFEST)
+        session.evicted()
+        session.transport(id, TransportSnapshot(TransportPhase.Connecting, 0))
+        time = 9587
+        assertTrue(session.lines().contains("HLS request: master pending: connecting 9587ms m3u8"))
+        assertTrue(session.lines().contains("Transport pool: idle evicted before close grace"))
+        session.transport(id, TransportSnapshot(TransportPhase.Waiting, 9500, sentMs = 9500,
+            protocol = "http/1.1", reused = false, uaFields = 1))
+        assertTrue(session.lines().contains("HLS request: master pending: waiting response 87ms m3u8"))
+        assertTrue(session.lines().contains("Transport pending: waiting response 87ms"))
+        session.response(id, 200)
+        session.end(id)
+        assertFalse(session.lines().any { it.startsWith("Transport pending:") })
+        repeat(12) { session.begin("https://private.example/$it.ts", C.DATA_TYPE_MEDIA) }
+        session.transport(id, TransportSnapshot(TransportPhase.Failed, 0))
+        assertFalse(session.lines().any { it.startsWith("Transport:") })
+        assertEquals(12, session.lines().count { it.startsWith("HLS request:") })
+    }
+
     @Test fun emptySessionHasNoRequestTraceOrExtraStartupBudget() {
         val session = HlsSession(clock = { 0 })
         assertFalse(session.lines().any { it.startsWith("HLS request:") })

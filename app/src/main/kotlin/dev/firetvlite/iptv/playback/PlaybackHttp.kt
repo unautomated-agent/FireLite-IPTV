@@ -5,6 +5,8 @@ import androidx.media3.datasource.HttpDataSource
 import okhttp3.Call
 import okhttp3.OkHttpClient
 import okhttp3.Response
+import okhttp3.EventListener
+import dev.firetvlite.iptv.data.library.LibraryRepository
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import java.net.URI
 import java.security.MessageDigest
@@ -61,23 +63,40 @@ internal data class HttpRequestEvidence(
 }
 
 internal object PlaybackHttp {
-    private data class Context(val root: String, val type: Int, val report: (HttpRequestEvidence) -> Unit)
+    private data class Context(val root: String, val type: Int, val trace: TransportTrace,
+        val report: (HttpRequestEvidence) -> Unit)
 
-    val client = OkHttpClient.Builder()
+    private val clientDelegate = lazy { OkHttpClient.Builder()
         .followRedirects(true)
         .followSslRedirects(true)
         .connectTimeout(15, TimeUnit.SECONDS)
         .readTimeout(20, TimeUnit.SECONDS)
+        .eventListenerFactory { call -> call.request().tag(Context::class.java)?.trace ?: EventListener.NONE }
         .addInterceptor { chain ->
             val response = chain.proceed(chain.request())
             chain.request().tag(Context::class.java)?.let { context ->
                 context.report(HttpRequestEvidence.from(response, context.root, context.type))
             }
             response
-        }.build()
+        }.build() }
+    val client: OkHttpClient get() = clientDelegate.value
+
+    fun userAgent(headers: Map<String, String>, source: String?): String =
+        headers.entries.firstOrNull { it.key.equals("User-Agent", true) }?.value?.takeIf { it.isNotBlank() }
+            ?: source?.takeIf { it.isNotBlank() } ?: LibraryRepository.DEFAULT_USER_AGENT
+
+    fun evictIdle(transport: OkHttpClient? = null) {
+        val current = transport ?: if (clientDelegate.isInitialized()) client else null
+        current?.connectionPool?.evictAll()
+    }
 
     fun calls(root: String, dataType: Int, transport: OkHttpClient = client,
+        channelHeaders: Map<String, String> = emptyMap(), userAgent: String? = null,
+        onTransport: (TransportSnapshot) -> Unit = {},
         report: (HttpRequestEvidence) -> Unit): Call.Factory = Call.Factory { request ->
-        transport.newCall(request.newBuilder().tag(Context::class.java, Context(root, dataType, report)).build())
+        val trace = TransportTrace(channelHeaders.keys, onTransport)
+        transport.newCall(request.newBuilder()
+            .header("User-Agent", PlaybackHttp.userAgent(channelHeaders, userAgent ?: request.header("User-Agent")))
+            .tag(Context::class.java, Context(root, dataType, trace, report)).build())
     }
 }

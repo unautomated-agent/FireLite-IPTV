@@ -9,6 +9,7 @@ import okhttp3.mockwebserver.SocketPolicy
 import dev.firetvlite.iptv.data.playlist.M3uParser
 import dev.firetvlite.iptv.data.playlist.ParsedChannel
 import okhttp3.Request
+import okhttp3.ConnectionPool
 import okhttp3.tls.HandshakeCertificates
 import okhttp3.tls.HeldCertificate
 import org.junit.Assert.*
@@ -17,16 +18,19 @@ import java.io.IOException
 import java.net.InetAddress
 import java.net.URI
 import java.util.concurrent.CopyOnWriteArrayList
+import java.util.concurrent.TimeUnit
 
 class PlaybackHttpTest {
     private class Fixture(tls: HandshakeCertificates? = null) : AutoCloseable {
         val requests = CopyOnWriteArrayList<String>()
+        val wire = CopyOnWriteArrayList<RecordedRequest>()
         var handler: (RecordedRequest) -> MockResponse = { reply(it, 404) }
         val server = MockWebServer().apply {
             if (tls != null) useHttps(tls.sslSocketFactory(), false)
             dispatcher = object : Dispatcher() {
                 override fun dispatch(request: RecordedRequest): MockResponse {
                     requests += "${request.method} ${request.path}"
+                    wire += request
                     return handler(request)
                 }
             }
@@ -79,6 +83,7 @@ class PlaybackHttpTest {
         val certificate = HeldCertificate.Builder().commonName("localhost").addSubjectAlternativeName("localhost").build()
         val tls = HandshakeCertificates.Builder().heldCertificate(certificate).addTrustedCertificate(certificate.certificate).build()
         val transport = PlaybackHttp.client.newBuilder().sslSocketFactory(tls.sslSocketFactory(), tls.trustManager).build()
+        val snapshots = CopyOnWriteArrayList<TransportSnapshot>()
         Fixture(tls).use { secure -> Fixture().use { plain ->
             secure.handler = { exchange ->
                 if (exchange.requestUrl!!.encodedPath == "/down.m3u8") redirect(exchange, "${plain.base}/final.m3u8")
@@ -90,12 +95,14 @@ class PlaybackHttpTest {
             }
             for (root in listOf("${plain.base}/up.m3u8", "${secure.base}/down.m3u8")) {
                 var evidence: HttpRequestEvidence? = null
-                PlaybackHttp.calls(root, C.DATA_TYPE_MANIFEST, transport) { evidence = it }
+                PlaybackHttp.calls(root, C.DATA_TYPE_MANIFEST, transport, onTransport = { snapshots += it }) { evidence = it }
                     .newCall(Request.Builder().url(root).build()).execute().use { assertEquals(200, it.code) }
                 assertEquals(1, evidence!!.redirects)
                 assertEquals(1, evidence!!.hosts)
             }
             assertEquals(4, plain.requests.size + secure.requests.size)
+            assertTrue(snapshots.any { it.tlsMs != null })
+            assertTrue(snapshots.any { it.protocol == "http/1.1" && it.redirects == listOf(302) })
         } }
     }
 
@@ -184,6 +191,79 @@ class PlaybackHttpTest {
             clock.set(900)
             calls.newCall(Request.Builder().url(root).build()).execute().use { assertEquals(200, it.code) }
             assertEquals(3, fixture.requests.size)
+        }
+    }
+
+    @Test fun exactlyOneUserAgentReachesTheWireWithChannelThenSourceThenDefaultPrecedence() {
+        Fixture().use { fixture ->
+            fixture.handler = { reply(it, 200) }
+            val root = "${fixture.base}/master.m3u8"
+            for ((headers, source, expected) in listOf(
+                Triple(mapOf("uSeR-aGeNt" to "Channel player"), "Source player", "Channel player"),
+                Triple(emptyMap(), "Source player", "Source player"),
+                Triple(emptyMap(), "", "FireLite/2.0"))) {
+                val snapshots = mutableListOf<TransportSnapshot>()
+                PlaybackHttp.calls(root, C.DATA_TYPE_MANIFEST, channelHeaders = headers, userAgent = source,
+                    onTransport = { snapshots += it }) {}.newCall(Request.Builder().url(root)
+                    .addHeader("User-Agent", "old channel value").addHeader("User-Agent", "old source value").build())
+                    .execute().use { assertEquals(200, it.code); it.body!!.string() }
+                assertEquals(listOf(expected), fixture.wire.last().headers.values("User-Agent"))
+                assertEquals(1, snapshots.last().uaFields)
+            }
+        }
+    }
+
+    @Test fun sessionEvictionUsesAFreshSocketButRequestsWithinTheSessionReuseTheirSocket() {
+        Fixture().use { fixture ->
+            fixture.handler = { reply(it, 200) }
+            val client = PlaybackHttp.client.newBuilder().connectionPool(ConnectionPool()).build()
+            val root = "${fixture.base}/master.m3u8"
+            val snapshots = mutableListOf<TransportSnapshot>()
+            val calls = PlaybackHttp.calls(root, C.DATA_TYPE_MANIFEST, client, onTransport = { snapshots += it }) {}
+            fun get() = calls.newCall(Request.Builder().url(root).build()).execute().use { it.body!!.string() }
+            get()
+            assertEquals(false, snapshots.last().reused)
+            get()
+            assertEquals(true, snapshots.last().reused)
+            PlaybackHttp.evictIdle(client)
+            get()
+            assertEquals(false, snapshots.last().reused)
+            assertEquals(listOf(0, 1, 0), fixture.wire.map { it.sequenceNumber })
+            PlaybackHttp.evictIdle(client)
+        }
+    }
+
+    @Test fun idleEvictionDoesNotCancelAnActiveResponseOrIssueAnyRequests() {
+        Fixture().use { fixture ->
+            fixture.handler = { reply(it, 200, "active response") }
+            val client = PlaybackHttp.client.newBuilder().connectionPool(ConnectionPool()).build()
+            PlaybackHttp.evictIdle(client)
+            val root = "${fixture.base}/segment.ts"
+            PlaybackHttp.calls(root, C.DATA_TYPE_MEDIA, client) {}.newCall(Request.Builder().url(root).build())
+                .execute().use { response ->
+                    PlaybackHttp.evictIdle(client)
+                    assertEquals("active response", response.body!!.string())
+                }
+            assertEquals(1, fixture.wire.size)
+            PlaybackHttp.evictIdle(client)
+        }
+    }
+
+    @Test fun aResponseHeaderStallRecordsWaitingThenFailureWithoutIssuingAnotherRequest() {
+        Fixture().use { fixture ->
+            fixture.handler = { reply(it, 200).setHeadersDelay(500, TimeUnit.MILLISECONDS) }
+            val client = PlaybackHttp.client.newBuilder().readTimeout(100, TimeUnit.MILLISECONDS).build()
+            val root = "${fixture.base}/master.m3u8?token=private"
+            val snapshots = CopyOnWriteArrayList<TransportSnapshot>()
+            assertThrows(IOException::class.java) {
+                PlaybackHttp.calls(root, C.DATA_TYPE_MANIFEST, client, onTransport = { snapshots += it }) {}
+                    .newCall(Request.Builder().url(root).build()).execute().close()
+            }
+            assertTrue(snapshots.any { it.phase == TransportPhase.Waiting && it.sentMs != null && it.headersMs == null })
+            assertEquals(TransportPhase.Failed, snapshots.last().phase)
+            assertEquals(1, fixture.wire.size)
+            assertFalse(snapshots.joinToString { it.line(1) }.contains("private"))
+            PlaybackHttp.evictIdle(client)
         }
     }
 

@@ -118,6 +118,10 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
                 descendantFocusability = ViewGroup.FOCUS_BLOCK_DESCENDANTS
                 resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                 setKeepContentOnPlayerReset(true)
+                addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+                    rebindVideoSurfaceOnResize(this.player, right - left, bottom - top,
+                        oldRight - oldLeft, oldBottom - oldTop) { this.player = it }
+                }
             }
         }, update = { view ->
             if (view.player !== player) view.player = player

@@ -10,7 +10,7 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ChannelRowPresentationTest {
-    @Test fun homeMinuteClockWakeupAdvancesTheGuideQueryKeyWithoutNavigation() {
+    @Test fun minuteClockWakeupAdvancesTheSharedGuideQueryKeyWithoutNavigation() {
         val firstFrame = Instant.parse("2026-11-12T20:15:23.456Z").toEpochMilli()
         val wakeup = firstFrame + millisUntilNextMinute(firstFrame)
         assertEquals(Instant.parse("2026-11-12T20:16:00Z").toEpochMilli(), wakeup)

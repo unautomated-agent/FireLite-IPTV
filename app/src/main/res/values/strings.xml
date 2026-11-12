@@ -45,22 +45,15 @@
     <string name="app_name">FireLite</string>
 
     <!-- Navigation -->
-    <string name="nav_home">Start</string>
-    <string name="nav_live">TV na żywo</string>
-    <string name="nav_guide">Program TV</string>
-    <string name="nav_search">Szukaj</string>
-    <string name="nav_favorites">Ulubione</string>
+    <string name="nav_guide">Oś czasu</string>
+    <string name="quick_menu_title">Szybkie menu</string>
+    <string name="quick_menu_audio">Ścieżka dźwiękowa</string>
+    <string name="quick_menu_back">‹ Wstecz</string>
+    <string name="quick_menu_no_audio">Brak dostępnych ścieżek dźwiękowych</string>
+    <string name="quick_menu_add_favorite">Dodaj do ulubionych</string>
+    <string name="quick_menu_remove_favorite">Usuń z ulubionych</string>
+    <string name="settings_watch_live">TV na żywo — wybierz kanał</string>
     <string name="nav_settings">Ustawienia</string>
-
-    <!-- Home -->
-    <string name="home_recent">Ostatnio oglądane</string>
-    <string name="search_label">Nazwa kanału</string>
-    <string name="search_prompt">Wpisz nazwę kanału z aktywnej listy.</string>
-    <string name="search_empty">Nie znaleziono kanałów.</string>
-    <string name="search_hint">OK w polu: klawiatura · Dół: wyniki · OK na kanale: oglądaj · Do 200 wyników</string>
-    <string name="favorites_empty">Brak ulubionych kanałów na aktywnej liście. Dodaj kanał przyciskiem Menu w TV na żywo.</string>
-    <string name="favorites_hint">OK: oglądaj · Przytrzymaj OK: usuń z ulubionych · Wstecz: menu</string>
-    <string name="home_empty">Nie oglądano jeszcze kanałów z tej listy. Otwórz TV na żywo lub dodaj listę w ustawieniach.</string>
 
     <!-- Live TV -->
     <string name="live_groups">Grupy</string>
@@ -95,8 +88,6 @@
     <string name="update_error_download">Pobieranie nie powiodło się. Spróbuj ponownie.</string>
     <string name="update_error_permission">Zezwól FireLite na instalowanie nieznanych aplikacji (Ustawienia → My Fire TV → Opcje programisty), a następnie wybierz „Pobierz i zainstaluj” ponownie.</string>
     <string name="update_error_installer">Nie można otworzyć instalatora systemowego.</string>
-    <string name="update_banner_title">Dostępna nowa wersja FireLite</string>
-    <string name="update_banner_action">Zainstaluj teraz</string>
 
     <!-- Live TV -->
     <string name="group_favorites">Ulubione</string>

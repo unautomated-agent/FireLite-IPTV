@@ -80,6 +80,8 @@ fun SettingsScreen(
     onDeleteSource: (Long) -> Unit,
     onRefreshSource: () -> Unit,
     diagnostics: Flow<SourceDiagnostics>,
+    canWatch: Boolean,
+    onWatch: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -94,6 +96,11 @@ fun SettingsScreen(
             style = FireLiteTheme.typography.display,
             modifier = Modifier.padding(start = 4.dp),
         )
+        SourceSection(
+            source = source, sources = sources, importState = importState, epgStates = epgStates,
+            onSave = onSaveSource, onRefresh = onRefreshSource, onActivate = onActivateSource, onDelete = onDeleteSource,
+        )
+        if (canWatch) PrimaryButton(stringResource(R.string.settings_watch_live), onWatch)
         SettingsCard {
             val preferences = (LocalContext.current.applicationContext as FireLiteApplication).container.clockPreferences
             val visible by preferences.visible.collectAsState()
@@ -102,16 +109,6 @@ fun SettingsScreen(
                 { preferences.setVisible(!visible) })
         }
         SettingsCard { OmdbSettings() }
-        SourceSection(
-            source = source,
-            sources = sources,
-            importState = importState,
-            epgStates = epgStates,
-            onSave = onSaveSource,
-            onRefresh = onRefreshSource,
-            onActivate = onActivateSource,
-            onDelete = onDeleteSource,
-        )
         SettingsCard { DiagnosticsSection(source, source?.id?.let { epgStates[it] }, diagnostics) }
         UpdateSection(
             installed = installed,

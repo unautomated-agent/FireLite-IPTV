@@ -16,6 +16,48 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DiagnosticsReportTest {
+    @Test fun timestampsAreCompactAndAllSectionsAreFreeOfLongDigitRunsEvenAfterQrDecoding() {
+        val source = SourceEntity(name = "Playlist 1794475151000", url = "https://provider.org/private-code", userAgent = "TV",
+            epgRefreshedAt = 1794475180688, epgProgrammeCount = Int.MAX_VALUE, xtreamArchiveCount = Int.MAX_VALUE,
+            rawCatchupChannels = Int.MAX_VALUE, playlistDeviceType = "Device 123456789012345678901234567890")
+        val playback = "Ostatni błąd odtwarzania:\n2026-11-12T09:19:40.688Z · START_TIMEOUT\n" +
+            "Startup: totalMs=12345678\nWindow start=1794475151000 default=12345678\n" +
+            "Window duration=123456789 live=true PDT=y\nWindow offset=-9223372036854775807 liveOffset=12345678\n" +
+            "A ready=true in=2147483647 out=10\nV ready=false in=0 out=0\n" +
+            "Ostatnie poprawne odtwarzanie:\n2026-11-12T09:19:40.688Z · OK\nURL: https://working.tv/private-code"
+        for (extra in listOf("", "Żółć🎬 1794475151000 ".repeat(3000))) {
+            val report = DiagnosticsReport.text(source, EpgState.Failed("HTTP 123456789"),
+                SourceDiagnostics(Int.MAX_VALUE, Int.MAX_VALUE), "Crash 9223372036854775807 $extra", playback)
+            val payload = DiagnosticsReport.payload(report)
+            val matrix = DiagnosticsReport.qr(report)
+            val pixels = IntArray(matrix.width * matrix.height) { i -> if (matrix[i % matrix.width, i / matrix.width]) 0xff000000.toInt() else -1 }
+            val decoded = MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(matrix.width, matrix.height, pixels)))).text
+            assertEquals(payload, decoded)
+            assertEquals(payload, DiagnosticsReport.payload(payload))
+            assertTrue(payload.toByteArray(Charsets.UTF_8).size <= DiagnosticsReport.QR_BYTES)
+            for (output in listOf(report, payload, decoded)) {
+                assertFalse(output, Regex("\\d{7,}").containsMatchIn(output))
+                assertFalse(output.contains("private-code"))
+                assertFalse(output.contains("2026-11-12T09:19:40.688Z"))
+                assertTrue(output, output.contains("11-12 09:19:40Z"))
+                assertTrue(output, output.contains("Window start=09:19:11Z"))
+                assertTrue(output, output.contains("A ready=true in=2_147_483_647 out=10"))
+                assertTrue(output, output.contains("Ostatni raport błędu:"))
+            }
+            assertTrue(report.contains("totalMs=12_345_678"))
+            assertTrue(report.contains("9_223_372_036_854_775_807"))
+        }
+    }
+
+    @Test fun numericFormattingHandlesEmptyInvalidAndBoundaryValuesWithoutChangingShortNumbers() {
+        assertEquals("", DiagnosticsReport.payload(""))
+        assertEquals("123456 1_234_567 -1_234_567", DiagnosticsReport.payload("123456 1234567 -1234567"))
+        assertEquals("Window start=123_456_789_012_345_678_901_234_567_890",
+            DiagnosticsReport.payload("Window start=123456789012345678901234567890"))
+        assertEquals("11-12 09:19:40Z", DiagnosticsReport.payload("2026-11-12T10:19:40.688+01:00"))
+        assertFalse(Regex("\\d{7,}").containsMatchIn(DiagnosticsReport.payload("2026-99-99T99:99:99.123456789Z")))
+    }
+
     @Test fun migratedSourcesHaveUnknownResponseMetadataUntilASuccessfulReimport() {
         val source = SourceEntity(name = "M3U", url = "https://h/list", userAgent = "FireLite/2.0",
             refreshedAt = 1234)

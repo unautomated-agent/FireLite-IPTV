@@ -21,11 +21,47 @@ class TvPlayerControlsTest {
             val initial = TvPlayerControls(state).touch(100)
             assertEquals(state, initial.expire(8_099).banner)
             assertEquals(BannerState.Hidden, initial.expire(8_100).banner)
-            val reset = initial.key(TvKey.Right, 8_000).first
-            assertEquals(state, reset.expire(15_999).banner)
+            val reset = initial.key(TvKey.Up, 8_000).first
+            assertEquals(BannerState.Expanded, reset.expire(15_999).banner)
             assertEquals(BannerState.Hidden, reset.expire(16_000).banner)
         }
         assertEquals(TvPlayerControls(), TvPlayerControls().touch(20_000).expire(90_000))
+    }
+
+    @Test fun everySeekShowsCompactBannerForExactlyFourSecondsWithoutChangingTheAction() {
+        for (key in listOf(TvKey.Left, TvKey.Right, TvKey.Rewind, TvKey.FastForward)) {
+            val (controls, action) = TvPlayerControls().key(key, 100)
+            assertNotNull(action.seekMs)
+            assertEquals(BannerState.Compact, controls.banner)
+            assertEquals(BannerState.Compact, controls.expire(4_099).banner)
+            assertEquals(BannerState.Hidden, controls.expire(4_100).banner)
+        }
+    }
+
+    @Test fun repeatedSeeksRestartFourSecondDeadlineAndKeyReleaseDoesNotExtendItToEight() {
+        val first = TvPlayerControls().key(TvKey.Right, 100).first
+        val repeat = first.key(TvKey.FastForward, 3_900).first.touch(4_000)
+        assertEquals(8_000L, repeat.deadline)
+        assertEquals(BannerState.Compact, repeat.expire(7_999).banner)
+        assertEquals(BannerState.Hidden, repeat.expire(8_000).banner)
+    }
+
+    @Test fun upAfterSeekUsesEightSecondsAndSeekingAnExpandedBannerUsesFour() {
+        val seek = TvPlayerControls().key(TvKey.Left, 100).first
+        val up = seek.key(TvKey.Up, 200).first
+        assertEquals(BannerState.Expanded, up.banner)
+        assertEquals(8_200L, up.deadline)
+        val expandedSeek = up.key(TvKey.Rewind, 300).first
+        assertEquals(BannerState.Expanded, expandedSeek.banner)
+        assertEquals(4_300L, expandedSeek.deadline)
+    }
+
+    @Test fun anOpenPanelSuppressesBannerAndSeekDispatch() {
+        for (key in listOf(TvKey.Left, TvKey.Right, TvKey.Rewind, TvKey.FastForward, TvKey.Up)) {
+            val result = TvPlayerControls(BannerState.Expanded).key(key, 100, panelOpen = true)
+            assertEquals(TvPlayerControls(), result.first)
+            assertEquals(TvAction.None, result.second)
+        }
     }
 
     @Test fun downTogglesOnlyWithNoBannerAndBackNeverLeavesPlayback() {

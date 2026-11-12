@@ -18,6 +18,14 @@ fun screenBackReturnsToPlayback(mode: PlayerMode, hasChannel: Boolean): Boolean 
 
 enum class GuideBackAction { Pass, Consume, ReturnToPlayback, Exit }
 
+enum class OverlayBackAction { Pass, Consume, Close }
+
+fun overlayBackAction(mode: PlayerMode, keyUp: Boolean, canceled: Boolean): OverlayBackAction = when {
+    mode != PlayerMode.Overlay -> OverlayBackAction.Pass
+    !keyUp || canceled -> OverlayBackAction.Consume
+    else -> OverlayBackAction.Close
+}
+
 fun guideBackAction(mode: PlayerMode, hasChannel: Boolean, keyUp: Boolean, canceled: Boolean): GuideBackAction = when {
     mode != PlayerMode.Guide -> GuideBackAction.Pass
     !keyUp || canceled -> GuideBackAction.Consume

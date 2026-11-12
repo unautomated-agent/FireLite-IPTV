@@ -9,6 +9,25 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StreamNavigationTest {
+    @Test fun restoredChannelOverlayClosesOnFirstBackBeforeComposeCanClearRowFocus() {
+        val restored = PlayerMode.Overlay
+        assertEquals(OverlayBackAction.Consume, overlayBackAction(restored, false, false))
+        assertEquals(OverlayBackAction.Consume, overlayBackAction(restored, false, false))
+        assertEquals(OverlayBackAction.Consume, overlayBackAction(restored, true, true))
+        assertEquals(OverlayBackAction.Close, overlayBackAction(restored, true, false))
+        val closed = restored.afterBack()
+        assertEquals(PlayerMode.Fullscreen, closed)
+        for (mode in PlayerMode.entries.filter { it != restored }) {
+            assertEquals(OverlayBackAction.Pass, overlayBackAction(mode, false, false))
+            assertEquals(OverlayBackAction.Pass, overlayBackAction(mode, true, false))
+        }
+        val activity = File("src/main/kotlin/dev/firetvlite/iptv/MainActivity.kt").readText()
+        val dispatch = activity.substringAfter("override fun dispatchKeyEvent(").substringBefore("override fun onCreate(")
+        assertTrue(dispatch.indexOf("overlayBackAction(") < dispatch.indexOf("super.dispatchKeyEvent(event)"))
+        assertTrue(dispatch.contains("OverlayBackAction.Consume -> return true"))
+        assertTrue(dispatch.contains("OverlayBackAction.Close -> { playerViewModel.closeOverlay(); return true }"))
+    }
+
     @Test fun guideBackBypassesFocusExitAndActsOnceOnReleaseWithOrWithoutPlayback() {
         for (hasChannel in listOf(false, true)) {
             assertEquals(GuideBackAction.Consume, guideBackAction(PlayerMode.Guide, hasChannel, false, false))

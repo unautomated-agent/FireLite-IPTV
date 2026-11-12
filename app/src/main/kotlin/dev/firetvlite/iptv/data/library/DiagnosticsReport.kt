@@ -104,6 +104,7 @@ object DiagnosticsReport {
         "A ready=", "V ready=", "A rate=", "Window start=", "Window duration=", "Window offset=",
         "Lista:", "Kanały:", "M3U atrybuty archiwum:", "M3U User-Agent:", "M3U DEVICE TYPE:",
         "EPG:", "EPG stan:", "Ostatni raport błędu:",
+        "Main-thread stall:", "Main thread:", "Uncaught crash:", "Thread:", "Process exit:",
     )
 
     private fun compact(text: String, bytes: Int): String {

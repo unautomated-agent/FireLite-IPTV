@@ -1,6 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Default (and only) UI language: Polish. Resource names are English. -->
 <resources>
+    <string name="reminder_today">Dziś w TV</string>
+    <string name="reminder_soon">Za 10 min:</string>
+    <string name="reminder_daily_row">%1$s · %2$s · %3$s</string>
+    <string name="reminder_soon_row">%1$s · %2$s · %3$s</string>
+    <string name="reminder_more">I jeszcze %1$d emisji</string>
+    <string name="reminder_dismiss">OK – zamknij</string>
     <string name="settings_appearance">Wygląd</string>
     <string name="settings_clock_on">Zegar w lewym górnym rogu: włączony</string>
     <string name="settings_clock_off">Zegar w lewym górnym rogu: wyłączony</string>

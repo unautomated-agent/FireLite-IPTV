@@ -10,6 +10,7 @@ import dev.firetvlite.iptv.data.epg.EpgRepository
 import dev.firetvlite.iptv.data.epg.ForegroundRefresh
 import dev.firetvlite.iptv.data.film.FilmRepository
 import dev.firetvlite.iptv.data.film.OmdbPreferences
+import dev.firetvlite.iptv.data.film.ReminderPreferences
 import dev.firetvlite.iptv.data.library.LibraryRepository
 import dev.firetvlite.iptv.data.playlist.PlaylistImporter
 import dev.firetvlite.iptv.playback.PlaybackController
@@ -28,6 +29,7 @@ class AppContainer(application: Application) {
     val epg = EpgRepository(database, applicationScope)
     val films = FilmRepository(database, OmdbPreferences(application), applicationScope, epg)
     val clockPreferences = ClockPreferences(application)
+    val reminderPreferences = ReminderPreferences(application)
 
     val library = LibraryRepository(
         database = database,

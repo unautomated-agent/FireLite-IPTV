@@ -84,7 +84,9 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
     val status by viewModel.status.collectAsState()
     val startupDelayed by viewModel.startupDelayed.collectAsState()
     val timeline by viewModel.timeline.collectAsState()
+    val frame by viewModel.frame.collectAsState()
     var quickMenu by remember { mutableStateOf(false) }
+    var bannerVisible by remember { mutableStateOf(false) }
     var playWhenReady by remember(player) { mutableStateOf(player?.playWhenReady == true) }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -130,7 +132,7 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
         }, onRelease = { view -> view.keepScreenOn = false; view.player = null }, modifier = video)
         if (mode == PlayerMode.Preview) Box(video) { StatusLayer(status) }
         if (mode == PlayerMode.Fullscreen && timeline == null) PlayerContent(viewModel, onFilms, onSettings,
-            quickMenu, { quickMenu = it })
+            quickMenu, { quickMenu = it }, { bannerVisible = it })
         if (mode == PlayerMode.Overlay) PlayerChannelOverlay(library, viewModel) {
             viewModel.closeOverlay()
             quickMenu = true
@@ -140,18 +142,22 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
             style = FireLiteTheme.typography.label, color = FireLiteTheme.colors.textPrimary,
             modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
                 .background(Color.Black.copy(alpha = 0.7f)).padding(12.dp))
+        FilmReminderOverlay(library,
+            eligible = mode == PlayerMode.Fullscreen && channel != null && timeline == null && !quickMenu && !bannerVisible,
+            watchingLiveChannelId = channel?.id?.takeIf { playWhenReady && !viewModel.isArchive() && frame.nowMs > 0 })
     }
 }
 
 @Composable
 private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSettings: () -> Unit,
-    quickMenu: Boolean, onQuickMenu: (Boolean) -> Unit) {
+    quickMenu: Boolean, onQuickMenu: (Boolean) -> Unit, onBannerVisible: (Boolean) -> Unit) {
     val status by viewModel.status.collectAsState()
     val channel by viewModel.channel.collectAsState()
     val frame by viewModel.frame.collectAsState()
     val guide by viewModel.programme.collectAsState()
     val message by viewModel.message.collectAsState()
     var controls by remember { mutableStateOf(TvPlayerControls()) }
+    LaunchedEffect(controls.banner) { onBannerVisible(controls.banner != BannerState.Hidden) }
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     val focus = remember { FocusRequester() }

@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
+import dev.firetvlite.iptv.data.film.ReminderShowing
 
 private const val MAPPED_PROGRAMMES =
     "FROM channel c JOIN source s ON s.id = c.sourceId " +
@@ -16,6 +17,10 @@ private const val PROGRAMME_AT =
 
 @Dao
 interface EpgDao {
+    @Query("SELECT c.id AS channelId, c.name AS channelName, p.start, p.stop, p.title, p.originalTitle " +
+        "$MAPPED_PROGRAMMES WHERE c.sourceId=:sourceId AND p.start < :until AND p.stop > :now ORDER BY p.start, c.id")
+    suspend fun reminderWindow(sourceId: Long, now: Long, until: Long): List<ReminderShowing>
+
     @Query("SELECT * FROM channel WHERE sourceId=:sourceId ORDER BY position")
     fun filmChannels(sourceId: Long): Flow<List<ChannelEntity>>
     @Query("SELECT c.id AS channelId, p.id, p.sourceId, p.generation, p.epgKey, p.start, p.stop, p.title, " +

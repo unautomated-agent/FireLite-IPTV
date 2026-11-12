@@ -15,11 +15,13 @@ enum class TvAction(val seekMs: Long? = null) {
     TogglePause, Channels, Guide, History, QuickMenu, ScrollUp, ScrollDown
 }
 
-data class TvPlayerControls(val banner: BannerState = BannerState.Hidden, val deadline: Long = 0) {
-    fun touch(now: Long) = if (banner == BannerState.Hidden) this else copy(deadline = now + HIDE_MS)
+data class TvPlayerControls(val banner: BannerState = BannerState.Hidden, val deadline: Long = 0,
+    val hideMs: Long = HIDE_MS) {
+    fun touch(now: Long) = if (banner == BannerState.Hidden) this else copy(deadline = now + hideMs)
     fun expire(now: Long) = if (banner != BannerState.Hidden && now >= deadline) TvPlayerControls() else this
 
-    fun key(key: TvKey, now: Long): Pair<TvPlayerControls, TvAction> {
+    fun key(key: TvKey, now: Long, panelOpen: Boolean = false): Pair<TvPlayerControls, TvAction> {
+        if (panelOpen) return TvPlayerControls() to TvAction.None
         val action = when (key) {
             TvKey.Up -> if (banner == BannerState.Expanded) TvAction.ScrollUp else TvAction.None
             TvKey.Down -> when (banner) {
@@ -39,7 +41,10 @@ data class TvPlayerControls(val banner: BannerState = BannerState.Hidden, val de
             TvKey.Back -> TvAction.None
         }
         val next = when (key) {
-            TvKey.Up -> copy(banner = if (banner == BannerState.Hidden) BannerState.Compact else BannerState.Expanded)
+            TvKey.Up -> copy(banner = if (banner == BannerState.Hidden) BannerState.Compact else BannerState.Expanded,
+                hideMs = HIDE_MS)
+            TvKey.Left, TvKey.Right, TvKey.Rewind, TvKey.FastForward ->
+                copy(banner = if (banner == BannerState.Hidden) BannerState.Compact else banner, hideMs = SEEK_HIDE_MS)
             TvKey.Down -> if (banner == BannerState.Compact) TvPlayerControls() else this
             TvKey.Back, TvKey.Ok, TvKey.LongOk, TvKey.Menu, TvKey.LongMenu -> TvPlayerControls()
             else -> this
@@ -47,7 +52,10 @@ data class TvPlayerControls(val banner: BannerState = BannerState.Hidden, val de
         return next.touch(now) to action
     }
 
-    companion object { const val HIDE_MS = 8_000L }
+    companion object {
+        const val HIDE_MS = 8_000L
+        const val SEEK_HIDE_MS = 4_000L
+    }
 }
 
 class PreviousChannel<T>(private val identity: (T) -> String) {

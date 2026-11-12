@@ -143,7 +143,7 @@ private fun PlayerContent(viewModel: PlayerViewModel, onMainMenu: (Boolean) -> U
     val scope = rememberCoroutineScope()
     val focus = remember { FocusRequester() }
     fun key(key: TvKey) {
-        val result = controls.key(key, SystemClock.uptimeMillis())
+        val result = controls.key(key, SystemClock.uptimeMillis(), panelOpen = quickMenu)
         controls = result.first
         when (result.second) {
             TvAction.None -> Unit
@@ -170,7 +170,7 @@ private fun PlayerContent(viewModel: PlayerViewModel, onMainMenu: (Boolean) -> U
         if (quickMenu) quickMenu = false else key(TvKey.Back)
     }
     Box(Modifier.fillMaxSize().focusRequester(focus)
-        .onPreviewKeyEvent { controls = controls.touch(SystemClock.uptimeMillis()); false }
+        .onPreviewKeyEvent { if (!quickMenu) controls = controls.touch(SystemClock.uptimeMillis()); false }
         .remotePress(setOf(Key.DirectionCenter, Key.Enter, Key.NumPadEnter), { key(TvKey.Ok) }, { key(TvKey.LongOk) })
         .remotePress(setOf(Key.Menu), { key(TvKey.Menu) }, { key(TvKey.LongMenu) })
         .remotePress(setOf(Key.DirectionLeft), { key(TvKey.Left) }, { viewModel.jumpToProgrammeStart() })

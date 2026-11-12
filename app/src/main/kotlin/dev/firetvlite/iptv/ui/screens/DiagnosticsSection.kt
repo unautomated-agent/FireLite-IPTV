@@ -53,6 +53,7 @@ import dev.firetvlite.iptv.ui.components.FocusSurface
 import dev.firetvlite.iptv.ui.components.PrimaryButton
 import dev.firetvlite.iptv.ui.components.SecondaryButton
 import dev.firetvlite.iptv.ui.components.requestFocusWhenReady
+import dev.firetvlite.iptv.ui.components.minuteClock
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 import java.io.File
 import dev.firetvlite.iptv.playback.PlaybackDiagnosticsStore
@@ -77,8 +78,13 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
         }
     }
     val omdbKey by (context.applicationContext as FireLiteApplication).container.films.preferences.key.collectAsState()
-    val report = remember(source, state, stats, crash, playback, omdbKey.isNotBlank()) {
+    val omdbStats by (context.applicationContext as FireLiteApplication).container.films.preferences.stats.collectAsState()
+    val now by minuteClock()
+    val today = omdbStats.today(now)
+    val report = remember(source, state, stats, crash, playback, omdbKey.isNotBlank(), today) {
         context.getString(R.string.omdb_key_diagnostics, context.getString(omdbKeyStatus(omdbKey.isNotBlank()))) +
+            "\n" + context.getString(R.string.omdb_stats_diagnostics, today.requests, today.hits, today.misses,
+                if (omdbKey.isBlank()) "NO_KEY" else today.lastError) +
             "\n" + DiagnosticsReport.text(source, state, stats, crash, playback)
     }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {

@@ -11,8 +11,6 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.currentCoroutineContext
-import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.SharingStarted
@@ -23,6 +21,8 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
 
 data class FilmShowing(val channel: ChannelEntity, val programme: ProgrammeEntity, val rating: FilmRatingEntity?) {
     val identity: String get() = "${channel.id}:${programme.start}"
@@ -53,7 +53,9 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
             dao.budget(FilmBudgetEntity(day))
             dao.reserve(day) == 1
         }
-    })
+    }, observer = preferences)
+    private val mutableEnriching = MutableStateFlow(false)
+    val enriching = mutableEnriching.asStateFlow()
     private val clock = flow { while (true) { emit(System.currentTimeMillis()); delay(60_000) } }
     val ratings = observeFilmRatings(dao.observeRatings(), preferences.key, clock)
         .stateIn(scope, SharingStarted.Eagerly, emptyMap())
@@ -78,6 +80,8 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
                 .collectLatest { (source, key) ->
                     if (source == null || key.isBlank()) return@collectLatest
                     while (true) {
+                        var retry = false
+                        mutableEnriching.value = true
                         try {
                             val now = System.currentTimeMillis()
                             val channels = database.epgDao().filmChannels(source.id).first()
@@ -86,14 +90,15 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
                                 .filmWindow(source.id, Films.archiveWindowStart(channels, now), now + 2 * Films.DAY).first().mapNotNull { p ->
                                     byId[p.channelId]?.let { FilmShowing(it, p.programme, null) }
                                 }, now)
-                            for (p in candidates) {
-                                currentCoroutineContext().ensureActive()
-                                if (database.sourceDao().active()?.id != source.id || preferences.key.value != key) break
-                                if (lookup.lookup(p, key, System.currentTimeMillis()) == null) break
-                            }
+                            retry = enrichFilms(candidates, key, lookup, {
+                                database.sourceDao().active()?.id == source.id && preferences.key.value == key
+                            })
                         } catch (error: CancellationException) { throw error }
-                        catch (_: Exception) { /* Retry on the next refresh. */ }
-                        delay(60 * 60_000L)
+                        catch (_: Exception) {
+                            preferences.error("INTERNAL", System.currentTimeMillis())
+                            retry = true
+                        } finally { mutableEnriching.value = false }
+                        delay(if (retry) 60_000L else 60 * 60_000L)
                     }
                 }
         }

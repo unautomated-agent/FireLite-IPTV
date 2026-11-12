@@ -29,6 +29,7 @@
     <string name="omdb_key_set">ustawiony</string>
     <string name="omdb_key_missing">brak</string>
     <string name="omdb_key_diagnostics">Klucz OMDb: %1$s</string>
+    <string name="omdb_stats_diagnostics">OMDb: dziś=%1$d · trafienia=%2$d · brak=%3$d · błąd=%4$s</string>
     <string name="channel_next_programme">Następnie: %1$s %2$s</string>
     <string name="diagnostics_title">Diagnostyka</string>
     <string name="diagnostics_open">Pokaż raport i kod QR</string>

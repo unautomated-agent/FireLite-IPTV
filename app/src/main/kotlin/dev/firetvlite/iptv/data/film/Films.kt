@@ -61,7 +61,7 @@ data class OmdbMovie(val type: String, val year: Int, val rating: Double?, val v
 sealed interface OmdbResult {
     data class Found(val movie: OmdbMovie) : OmdbResult
     data object Missing : OmdbResult
-    data object Failed : OmdbResult
+    data class Failed(val code: String = "NETWORK") : OmdbResult
 }
 
 fun interface OmdbClient {
@@ -83,16 +83,25 @@ fun observeFilmRatings(rows: Flow<List<FilmRatingEntity>>, keys: Flow<String>, t
 
 class FilmLookup(private val client: OmdbClient, private val store: FilmStore,
     private val clock: () -> Long = System::currentTimeMillis,
+    private val observer: OmdbObserver = object : OmdbObserver {},
     private val wait: suspend () -> Unit = { kotlinx.coroutines.delay(250) }) {
+    var lastError: String? = null
+        private set
+
     suspend fun lookup(p: ProgrammeEntity, key: String, now: Long): FilmRatingEntity? {
-        if (key.isBlank() || !Films.candidate(p)) return null
+        lastError = null
+        if (key.isBlank()) { fail("NO_KEY"); return null }
+        if (!Films.candidate(p)) return null
         val identity = Films.key(p)
         store.cached(identity)?.takeIf { Films.fresh(it, now) }?.let { return it }
         for ((title, year) in Films.queries(p)) {
             wait()
-            if (!store.reserve(Films.day(clock()))) return null
-            when (val result = client.lookup(key, title, year)) {
-                OmdbResult.Failed -> return null
+            if (!store.reserve(Films.day(clock()))) { fail("LOCAL_BUDGET"); return null }
+            observer.requested(clock())
+            val result = client.lookup(key, title, year)
+            observer.completed(result, clock())
+            when (result) {
+                is OmdbResult.Failed -> { lastError = result.code; return null }
                 OmdbResult.Missing -> Unit
                 is OmdbResult.Found -> if (result.movie.matches(p.year!!)) {
                     val movie = result.movie
@@ -101,5 +110,10 @@ class FilmLookup(private val client: OmdbClient, private val store: FilmStore,
             }
         }
         return FilmRatingEntity(identity, null, 0, null, clock()).also { store.save(it) }
+    }
+
+    private fun fail(code: String) {
+        lastError = code
+        observer.error(code, clock())
     }
 }

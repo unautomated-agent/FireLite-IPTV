@@ -22,7 +22,7 @@ class OmdbHttpClient(private val baseUrl: () -> String = { "https://www.omdbapi.
             connection.readTimeout = 10_000
             connection.instanceFollowRedirects = false
             try {
-                if (connection.responseCode != 200) OmdbResult.Failed else {
+                if (connection.responseCode != 200) OmdbResult.Failed("HTTP_${connection.responseCode}") else {
                     val body = connection.inputStream.use { readBody(it) }
                     decode(body)
                 }
@@ -30,7 +30,7 @@ class OmdbHttpClient(private val baseUrl: () -> String = { "https://www.omdbapi.
         } catch (error: CancellationException) {
             throw error
         } catch (_: Exception) {
-            OmdbResult.Failed
+            OmdbResult.Failed()
         }
     }
 
@@ -53,7 +53,13 @@ class OmdbHttpClient(private val baseUrl: () -> String = { "https://www.omdbapi.
         fun decode(body: String): OmdbResult = try {
             val json = JSONObject(body)
             if (json.optString("Response") == "False") {
-                if (json.optString("Error").contains("not found", ignoreCase = true)) OmdbResult.Missing else OmdbResult.Failed
+                val error = json.optString("Error")
+                when {
+                    error.contains("not found", ignoreCase = true) -> OmdbResult.Missing
+                    error.contains("api key", ignoreCase = true) -> OmdbResult.Failed("AUTH")
+                    error.contains("limit", ignoreCase = true) -> OmdbResult.Failed("REMOTE_LIMIT")
+                    else -> OmdbResult.Failed("RESPONSE")
+                }
             } else {
                 val year = json.optString("Year").toIntOrNull()
                 if (year == null) OmdbResult.Missing else OmdbResult.Found(OmdbMovie(
@@ -63,6 +69,6 @@ class OmdbHttpClient(private val baseUrl: () -> String = { "https://www.omdbapi.
                     json.optString("imdbID"),
                 ))
             }
-        } catch (_: Exception) { OmdbResult.Failed }
+        } catch (_: Exception) { OmdbResult.Failed("BAD_RESPONSE") }
     }
 }

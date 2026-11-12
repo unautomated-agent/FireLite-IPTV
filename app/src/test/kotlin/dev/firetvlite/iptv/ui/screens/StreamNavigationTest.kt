@@ -9,6 +9,26 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StreamNavigationTest {
+    @Test fun guideBackBypassesFocusExitAndActsOnceOnReleaseWithOrWithoutPlayback() {
+        for (hasChannel in listOf(false, true)) {
+            assertEquals(GuideBackAction.Consume, guideBackAction(PlayerMode.Guide, hasChannel, false, false))
+            assertEquals(GuideBackAction.Consume, guideBackAction(PlayerMode.Guide, hasChannel, false, false))
+            assertEquals(GuideBackAction.Consume, guideBackAction(PlayerMode.Guide, hasChannel, true, true))
+            assertEquals(if (hasChannel) GuideBackAction.ReturnToPlayback else GuideBackAction.Exit,
+                guideBackAction(PlayerMode.Guide, hasChannel, true, false))
+        }
+        for (mode in PlayerMode.entries.filter { it != PlayerMode.Guide }) {
+            assertEquals(GuideBackAction.Pass, guideBackAction(mode, true, false, false))
+            assertEquals(GuideBackAction.Pass, guideBackAction(mode, false, true, false))
+        }
+        val activity = File("src/main/kotlin/dev/firetvlite/iptv/MainActivity.kt").readText()
+        val dispatch = activity.substringAfter("override fun dispatchKeyEvent(").substringBefore("override fun onCreate(")
+        assertTrue(dispatch.indexOf("guideBackAction(") < dispatch.indexOf("super.dispatchKeyEvent(event)"))
+        assertTrue(dispatch.contains("if (event.keyCode == KeyEvent.KEYCODE_BACK)"))
+        assertTrue(dispatch.contains("GuideBackAction.ReturnToPlayback -> { playerViewModel.returnToFullscreen(); return true }"))
+        assertTrue(dispatch.contains("GuideBackAction.Exit -> { finish(); return true }"))
+    }
+
     @Test fun rootBackDefersToSystemWithoutPlaybackEvenAfterPlaylistImport() {
         assertTrue(canChooseChannel(true, 20))
         for (mode in listOf(PlayerMode.Closed, PlayerMode.Panel, PlayerMode.Guide)) {

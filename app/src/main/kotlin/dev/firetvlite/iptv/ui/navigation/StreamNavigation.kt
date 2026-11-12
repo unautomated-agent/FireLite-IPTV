@@ -16,6 +16,15 @@ fun canChooseChannel(hasSource: Boolean, channelCount: Int): Boolean = hasSource
 fun screenBackReturnsToPlayback(mode: PlayerMode, hasChannel: Boolean): Boolean =
     hasChannel && (mode == PlayerMode.Panel || mode == PlayerMode.Guide)
 
+enum class GuideBackAction { Pass, Consume, ReturnToPlayback, Exit }
+
+fun guideBackAction(mode: PlayerMode, hasChannel: Boolean, keyUp: Boolean, canceled: Boolean): GuideBackAction = when {
+    mode != PlayerMode.Guide -> GuideBackAction.Pass
+    !keyUp || canceled -> GuideBackAction.Consume
+    hasChannel -> GuideBackAction.ReturnToPlayback
+    else -> GuideBackAction.Exit
+}
+
 enum class QuickMenuAction { Audio, Favorite, Guide, Films, Settings }
 
 fun quickMenuItems(favorite: Boolean): List<Pair<QuickMenuAction, Int>> = listOf(

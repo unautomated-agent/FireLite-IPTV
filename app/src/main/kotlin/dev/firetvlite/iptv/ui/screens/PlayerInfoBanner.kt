@@ -27,6 +27,7 @@ import dev.firetvlite.iptv.data.epg.CurrentAndNext
 import dev.firetvlite.iptv.playback.PlaybackFrame
 import dev.firetvlite.iptv.playback.PlaybackTime
 import dev.firetvlite.iptv.ui.components.ChannelLogo
+import dev.firetvlite.iptv.ui.components.ArchiveIcon
 import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.ImdbRating
 import dev.firetvlite.iptv.ui.components.ProgressBar
@@ -50,10 +51,14 @@ internal fun PlayerInfoBanner(channel: ChannelEntity?, frame: PlaybackFrame, gui
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                 ChannelLogo(channel?.name.orEmpty(), channel?.logoUrl?.takeIf { it.isNotBlank() }, size = 64.dp)
                 Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    FLText(channel?.name.orEmpty(), style = type.title, maxLines = 1)
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        FLText(channel?.name.orEmpty(), style = type.title, maxLines = 1,
+                            modifier = Modifier.weight(1f, fill = false))
+                        if (archive) ArchiveIcon(description = stringResource(R.string.player_archive_mode))
+                    }
                     FLText(channel?.groupName.orEmpty(), style = type.label, color = colors.textSecondary, maxLines = 1)
                 }
-                FLText(if (archive) "ARCHIWUM" else "NA ŻYWO", style = type.label,
+                if (!archive) FLText(stringResource(R.string.player_live_mode), style = type.label,
                     color = colors.accent, modifier = Modifier.clip(RoundedCornerShape(6.dp))
                         .background(colors.accent.copy(alpha = 0.15f)).padding(horizontal = 12.dp, vertical = 6.dp))
                 FLText(clockTime(now), style = type.headline)

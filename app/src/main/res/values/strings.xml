@@ -103,7 +103,9 @@
     <string name="live_empty_group">Brak kanałów w tej grupie.</string>
     <string name="live_hint">Zatrzymaj fokus – podgląd · OK – pełny ekran · Menu – ulubione</string>
     <string name="detail_group">Grupa: %1$s</string>
-    <string name="badge_catchup">ARCHIWUM</string>
+    <string name="channel_row_next_programme">Następnie %1$s %2$s</string>
+    <string name="player_archive_mode">Odtwarzanie z archiwum</string>
+    <string name="player_live_mode">NA ŻYWO</string>
     <plurals name="catchup_days">
         <item quantity="one">%d dzień wstecz</item>
         <item quantity="few">%d dni wstecz</item>

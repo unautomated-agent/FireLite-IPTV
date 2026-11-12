@@ -55,6 +55,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.paging.compose.collectAsLazyPagingItems
@@ -63,6 +64,8 @@ import androidx.paging.LoadState
 import androidx.paging.PagingData
 import androidx.paging.cachedIn
 import dev.firetvlite.iptv.R
+import dev.firetvlite.iptv.FireLiteApplication
+import dev.firetvlite.iptv.ui.components.ArchiveIcon
 import dev.firetvlite.iptv.data.db.ChannelRow
 import dev.firetvlite.iptv.data.db.ProgrammeEntity
 import dev.firetvlite.iptv.data.epg.CurrentAndNext
@@ -668,6 +671,9 @@ internal fun ChannelRowItem(
     modifier: Modifier = Modifier,
 ) {
     val channel = row.channel
+    val epg = (LocalContext.current.applicationContext as FireLiteApplication).container.epg
+    val guide by remember(channel.id, now) { epg.observeCurrentAndNextAt(channel.id, now) }
+        .collectAsState(initial = CurrentAndNext(null, null))
     FocusSurface(
         onClick = onClick,
         onFocusChanged = { focused -> if (focused) onFocused() },
@@ -686,8 +692,12 @@ internal fun ChannelRowItem(
         ) {
             ChannelLogo(name = channel.name, logoUrl = channel.logoUrl, size = if (translucent) CHANNEL_OVERLAY_LOGO_DP.dp else 40.dp)
             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (translucent) 2.dp else 4.dp)) {
-                FLText(text = channel.name, style = if (translucent)
-                    FireLiteTheme.typography.title.copy(fontSize = 14.sp, lineHeight = 18.sp) else FireLiteTheme.typography.title, maxLines = 1)
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    FLText(text = channel.name, style = if (translucent)
+                        FireLiteTheme.typography.title.copy(fontSize = 14.sp, lineHeight = 18.sp) else FireLiteTheme.typography.title,
+                        maxLines = 1, modifier = Modifier.weight(1f, fill = false))
+                    if (CatchupUrlBuilder.isSupported(channel)) ArchiveIcon()
+                }
                 if (programme != null) {
                     if (translucent) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         FLText(text = programme.title, style = FireLiteTheme.typography.label,
@@ -701,11 +711,13 @@ internal fun ChannelRowItem(
                     ProgressBar(PlaybackTime.progress(now, programme.start, programme.stop))
                 }
             }
-            if (channel.catchupDays > 0) {
+            guide.next?.let { next ->
                 FLText(
-                    text = stringResource(R.string.badge_catchup),
+                    text = stringResource(R.string.channel_row_next_programme, clockTime(next.start), next.title),
                     style = FireLiteTheme.typography.label,
                     color = FireLiteTheme.colors.accent,
+                    maxLines = 2,
+                    modifier = Modifier.weight(0.65f),
                 )
             }
             if (row.isFavorite) {

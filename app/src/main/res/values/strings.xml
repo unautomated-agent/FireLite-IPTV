@@ -154,6 +154,7 @@
     <string name="channel_timeline_future">Zaczyna się o %1$s</string>
     <string name="channel_timeline_hint">Góra/Dół: audycja · ⏪/⏩: dzień · OK: oglądaj · Wstecz: zamknij</string>
     <string name="player_seek_unsupported">Przewijanie nie jest dostępne dla tego kanału.</string>
+    <string name="player_seek_preview">Przewijanie: %1$s · ×%2$d</string>
     <string name="player_catchup_unsupported">Archiwum nie działa dla tego kanału.</string>
 
     <!-- Settings: channel list -->

@@ -95,7 +95,8 @@ class SeekGestureTest {
     @Test fun remoteSeekKeysOnlySubmitOnReleaseAndNavigationCancelsQueuedSeeks() {
         val screen = File("src/main/kotlin/dev/firetvlite/iptv/ui/screens/PlayerScreen.kt").readText()
             .substringAfter("private fun PlayerContent(")
-        assertTrue(screen.contains("seekGesture.release(mapped)?.let(viewModel::finishSeek)"))
+        assertTrue(screen.contains("seekGesture.release(mapped)?.let { delta ->"))
+        assertTrue(screen.contains("viewModel.finishSeek(delta)"))
         assertTrue(screen.contains("if (!repeat) viewModel.beginSeek()"))
         assertTrue(screen.contains("key(mapped, repeat)"))
         assertFalse(screen.contains("viewModel.seek("))
@@ -106,5 +107,41 @@ class SeekGestureTest {
             val body = model.substringAfter("fun $method(").substringBefore("\n    }")
             assertTrue(method, body.contains("seekDebouncer.cancel()"))
         }
+    }
+
+    @Test fun previewTracksOffsetAndMultiplierWithoutReleasingTheGesture() {
+        val gesture = SeekGesture()
+        assertNull(gesture.preview)
+        gesture.press(TvKey.Left, 0, false)
+        assertEquals(SeekPreview(-10_000, 1), gesture.preview)
+        gesture.press(TvKey.Left, 1_000, true)
+        assertEquals(SeekPreview(-30_000, 2), gesture.preview)
+        gesture.press(TvKey.Left, 2_000, true)
+        assertEquals(SeekPreview(-70_000, 4), gesture.preview)
+        gesture.press(TvKey.Left, 4_000, true)
+        assertEquals(SeekPreview(-150_000, 8), gesture.preview)
+        assertNull(gesture.release(TvKey.Right))
+        assertEquals(SeekPreview(-150_000, 8), gesture.preview)
+        assertEquals(-150_000L, gesture.release(TvKey.Left))
+        assertNull(gesture.preview)
+        gesture.press(TvKey.Right, 5_000, false)
+        assertEquals(SeekPreview(10_000, 1), gesture.preview)
+        gesture.cancel()
+        assertNull(gesture.preview)
+    }
+
+    @Test fun feedbackIncludesEarlierDebouncedPressesAndResetsAfterCommitOrCancel() {
+        var feedback = SeekFeedback()
+        assertNull(feedback.preview)
+        feedback = feedback.hold(SeekPreview(10_000, 1)).release(10_000)
+        assertNull(feedback.held)
+        assertEquals(SeekPreview(10_000, 1), feedback.preview)
+        feedback = feedback.hold(SeekPreview(70_000, 4))
+        assertEquals(SeekPreview(80_000, 4), feedback.preview)
+        feedback = feedback.release(70_000)
+        assertEquals(SeekPreview(80_000, 4), feedback.preview)
+        assertNull(SeekFeedback().preview)
+        feedback = feedback.hold(SeekPreview(-80_000, 2)).release(-80_000)
+        assertNull(feedback.preview)
     }
 }

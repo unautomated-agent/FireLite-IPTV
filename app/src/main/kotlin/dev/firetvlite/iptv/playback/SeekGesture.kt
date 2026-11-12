@@ -5,11 +5,24 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
+internal data class SeekPreview(val offsetMs: Long, val multiplier: Int)
+
+internal data class SeekFeedback(val queuedMs: Long = 0L, val held: SeekPreview? = null,
+    private val multiplier: Int = 1) {
+    val preview: SeekPreview? get() = held?.copy(offsetMs = queuedMs + held.offsetMs)
+        ?: queuedMs.takeIf { it != 0L }?.let { SeekPreview(it, multiplier) }
+
+    fun hold(value: SeekPreview?) = copy(held = value, multiplier = value?.multiplier ?: multiplier)
+    fun release(delta: Long) = copy(queuedMs = queuedMs + delta, held = null)
+}
+
 internal class SeekGesture {
     private var held: TvKey? = null
     private var started = 0L
     private var lastStep = 0L
     private var delta = 0L
+    private var multiplier = 1
+    val preview: SeekPreview? get() = held?.let { SeekPreview(delta, multiplier) }
 
     fun press(key: TvKey, now: Long, repeat: Boolean) {
         val base = when (key) {
@@ -24,7 +37,7 @@ internal class SeekGesture {
             started = now
         } else if (now - lastStep < 200) return
         lastStep = now
-        val multiplier = when {
+        multiplier = when {
             now - started >= 4_000 -> 8
             now - started >= 2_000 -> 4
             now - started >= 1_000 -> 2
@@ -38,11 +51,12 @@ internal class SeekGesture {
         return delta.also { cancel() }
     }
 
-    fun cancel() { held = null; delta = 0L }
+    fun cancel() { held = null; delta = 0L; multiplier = 1 }
 }
 
 internal class SeekDebouncer(private val scope: CoroutineScope, private val commit: (Long) -> Unit,
-    private val delayMs: Long = 300L) {
+    private val delayMs: Long = DELAY_MS) {
+    companion object { const val DELAY_MS = 300L }
     private var pending = 0L
     private var job: Job? = null
 

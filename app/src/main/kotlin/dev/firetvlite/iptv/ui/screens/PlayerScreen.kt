@@ -64,6 +64,8 @@ import dev.firetvlite.iptv.playback.PlaybackStatus
 import dev.firetvlite.iptv.playback.PlayerMode
 import dev.firetvlite.iptv.playback.ScreenAwakePolicy
 import dev.firetvlite.iptv.playback.SeekGesture
+import dev.firetvlite.iptv.playback.SeekFeedback
+import dev.firetvlite.iptv.playback.SeekDebouncer
 import dev.firetvlite.iptv.playback.TvAction
 import dev.firetvlite.iptv.playback.TvKey
 import dev.firetvlite.iptv.playback.TvPlayerControls
@@ -159,10 +161,19 @@ private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSet
     val message by viewModel.message.collectAsState()
     var controls by remember { mutableStateOf(TvPlayerControls()) }
     val seekGesture = remember { SeekGesture() }
+    var seekFeedback by remember(channel?.id) { mutableStateOf(SeekFeedback()) }
+    val seekPreview = seekFeedback.preview
     DisposableEffect(viewModel, channel?.id) {
-        onDispose { seekGesture.cancel(); viewModel.cancelSeek() }
+        onDispose { seekGesture.cancel(); seekFeedback = SeekFeedback(); viewModel.cancelSeek() }
     }
-    LaunchedEffect(controls.banner) { onBannerVisible(controls.banner != BannerState.Hidden) }
+    LaunchedEffect(seekFeedback) {
+        if (seekFeedback.held == null && seekPreview != null) {
+            delay(SeekDebouncer.DELAY_MS)
+            seekFeedback = SeekFeedback()
+        }
+    }
+    val bannerVisible = controls.banner != BannerState.Hidden || seekPreview != null
+    LaunchedEffect(bannerVisible) { onBannerVisible(bannerVisible) }
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     val focus = remember { FocusRequester() }
@@ -185,17 +196,22 @@ private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSet
     }
     LaunchedEffect(quickMenu) {
         if (!quickMenu) focus.requestFocusWhenReady()
-        else { seekGesture.cancel(); viewModel.cancelSeek() }
+        else { seekGesture.cancel(); seekFeedback = SeekFeedback(); viewModel.cancelSeek() }
     }
-    LaunchedEffect(controls.deadline, controls.banner) {
-        if (controls.banner == BannerState.Compact) {
+    LaunchedEffect(controls.deadline, controls.banner, seekPreview != null) {
+        if (controls.banner == BannerState.Compact && seekPreview == null) {
             delay((controls.deadline - SystemClock.uptimeMillis()).coerceAtLeast(0))
             controls = controls.expire(SystemClock.uptimeMillis())
         }
     }
     LaunchedEffect(controls.banner, channel?.id) { scroll.scrollTo(0) }
-    BackHandler(enabled = quickMenu || controls.banner != BannerState.Hidden) {
-        if (quickMenu) onQuickMenu(false) else key(TvKey.Back)
+    BackHandler(enabled = quickMenu || bannerVisible) {
+        if (quickMenu) onQuickMenu(false) else {
+            seekGesture.cancel()
+            seekFeedback = SeekFeedback()
+            viewModel.cancelSeek()
+            key(TvKey.Back)
+        }
     }
     Box(Modifier.fillMaxSize().focusRequester(focus)
         .onPreviewKeyEvent { if (!quickMenu) controls = controls.touch(SystemClock.uptimeMillis()); false }
@@ -214,12 +230,17 @@ private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSet
                     val repeat = event.nativeKeyEvent.repeatCount != 0
                     if (!repeat) viewModel.beginSeek()
                     seekGesture.press(mapped, SystemClock.uptimeMillis(), repeat)
+                    seekFeedback = seekFeedback.hold(seekGesture.preview)
                     key(mapped, repeat)
                 } else if (event.type == KeyEventType.KeyUp) {
                     if (event.nativeKeyEvent.isCanceled) {
                         seekGesture.cancel()
+                        seekFeedback = SeekFeedback()
                         viewModel.cancelSeek()
-                    } else seekGesture.release(mapped)?.let(viewModel::finishSeek)
+                    } else seekGesture.release(mapped)?.let { delta ->
+                        seekFeedback = seekFeedback.release(delta)
+                        viewModel.finishSeek(delta)
+                    }
                 }
                 true
             }
@@ -251,10 +272,10 @@ private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSet
                 style = FireLiteTheme.typography.title, modifier = Modifier.align(Alignment.TopCenter)
                     .padding(24.dp).background(Color(0xCC000000)).padding(16.dp))
         }
-        AnimatedVisibility(controls.banner != BannerState.Hidden, modifier = Modifier.align(Alignment.BottomCenter),
+        AnimatedVisibility(bannerVisible, modifier = Modifier.align(Alignment.BottomCenter),
             enter = fadeIn(tween(180)) + slideInVertically { it / 4 },
             exit = fadeOut(tween(180)) + slideOutVertically { it / 4 }) {
-            PlayerInfoBanner(channel, frame, guide, controls.banner == BannerState.Expanded, scroll, viewModel.isArchive())
+            PlayerInfoBanner(channel, frame, guide, controls.banner == BannerState.Expanded, scroll, viewModel.isArchive(), seekPreview)
         }
     }
     AnimatedVisibility(quickMenu,

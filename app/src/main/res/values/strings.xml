@@ -15,7 +15,13 @@
     <string name="films_empty">Brak filmów w tym przedziale. Odśwież EPG w Ustawieniach.</string>
     <string name="films_starts_at">Zaczyna się o %1$s</string>
     <string name="films_airing_time">NA ŻYWO · %1$s</string>
-    <string name="imdb_rating">IMDb %1$s</string>
+    <string name="imdb_rating">IMDb %1$s/10</string>
+    <string name="imdb_rating_with_votes">%1$s · %2$s</string>
+    <string name="imdb_votes_one">%1$s głos</string>
+    <string name="imdb_votes_few">%1$s głosy</string>
+    <string name="imdb_votes_many">%1$s głosów</string>
+    <string name="imdb_votes_thousands">%1$s tys. głosów</string>
+    <string name="imdb_votes_millions">%1$s mln głosów</string>
     <string name="imdb_unrated">IMDb —</string>
     <string name="omdb_key_label">Klucz OMDb (oceny IMDb)</string>
     <string name="omdb_key_help">Darmowy klucz: omdbapi.com/apikey.aspx</string>

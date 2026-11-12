@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -39,11 +40,11 @@ import dev.firetvlite.iptv.ui.components.PrimaryButton
 import dev.firetvlite.iptv.ui.components.ProgressBar
 import dev.firetvlite.iptv.ui.components.clockTime
 import dev.firetvlite.iptv.ui.components.minuteClock
+import dev.firetvlite.iptv.ui.components.imdbRatingText
 import dev.firetvlite.iptv.ui.components.requestFocusWhenReady
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 import dev.firetvlite.iptv.ui.viewmodel.LibraryViewModel
 import dev.firetvlite.iptv.ui.viewmodel.PlayerViewModel
-import java.util.Locale
 import kotlinx.coroutines.launch
 
 @Composable
@@ -86,7 +87,7 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
             LazyColumn(state = states[tab], verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(rows, key = { it.identity }) { film ->
                     val p = film.programme
-                    val score = film.rating?.imdbRating
+                    val ratingText = imdbRatingText(film.rating, showVotes = true)
                     val airing = p.start <= now && p.stop > now
                     val archiveUntil = Films.archiveUntil(film.channel, p)?.takeIf { p.stop <= now }
                     FocusSurface(onClick = {
@@ -106,12 +107,13 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
                     }, modifier = Modifier.fillMaxWidth(), focusedScale = 1.01f) {
                         Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                            FLText(if (score != null) stringResource(R.string.imdb_rating, String.format(Locale.ROOT, "%.1f", score))
-                                else stringResource(R.string.imdb_unrated),
-                                style = FireLiteTheme.typography.title, color = if (score != null) Color(0xFFF5C518) else colors.textSecondary)
+                            FLText(ratingText.ifEmpty { stringResource(R.string.imdb_unrated) },
+                                style = FireLiteTheme.typography.title,
+                                color = if (ratingText.isNotEmpty()) Color(0xFFF5C518) else colors.textSecondary,
+                                maxLines = 2, modifier = Modifier.widthIn(max = 220.dp))
                             Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                 FLText(p.title, style = FireLiteTheme.typography.title,
-                                    color = if (score == null) colors.textSecondary else colors.textPrimary, maxLines = 1)
+                                    color = if (ratingText.isEmpty()) colors.textSecondary else colors.textPrimary, maxLines = 1)
                                 FLText(listOfNotNull(p.originalTitle, p.year?.toString()).joinToString(" · "),
                                     style = FireLiteTheme.typography.label, color = colors.textSecondary, maxLines = 1)
                                 FLText(if (airing) stringResource(R.string.films_airing_time, Films.time(p.start)) else Films.time(p.start),

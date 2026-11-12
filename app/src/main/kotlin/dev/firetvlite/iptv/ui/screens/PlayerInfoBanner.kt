@@ -62,7 +62,7 @@ internal fun PlayerInfoBanner(channel: ChannelEntity?, frame: PlaybackFrame, gui
             FLText(current?.title ?: "Brak informacji o programie",
                 style = type.headline.copy(fontSize = 28.sp, fontWeight = FontWeight.Bold), maxLines = 2)
             if (current != null) {
-                ImdbRating(current)
+                ImdbRating(current, showVotes = expanded)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     FLText(programmeTimes(current), style = type.body)
                     FLText("jeszcze ${((current.stop - frame.watchedMs).coerceAtLeast(0) + 59_999) / 60_000} min",

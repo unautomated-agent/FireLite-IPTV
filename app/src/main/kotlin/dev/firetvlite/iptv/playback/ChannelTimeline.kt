@@ -59,12 +59,12 @@ object ChannelTimeline {
     fun move(index: Int, delta: Int, count: Int): Int =
         if (count == 0) 0 else (index + delta).coerceIn(0, count - 1)
 
-    fun history(items: List<TimelineItem>, rewindAvailable: Boolean = true): List<TimelineItem> {
-        val current = items.firstOrNull { it.current }?.programme
-        return items.filterNot { it.current && !rewindAvailable }
+    fun history(items: List<TimelineItem>): List<TimelineItem> {
+        val current = items.firstOrNull { it.current }
+        return items.filterNot { it.current }
             .map { when {
-                it.live -> it.copy(programme = current)
-                it.current -> it.copy(current = false)
+                it.live && current != null -> it.copy(start = current.start, stop = current.stop,
+                    programme = current.programme, current = true)
                 else -> it
             } }.sortedBy { it.start }
     }
@@ -81,7 +81,6 @@ object ChannelTimeline {
     }
 
     fun selection(item: TimelineItem, now: Long, catchupDays: Int, supportsCatchup: Boolean): TimelineAction = when {
-        item.live -> TimelineAction.Live
         item.programme != null -> ProgrammePlayback.action(item.programme, now, catchupDays, supportsCatchup)
         else -> action(item)
     }

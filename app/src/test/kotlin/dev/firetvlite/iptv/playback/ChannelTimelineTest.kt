@@ -3,6 +3,7 @@ package dev.firetvlite.iptv.playback
 import dev.firetvlite.iptv.data.db.ProgrammeEntity
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -88,22 +89,22 @@ class ChannelTimelineTest {
         val current = programme(now - 1_000, now + 1_000)
         val future = programme(now + 1_000, now + 2_000)
         val history = ChannelTimeline.history(ChannelTimeline.items(listOf(past, current, future), now, now - 2_000))
-        assertTrue(history[2].live)
-        assertEquals(current, history[2].programme)
-        assertEquals(listOf(past, current), history.take(2).map { it.programme })
+        assertTrue(history[1].live)
+        assertEquals(current, history[1].programme)
+        assertEquals(listOf(past, current, future), history.map { it.programme })
         assertEquals(future, history.last().programme)
         assertEquals(TimelineAction.None, ChannelTimeline.action(history.last()))
-        assertEquals(TimelineAction.Past, ChannelTimeline.action(history[1]))
-        val liveOnly = ChannelTimeline.history(ChannelTimeline.items(listOf(current, future), now, null), false)
+        assertEquals(TimelineAction.Live, ChannelTimeline.action(history[1]))
+        val liveOnly = ChannelTimeline.history(ChannelTimeline.items(listOf(current, future), now, null))
         assertTrue(liveOnly.first().live)
         assertTrue(liveOnly.last().future)
         assertEquals(2, liveOnly.size)
         assertEquals(1, ChannelTimeline.historyFocusIndex(history, now))
         assertEquals(0, ChannelTimeline.historyFocusIndex(history, now - 1_500))
         assertEquals(0, ChannelTimeline.historyFocusIndex(history, now - 3_000))
-        assertEquals(3, ChannelTimeline.move(2, 1, history.size))
+        assertEquals(2, ChannelTimeline.move(1, 1, history.size))
         assertEquals(0, ChannelTimeline.move(0, -1, history.size))
-        assertEquals(3, ChannelTimeline.historyFocusIndex(history, now + 5_000))
+        assertEquals(2, ChannelTimeline.historyFocusIndex(history, now + 5_000))
     }
 
     @Test fun everyKnownUpcomingProgrammeIsSortedBelowLiveEvenBeyondThreeDays() {
@@ -111,7 +112,7 @@ class ChannelTimelineTest {
         val second = programme(now + ChannelTimeline.DAY, now + ChannelTimeline.DAY + 2_000)
         val last = programme(now + 5 * ChannelTimeline.DAY, now + 5 * ChannelTimeline.DAY + 2_000)
         val invalid = programme(now + 6 * ChannelTimeline.DAY, now + 5 * ChannelTimeline.DAY)
-        val history = ChannelTimeline.history(ChannelTimeline.items(listOf(last, invalid, second, first), now, null), false)
+        val history = ChannelTimeline.history(ChannelTimeline.items(listOf(last, invalid, second, first), now, null))
         assertTrue(history.first().live)
         assertEquals(listOf(first, second, last), history.drop(1).map { it.programme })
         assertTrue(history.drop(1).all { it.future && ChannelTimeline.action(it) == TimelineAction.None })
@@ -128,7 +129,7 @@ class ChannelTimelineTest {
     @Test fun conflictingFutureIntervalsWithTheSameStartKeepOneStableRow() {
         val first = programme(now + 1_000, now + 2_000)
         val conflicting = first.copy(stop = now + 3_000, title = "Conflicting guide entry")
-        val history = ChannelTimeline.history(ChannelTimeline.items(listOf(first, conflicting), now, null), false)
+        val history = ChannelTimeline.history(ChannelTimeline.items(listOf(first, conflicting), now, null))
         assertEquals(2, history.size)
         assertEquals(first, history.last().programme)
         assertEquals(TimelineAction.None, ChannelTimeline.action(history.last()))
@@ -144,5 +145,28 @@ class ChannelTimelineTest {
         assertEquals(current, items.first().programme)
         assertTrue(items[1].future)
         assertTrue(items.last().live)
+    }
+
+    @Test fun historyShowsTheCurrentProgrammeExactlyOnceAsLiveWithItsExistingSelectionAction() {
+        val current = programme(now - 5_000, now + 5_000)
+        for (earliest in listOf(null, now - ChannelTimeline.HOUR)) {
+            val history = ChannelTimeline.history(ChannelTimeline.items(listOf(current, current), now, earliest))
+            val live = history.single { it.live }
+            assertEquals(1, history.count { it.programme == current })
+            assertEquals(current.start, live.start)
+            assertEquals(current.stop, live.stop)
+            assertTrue(live.current)
+            assertEquals(TimelineAction.Archive, ChannelTimeline.selection(live, now, 1, true))
+            assertEquals(TimelineAction.Live, ChannelTimeline.selection(live, now, 0, false))
+            assertEquals(TimelineAction.Live, ChannelTimeline.selection(live.copy(programme = null), now, 1, true))
+        }
+    }
+
+    @Test fun historyWithoutEpgRetainsOneLiveEdgeRowWithoutAProgramme() {
+        val history = ChannelTimeline.history(ChannelTimeline.items(emptyList(), now, null))
+        assertEquals(1, history.size)
+        assertTrue(history.single().live)
+        assertNull(history.single().programme)
+        assertEquals(TimelineAction.Live, ChannelTimeline.selection(history.single(), now, 1, true))
     }
 }

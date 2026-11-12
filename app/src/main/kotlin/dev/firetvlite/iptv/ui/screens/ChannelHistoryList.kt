@@ -24,6 +24,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
@@ -37,6 +38,7 @@ import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.playback.CatchupUrlBuilder
@@ -50,6 +52,7 @@ import dev.firetvlite.iptv.ui.viewmodel.ChannelTimelineTarget
 import dev.firetvlite.iptv.playback.RemotePress
 import dev.firetvlite.iptv.ui.viewmodel.LibraryViewModel
 import dev.firetvlite.iptv.ui.viewmodel.PlayerViewModel
+import kotlinx.coroutines.flow.first
 
 @Composable
 internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerViewModel, library: LibraryViewModel) {
@@ -58,9 +61,9 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
         CatchupUrlBuilder.isSupported(target.channel), target.liveWindowStart)
     val programmes by remember(target) {
         library.programmes(listOf(target.channel.id), earliest ?: now, Long.MAX_VALUE)
-    }.collectAsState(initial = emptyList())
-    val timeline = remember(programmes, target) { ChannelTimeline.items(programmes.map { it.programme }, now, earliest) }
-    val items = remember(timeline) { ChannelTimeline.history(timeline, earliest != null) }
+    }.collectAsState(initial = null)
+    val timeline = remember(programmes, target) { ChannelTimeline.items(programmes.orEmpty().map { it.programme }, now, earliest) }
+    val items = remember(timeline) { ChannelTimeline.history(timeline) }
     val nextProgramme = timeline.firstOrNull { it.future }
     var focus by remember(target) { mutableStateOf(HistoryFocus(now, live = true)) }
     var atStart by remember(target) { mutableStateOf(false) }
@@ -75,8 +78,22 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
     val requester = remember { FocusRequester() }
     val menuPress = remember(target) { RemotePress() }
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = index)
+    var initiallyPositioned by remember(target) { mutableStateOf(false) }
+    val rowSpacing = with(LocalDensity.current) { 4.dp.roundToPx() }
     LaunchedEffect(Unit) { requester.requestFocusWhenReady() }
-    LaunchedEffect(index, items.size) {
+    LaunchedEffect(target, items, programmes != null) {
+        if (initiallyPositioned || programmes == null) return@LaunchedEffect
+        val layout = snapshotFlow { listState.layoutInfo }.first {
+            it.totalItemsCount == items.size && it.viewportEndOffset > it.viewportStartOffset &&
+                it.visibleItemsInfo.any { row -> row.size > 0 }
+        }
+        val position = HistoryNavigation.initialPosition(index, layout.viewportEndOffset - layout.viewportStartOffset,
+            layout.visibleItemsInfo.first().size, rowSpacing)
+        listState.scrollToItem(position.index, position.offset)
+        initiallyPositioned = true
+    }
+    LaunchedEffect(index, items.size, initiallyPositioned) {
+        if (!initiallyPositioned) return@LaunchedEffect
         val layout = listState.layoutInfo
         val row = layout.visibleItemsInfo.firstOrNull { it.index == index }
         if (row == null || row.offset < layout.viewportStartOffset || row.offset + row.size > layout.viewportEndOffset) {
@@ -136,7 +153,11 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
                             (if (item.future) stringResource(R.string.channel_timeline_upcoming, clockTime(item.start), timelineTitle(item))
                             else (if (item.live) "" else "${clockTime(item.start)}  ") + timelineTitle(item)),
                             style = FireLiteTheme.typography.label, maxLines = 1,
-                            color = if (item.future) colors.textSecondary.copy(alpha = 0.6f) else colors.textPrimary)
+                            color = when {
+                                item.live -> colors.accent
+                                item.future -> colors.textSecondary.copy(alpha = 0.6f)
+                                else -> colors.textPrimary
+                            })
                     }
                 }
             }

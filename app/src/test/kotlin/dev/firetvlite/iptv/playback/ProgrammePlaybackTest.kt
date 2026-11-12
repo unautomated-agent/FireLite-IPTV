@@ -49,7 +49,8 @@ class ProgrammePlaybackTest {
         val model = File("src/main/kotlin/dev/firetvlite/iptv/ui/viewmodel/PlayerViewModel.kt").readText()
         val liveSelection = model.substringAfter("TimelineAction.Live -> {").substringBefore("TimelineAction.Past ->")
         assertTrue(liveSelection.contains("openLiveProgramme(target.zap, target.index, target.group, target.channel,"))
-        assertTrue(liveSelection.contains("if (item.live) null else item.programme"))
+        assertTrue(liveSelection.contains("item.programme)"))
+        assertFalse(liveSelection.contains("if (item.live) null else item.programme"))
         val method = model.substringAfter("fun openLiveProgramme(").substringBefore("fun playTimeline(")
         assertTrue(method.contains("activeChannel?.streamUrl == channel.streamUrl && archiveStartMs == null"))
         assertTrue(method.contains("if (position != null) playback.seekTo(position) else playback.seekToLiveEdge()"))
@@ -94,12 +95,13 @@ class ProgrammePlaybackTest {
         assertEquals(TimelineAction.Live, ProgrammePlayback.action(null, now, 0, false))
     }
 
-    @Test fun historyCurrentProgrammeUsesArchiveButExplicitLiveRowStaysLive() {
+    @Test fun historyCurrentProgrammeKeepsArchiveSelectionWhenMergedIntoTheLiveRow() {
         val current = programme(now - 60_000, now + 60_000)
         val item = TimelineItem(current.start, current.stop, current, current = true)
         assertEquals(TimelineAction.Archive, ChannelTimeline.selection(item, now, 1, true))
         assertEquals(TimelineAction.Archive, ChannelTimeline.selection(item.copy(current = false), now, 1, true))
-        assertEquals(TimelineAction.Live, ChannelTimeline.selection(item.copy(live = true), now, 1, true))
+        assertEquals(TimelineAction.Archive, ChannelTimeline.selection(item.copy(live = true), now, 1, true))
+        assertEquals(TimelineAction.Live, ChannelTimeline.selection(item.copy(live = true, programme = null), now, 1, true))
         assertEquals(TimelineAction.Live, ChannelTimeline.selection(item, now, 0, false))
     }
 

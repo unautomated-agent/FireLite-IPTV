@@ -66,8 +66,13 @@ class FilmsTest {
         assertFalse(Films.candidate(film().copy(stop = now - 1)))
     }
     @Test fun mixedUnratedAndMissingRatingsSortLongVotesAcrossAllTabs() {
-        for (tab in 0..2) {
-            val start = when (tab) { 0 -> now; 1 -> now + Films.DAY; else -> now - Films.DAY }
+        for (tab in 0 until Films.TAB_COUNT) {
+            val start = when (tab) {
+                Films.LIVE_TAB -> now - 100
+                Films.UPCOMING_TAB -> now + 100
+                Films.FUTURE_TAB -> now + Films.DAY
+                else -> now - Films.DAY
+            }
             val missing = FilmShowing(channel().copy(catchupType = "shift", catchupDays = 2),
                 film().copy(start = start, stop = start + 7_200_000), null)
             val unrated = missing.copy(programme = missing.programme.copy(start = start + 1),
@@ -76,8 +81,8 @@ class FilmsTest {
                 rating = FilmRatingEntity("no-votes", null, 0L, "tt456", now))
             val rated = missing.copy(programme = missing.programme.copy(start = start + 3),
                 rating = FilmRatingEntity("rated", 8.0, 5L, "tt789", now))
-            val expected = listOf(rated, unrated, missing, noVotes)
-            for (input in listOf(expected.reversed(), listOf(missing, unrated, noVotes, rated))) {
+            val expected = listOf(rated)
+            for (input in listOf(listOf(rated, noVotes, unrated, missing), listOf(missing, unrated, noVotes, rated))) {
                 assertEquals(expected, rankedFilms(input, now, tab))
             }
         }
@@ -85,7 +90,7 @@ class FilmsTest {
     @Test fun shortFilmsNeverReachRankingsOrSpendLookupRequests() = runBlocking {
         val short = film("Short").copy(stop = now + 79 * 60_000)
         val full = film("Full").copy(originalTitle = null, stop = now + 80 * 60_000)
-        val showings = listOf(short, full).map { FilmShowing(channel(), it, null) }
+        val showings = listOf(short, full).map { FilmShowing(channel(), it, FilmRatingEntity("k", 8.0, 10L, "tt123", now)) }
         assertEquals(listOf(full), ratingCandidates(showings, now))
         assertEquals(listOf(full), rankedFilms(showings, now, 0).map { it.programme })
         var requests = 0
@@ -141,7 +146,8 @@ class FilmsTest {
         val inputs = listOf(tomorrow, older, expired, soon, outside, recent, airing)
         assertEquals(listOf(airing, soon, recent, older).map { it.programme }, ratingCandidates(inputs, now))
         assertEquals(listOf(tomorrow.programme), ratingCandidates(inputs, now, futureWindow = true))
-        val visible = (0..2).flatMap { rankedFilms(inputs, now, it) }.map { Films.key(it.programme) }.toSet()
+        val rated = inputs.map { it.copy(rating = FilmRatingEntity("k", 8.0, 10L, "tt123", now)) }
+        val visible = (0 until Films.TAB_COUNT).flatMap { rankedFilms(rated, now, it) }.map { Films.key(it.programme) }.toSet()
         assertEquals(visible, (ratingCandidates(inputs, now) + ratingCandidates(inputs, now, futureWindow = true))
             .map(Films::key).toSet())
         val duplicateTomorrow = soon.copy(programme = soon.programme.copy(start = now + Films.DAY, stop = now + Films.DAY + 7_200_000))
@@ -394,9 +400,9 @@ class FilmsTest {
         val airing = best.copy(programme = film().copy(start = now - 60_000))
         val duplicate = best.copy(programme = best.programme.copy(stop = best.programme.stop + 1_000))
         val films = listOf(unrated, fewerVotes, votes, expired, unsupported, airing, best, duplicate)
-        assertEquals(listOf(best, votes, fewerVotes, unrated), rankedFilms(films, now, Films.ARCHIVE_TAB))
+        assertEquals(listOf(best, votes, fewerVotes), rankedFilms(films, now, Films.ARCHIVE_TAB))
         assertTrue(rankedFilms(emptyList(), now, Films.ARCHIVE_TAB).isEmpty())
-        assertTrue(rankedFilms(films, now, 3).isEmpty())
+        assertTrue(rankedFilms(films, now, Films.TAB_COUNT).isEmpty())
     }
 
     @Test fun enrichmentIncludesArchiveOnlyOnSupportedChannelsAndPrioritizesUpcomingCopies() {
@@ -436,11 +442,36 @@ class FilmsTest {
         val outside = showing(now + 2 * Films.DAY, 10.0)
         val ended = showing(now - 120 * 60_000, 10.0)
         val films = listOf(unrated, lowVotes, outside, ended, tomorrow, airing)
-        assertEquals(listOf(airing, lowVotes, unrated), rankedFilms(films, now, 0))
-        assertEquals(listOf(tomorrow), rankedFilms(films, now, 1))
+        assertEquals(listOf(airing), rankedFilms(films, now, Films.LIVE_TAB))
+        assertEquals(listOf(lowVotes), rankedFilms(films, now, Films.UPCOMING_TAB))
+        assertEquals(listOf(tomorrow), rankedFilms(films, now, Films.FUTURE_TAB))
         assertTrue(rankedFilms(emptyList(), now, 0).isEmpty())
         assertEquals("niedz. 29.03 00:30", Films.time(now))
         assertEquals("pon. 30.03 01:30", Films.time(now + Films.DAY))
         assertEquals(Films.day(now) + 1, Films.day(now + Films.DAY))
+    }
+
+    @Test fun fourTabsHaveDisjointLiveAndFutureBoundaries() {
+        fun at(start: Long, stop: Long = start + 7_200_000) = film().copy(start = start, stop = stop)
+        assertTrue(Films.inWindow(at(now), now, Films.LIVE_TAB))
+        assertFalse(Films.inWindow(at(now), now, Films.UPCOMING_TAB))
+        assertFalse(Films.inWindow(at(now - 7_200_000, now), now, Films.LIVE_TAB))
+        assertTrue(Films.inWindow(at(now + 1), now, Films.UPCOMING_TAB))
+        assertTrue(Films.inWindow(at(now + Films.DAY - 1), now, Films.UPCOMING_TAB))
+        assertFalse(Films.inWindow(at(now + Films.DAY), now, Films.UPCOMING_TAB))
+        assertTrue(Films.inWindow(at(now + Films.DAY), now, Films.FUTURE_TAB))
+        assertFalse(Films.inWindow(at(now + 2 * Films.DAY), now, Films.FUTURE_TAB))
+        assertFalse(Films.inWindow(at(now), now, Films.ARCHIVE_TAB))
+        assertFalse(Films.inWindow(at(now), now, -1))
+    }
+
+    @Test fun numericRatingsAreRequiredButUnratedFilmsStillGetEnriched() {
+        val base = FilmShowing(channel(), film(), null)
+        val variants = listOf(null, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, 8.0).mapIndexed { i, score ->
+            base.copy(channel = channel().copy(id = i.toLong()),
+                rating = FilmRatingEntity("k", score, 10L, "tt123", now))
+        }
+        assertEquals(listOf(variants.last()), rankedFilms(listOf(base) + variants, now, Films.LIVE_TAB))
+        assertEquals(listOf(base.programme), ratingCandidates(listOf(base), now))
     }
 }

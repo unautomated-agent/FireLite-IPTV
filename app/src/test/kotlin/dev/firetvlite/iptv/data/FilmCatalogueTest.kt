@@ -10,7 +10,8 @@ class FilmCatalogueTest {
         assertEquals(RankingStatus.Loading, rankingStatus(false, false, false, false, false))
         assertEquals(RankingStatus.Loading, rankingStatus(true, true, false, false, false))
         assertEquals(RankingStatus.Loading, rankingStatus(true, false, true, true, false))
-        assertEquals(RankingStatus.Loading, rankingStatus(true, false, true, true, true))
+        assertEquals(RankingStatus.Ready, rankingStatus(true, false, true, true, true))
+        assertEquals(RankingStatus.Ready, rankingStatus(false, true, false, true, true))
     }
 
     @Test fun emptyWindowAndNonFilmEpgNeverAskToUpdateEpg() {

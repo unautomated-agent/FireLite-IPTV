@@ -25,6 +25,9 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.onStart
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.flowOn
 
 data class FilmShowing(val channel: ChannelEntity, val programme: ProgrammeEntity, val rating: FilmRatingEntity?) {
     val identity: String get() = "${channel.id}:${programme.start}"
@@ -32,10 +35,11 @@ data class FilmShowing(val channel: ChannelEntity, val programme: ProgrammeEntit
 
 fun ratingCandidates(showings: List<FilmShowing>, now: Long, futureWindow: Boolean = false): List<ProgrammeEntity> = showings
     .filter { Films.candidate(it.programme) &&
-        (if (futureWindow) Films.inWindow(it.programme, now, 1)
-        else Films.inWindow(it.programme, now, 0) || Films.archived(it.channel, it.programme, now)) }
+        (if (futureWindow) Films.inWindow(it.programme, now, Films.FUTURE_TAB)
+        else Films.inWindow(it.programme, now, Films.LIVE_TAB) || Films.inWindow(it.programme, now, Films.UPCOMING_TAB) ||
+            Films.archived(it.channel, it.programme, now)) }
     .sortedWith(compareBy<FilmShowing> { ratingPriority(it, now) }
-        .thenBy { if (ratingPriority(it, now) == 1) -it.programme.stop else it.programme.start }
+        .thenBy { if (ratingPriority(it, now) == 2) -it.programme.stop else it.programme.start }
         .thenBy { it.channel.position }.thenBy { it.channel.id })
     .map { it.programme }
     .distinctBy(Films::key)
@@ -48,14 +52,16 @@ internal fun futureWindowComplete(retry: Boolean, lastError: String?, hasCandida
     !retry && lastError == null && (hasCandidates || !epgRunning)
 
 private fun ratingPriority(showing: FilmShowing, now: Long): Int = when {
-    Films.inWindow(showing.programme, now, 0) -> 0
-    Films.archived(showing.channel, showing.programme, now) -> 1
-    else -> 2
+    Films.inWindow(showing.programme, now, Films.LIVE_TAB) -> 0
+    Films.inWindow(showing.programme, now, Films.UPCOMING_TAB) -> 1
+    Films.archived(showing.channel, showing.programme, now) -> 2
+    else -> 3
 }
 
 fun rankedFilms(films: List<FilmShowing>, now: Long, tab: Int): List<FilmShowing> = films
-    .filter { Films.candidate(it.programme) && if (tab == Films.ARCHIVE_TAB) Films.archived(it.channel, it.programme, now)
-        else Films.inWindow(it.programme, now, tab) }
+    .filter { it.rating?.imdbRating?.isFinite() == true && Films.candidate(it.programme) &&
+        (if (tab == Films.ARCHIVE_TAB) Films.archived(it.channel, it.programme, now)
+        else Films.inWindow(it.programme, now, tab)) }
     .distinctBy { it.identity }
     .sortedWith(compareByDescending<FilmShowing> { it.rating?.imdbRating ?: -1.0 }
         .thenByDescending { it.rating?.imdbVotes ?: 0L }.thenBy { it.programme.start }.thenBy { it.channel.id })
@@ -83,19 +89,20 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
         .stateIn(scope, SharingStarted.Eagerly, emptyMap())
 
     val catalogue = database.sourceDao().observeActive().flatMapLatest { source ->
-        (if (source == null) flowOf(FilmCatalogue(loaded = true)) else combine(clock, database.epgDao().filmChannels(source.id)) { now, channels ->
+        (if (source == null) flowOf(FilmCatalogue(loaded = true)) else combine(clock, database.epgDao().filmChannels(source.id).distinctUntilChanged()) { now, channels ->
             now to channels
         }.flatMapLatest { (now, channels) ->
-            combine(database.epgDao().filmWindow(source.id, Films.archiveWindowStart(channels, now), now + 2 * Films.DAY),
-                ratings, database.epgDao().observeMatchedCount(source.id)) { programmes, scores, matched ->
+            combine(database.epgDao().filmWindow(source.id, Films.archiveWindowStart(channels, now), now + 2 * Films.DAY)
+                .distinctUntilChanged().map { rows -> rows.filter { Films.candidate(it.programme) } },
+                ratings, database.epgDao().observeMatchedCount(source.id).distinctUntilChanged()) { programmes, scores, matched ->
                 val byId = channels.associateBy { it.id }
-                val films = programmes.filter { Films.candidate(it.programme) }.mapNotNull { p ->
+                val films = programmes.mapNotNull { p ->
                     byId[p.channelId]?.let { FilmShowing(it, p.programme, scores[Films.key(p.programme)]) }
                 }
                 FilmCatalogue(source.id, loaded = true, hasEpg = matched > 0, films = films)
             }
         }).onStart { emit(FilmCatalogue(sourceId = source?.id)) }
-    }.stateIn(scope, SharingStarted.WhileSubscribed(5_000), FilmCatalogue())
+    }.flowOn(Dispatchers.Default).stateIn(scope, SharingStarted.WhileSubscribed(5_000), FilmCatalogue())
 
     init {
         scope.launch(Dispatchers.IO) {
@@ -123,7 +130,7 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
                                 .filmWindow(source.id, Films.archiveWindowStart(channels, now), now + 2 * Films.DAY).first().mapNotNull { p ->
                                     byId[p.channelId]?.let { FilmShowing(it, p.programme, null) }
                                 }, now, futureRequested = request != null)
-                            hasFutureCandidates = candidates.any { Films.inWindow(it, now, 1) }
+                            hasFutureCandidates = candidates.any { Films.inWindow(it, now, Films.FUTURE_TAB) }
                             retry = enrichFilms(candidates, key, lookup, {
                                 database.sourceDao().active()?.id == source.id && preferences.key.value == key
                             })

@@ -18,7 +18,9 @@ private const val PROGRAMME_AT =
 interface EpgDao {
     @Query("SELECT * FROM channel WHERE sourceId=:sourceId ORDER BY position")
     fun filmChannels(sourceId: Long): Flow<List<ChannelEntity>>
-    @Query("SELECT c.id AS channelId, p.* $MAPPED_PROGRAMMES WHERE c.sourceId=:sourceId " +
+    @Query("SELECT c.id AS channelId, p.id, p.sourceId, p.generation, p.epgKey, p.start, p.stop, p.title, " +
+        "NULL AS description, p.category, p.year, p.originalTitle, NULL AS credits, p.episodeNum, p.categories " +
+        "$MAPPED_PROGRAMMES WHERE c.sourceId=:sourceId AND p.stop - p.start >= 4800000 " +
         "AND p.start < :until AND p.stop > :from ORDER BY p.start, c.id")
     fun filmWindow(sourceId: Long, from: Long, until: Long): Flow<List<ChannelProgramme>>
     @Query("SELECT COUNT(*) FROM channel c JOIN source s ON s.id=c.sourceId " +

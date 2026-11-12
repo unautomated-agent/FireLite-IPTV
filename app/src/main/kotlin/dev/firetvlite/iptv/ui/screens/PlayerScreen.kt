@@ -245,12 +245,12 @@ private fun StatusLayer(status: PlaybackStatus) {
 }
 
 @Composable
-internal fun Spinner() {
+internal fun Spinner(modifier: Modifier = Modifier.size(44.dp)) {
     val transition = rememberInfiniteTransition(label = "spinner")
     val angle by transition.animateFloat(0f, 360f,
         animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)), label = "spinnerAngle")
     val color = FireLiteTheme.colors.accent
-    Canvas(Modifier.size(44.dp)) {
+    Canvas(modifier) {
         val stroke = 5.dp.toPx()
         drawArc(color, angle, 250f, false, topLeft = Offset(stroke / 2, stroke / 2),
             size = Size(size.width - stroke, size.height - stroke), style = Stroke(stroke, cap = StrokeCap.Round))

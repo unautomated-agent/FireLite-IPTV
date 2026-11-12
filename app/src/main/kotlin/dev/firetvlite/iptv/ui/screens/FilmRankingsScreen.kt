@@ -2,8 +2,10 @@ package dev.firetvlite.iptv.ui.screens
 
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -66,16 +68,16 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val inputMode = LocalInputModeManager.current
-    var tab by remember { mutableStateOf(0) }
-    val tabFocus = remember { List(3) { FocusRequester() } }
+    var tab by remember { mutableStateOf(Films.LIVE_TAB) }
+    val tabFocus = remember { List(Films.TAB_COUNT) { FocusRequester() } }
     val settingsFocus = remember { FocusRequester() }
-    val states = remember { List(3) { LazyListState() } }
+    val states = remember { List(Films.TAB_COUNT) { LazyListState() } }
     val rows = remember(films, tab, now) { rankedFilms(films, now, tab) }
     val status = rankingStatus(catalogue.loaded && catalogue.sourceId == source?.id,
         epgStates[source?.id] == EpgState.Running, catalogue.hasEpg, enriching, rows.isNotEmpty())
     val colors = FireLiteTheme.colors
     LaunchedEffect(active, tab, source?.id, key) {
-        if (active && tab == 1) source?.id?.let { library.films.requestFutureFilms(it) }
+        if (active && tab == Films.FUTURE_TAB) source?.id?.let { library.films.requestFutureFilms(it) }
     }
     LaunchedEffect(active, key.isNotBlank()) {
         if (active) {
@@ -84,18 +86,22 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
         }
     }
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        FLText(stringResource(R.string.nav_films), style = FireLiteTheme.typography.display)
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FLText(stringResource(R.string.nav_films), style = FireLiteTheme.typography.display)
+            if (enriching) Spinner(modifier = Modifier.size(20.dp))
+        }
         if (key.isBlank()) {
             FLText(stringResource(R.string.films_setup_hint), style = FireLiteTheme.typography.body)
             FLText(stringResource(R.string.omdb_key_help), style = FireLiteTheme.typography.label)
             PrimaryButton(stringResource(R.string.nav_settings), onSettings, Modifier.focusRequester(settingsFocus))
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                listOf(R.string.films_first_window, R.string.films_second_window, R.string.films_archive).forEachIndexed { index, resource ->
+                listOf(R.string.films_live, R.string.films_archive, R.string.films_first_window,
+                    R.string.films_second_window).forEachIndexed { index, resource ->
                     val title = stringResource(resource)
                     PrimaryButton(if (tab == index) stringResource(R.string.films_selected_tab, title) else title, { tab = index },
                         Modifier.focusRequester(tabFocus[index]).onFocusChanged {
-                            if (active && index == 1 && it.isFocused) {
+                            if (active && index == Films.FUTURE_TAB && it.isFocused) {
                                 source?.id?.let { id -> library.films.requestFutureFilms(id) }
                             }
                         })
@@ -105,16 +111,17 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
                 FLText(stringResource(message, omdbError.orEmpty()), style = FireLiteTheme.typography.label)
             }
             when (status) {
-                RankingStatus.Loading -> Row(verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Spinner()
-                    FLText(stringResource(R.string.films_loading), style = FireLiteTheme.typography.body)
+                RankingStatus.Loading -> Box(Modifier.fillMaxWidth().weight(1f), contentAlignment = Alignment.Center) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Spinner()
+                        FLText(stringResource(R.string.films_loading), style = FireLiteTheme.typography.body)
+                    }
                 }
                 RankingStatus.MissingEpg -> FLText(stringResource(R.string.films_missing_epg), style = FireLiteTheme.typography.body)
                 RankingStatus.Empty -> FLText(stringResource(R.string.films_empty), style = FireLiteTheme.typography.body)
                 RankingStatus.Ready -> Unit
             }
-            LazyColumn(state = states[tab], verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            if (rows.isNotEmpty()) LazyColumn(state = states[tab], verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(rows, key = { it.identity }) { film ->
                     val p = film.programme
                     val ratingText = imdbRatingText(film.rating, showVotes = true)

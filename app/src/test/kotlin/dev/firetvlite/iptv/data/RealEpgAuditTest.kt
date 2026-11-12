@@ -42,12 +42,15 @@ class RealEpgAuditTest {
             }
         }
         val candidates = ratingCandidates(showings, now)
+        val future = ratingCandidates(showings, now, futureWindow = true)
+        val allCandidates = (candidates + future).distinctBy(Films::key)
         val previousCandidates = previous.distinctBy(Films::key)
         val report = buildString {
             appendLine("Window UTC: ${Instant.ofEpochMilli(now)} to ${Instant.ofEpochMilli(now + 2 * Films.DAY)}")
             appendLine("Programmes=$programmes; film showings=${showings.size}; showings with original=$originalTitles")
-            appendLine("Unique enrichment candidates=${candidates.size}; with original=${candidates.count { !it.originalTitle.isNullOrBlank() }}")
-            appendLine("Duration filter before/after: showings=${previous.size}/${showings.size}; unique=${previousCandidates.size}/${candidates.size}; maximum fallback requests=${previousCandidates.sumOf { Films.queries(it).size }}/${candidates.sumOf { Films.queries(it).size }}")
+            appendLine("Background candidates=${candidates.size}; max requests=${candidates.sumOf { Films.queries(it).size }}")
+            appendLine("On-demand 24–48h candidates=${future.size}; standalone max requests=${future.sumOf { Films.queries(it).size }}")
+            appendLine("Duration filter before/after (both windows): showings=${previous.size}/${showings.size}; unique=${previousCandidates.size}/${allCandidates.size}; maximum exact-year requests=${previousCandidates.sumOf { Films.queries(it).size }}/${allCandidates.sumOf { Films.queries(it).size }}")
             candidates.forEachIndexed { index, p ->
                 appendLine("${index + 1}. ${p.title} | original=${p.originalTitle ?: "—"} | year=${p.year} | channel=${p.epgKey}")
                 appendLine(Films.queries(p).joinToString(" ; ") { (title, year) ->
@@ -58,5 +61,6 @@ class RealEpgAuditTest {
         File(System.getenv("FIRELITE_EPG_AUDIT_OUTPUT") ?: "build/real-epg-audit.txt").writeText(report)
         println(report.lineSequence().take(33).joinToString("\n"))
         assertTrue("Public feed had no film candidates in the requested window", candidates.isNotEmpty())
+        assertTrue(allCandidates.all { p -> Films.queries(p).size <= 2 && Films.queries(p).all { it.second == p.year } })
     }
 }

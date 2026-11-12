@@ -10,8 +10,13 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
 
 object Films {
+    internal const val VARIANT_PREFIX = "@variant:"
     const val DAY = 86_400_000L
     const val ARCHIVE_TAB = 2
     val zone: ZoneId = ZoneId.of("Europe/Warsaw")
@@ -29,13 +34,15 @@ object Films {
     fun key(p: ProgrammeEntity): String = normalized(p.originalTitle?.takeIf { it.isNotBlank() } ?: p.title) + ":" + p.year
     fun queries(p: ProgrammeEntity): List<Pair<String, Int>> {
         val year = p.year ?: return emptyList()
-        val titles = listOfNotNull(p.originalTitle?.takeIf { it.isNotBlank() }, p.title.takeIf { it.isNotBlank() })
-            .distinctBy(::normalized)
-        val years = if (p.originalTitle.isNullOrBlank()) listOf(year) else listOf(year, year - 1, year + 1)
-        return years.flatMap { y -> titles.map { it to y } }
+        val titles = listOfNotNull(p.originalTitle?.takeIf {
+            it.isNotBlank() && normalized(it) != normalized(p.title)
+        }, p.title.takeIf { it.isNotBlank() })
+        return titles.map { it to year }
     }
+    internal fun variantKey(identity: String, title: String, year: Int): String =
+        "$VARIANT_PREFIX$identity:${normalized(title)}:$year"
     fun fresh(rating: FilmRatingEntity, now: Long): Boolean = now >= rating.fetchedAt &&
-        now - rating.fetchedAt < (if (rating.imdbId == null) 7 else 30) * DAY
+        now - rating.fetchedAt < 30 * DAY
     fun day(now: Long): Long = Instant.ofEpochMilli(now).atZone(zone).toLocalDate().toEpochDay()
     fun inWindow(p: ProgrammeEntity, now: Long, tab: Int): Boolean = when (tab) {
         0 -> p.start < now + DAY && p.stop > now
@@ -79,7 +86,9 @@ fun observeFilmRatings(rows: Flow<List<FilmRatingEntity>>, keys: Flow<String>, t
     now: () -> Long = System::currentTimeMillis): Flow<Map<String, FilmRatingEntity>> =
     combine(rows, keys, ticks) { ratings, key, _ ->
         val current = now()
-        if (key.isBlank()) emptyMap() else ratings.filter { Films.fresh(it, current) }.associateBy { it.cacheKey }
+        if (key.isBlank()) emptyMap() else ratings.filter {
+            !it.cacheKey.startsWith(Films.VARIANT_PREFIX) && Films.fresh(it, current)
+        }.associateBy { it.cacheKey }
     }
 
 class FilmLookup(private val client: OmdbClient, private val store: FilmStore,
@@ -89,6 +98,8 @@ class FilmLookup(private val client: OmdbClient, private val store: FilmStore,
     var lastError: String? = null
         private set
 
+    internal fun clearError() { lastError = null }
+
     suspend fun lookup(p: ProgrammeEntity, key: String, now: Long): FilmRatingEntity? {
         lastError = null
         if (key.isBlank()) { fail("NO_KEY"); return null }
@@ -96,6 +107,9 @@ class FilmLookup(private val client: OmdbClient, private val store: FilmStore,
         val identity = Films.key(p)
         store.cached(identity)?.takeIf { Films.fresh(it, now) }?.let { return it }
         for ((title, year) in Films.queries(p)) {
+            currentCoroutineContext().ensureActive()
+            val variant = Films.variantKey(identity, title, year)
+            if (store.cached(variant)?.let { Films.fresh(it, now) } == true) continue
             wait()
             if (!store.reserve(Films.day(clock()))) { fail("LOCAL_BUDGET"); return null }
             observer.requested(clock())
@@ -108,6 +122,9 @@ class FilmLookup(private val client: OmdbClient, private val store: FilmStore,
                     val movie = result.movie
                     return FilmRatingEntity(identity, movie.rating, movie.votes, movie.id, clock()).also { store.save(it) }
                 }
+            }
+            withContext(NonCancellable) {
+                store.save(FilmRatingEntity(variant, null, 0L, null, clock()))
             }
         }
         return FilmRatingEntity(identity, null, 0, null, clock()).also { store.save(it) }

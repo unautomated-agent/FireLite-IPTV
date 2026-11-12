@@ -29,10 +29,10 @@ data class FilmShowing(val channel: ChannelEntity, val programme: ProgrammeEntit
     val identity: String get() = "${channel.id}:${programme.start}"
 }
 
-fun ratingCandidates(showings: List<FilmShowing>, now: Long): List<ProgrammeEntity> = showings
+fun ratingCandidates(showings: List<FilmShowing>, now: Long, futureWindow: Boolean = false): List<ProgrammeEntity> = showings
     .filter { Films.candidate(it.programme) &&
-        (Films.inWindow(it.programme, now, 0) || Films.archived(it.channel, it.programme, now) ||
-            Films.inWindow(it.programme, now, 1)) }
+        (if (futureWindow) Films.inWindow(it.programme, now, 1)
+        else Films.inWindow(it.programme, now, 0) || Films.archived(it.channel, it.programme, now)) }
     .sortedWith(compareBy<FilmShowing> { ratingPriority(it, now) }
         .thenBy { if (ratingPriority(it, now) == 1) -it.programme.stop else it.programme.start }
         .thenBy { it.channel.position }.thenBy { it.channel.id })
@@ -55,6 +55,10 @@ fun rankedFilms(films: List<FilmShowing>, now: Long, tab: Int): List<FilmShowing
 @OptIn(ExperimentalCoroutinesApi::class)
 class FilmRepository(private val database: FireLiteDatabase, val preferences: OmdbPreferences,
     scope: CoroutineScope, epg: EpgRepository) {
+    private val futureWindows = FilmWindowRequests()
+    fun requestFutureFilms(sourceId: Long) {
+        if (preferences.key.value.isNotBlank()) futureWindows.request(sourceId, preferences.refresh.value)
+    }
     private val dao = database.filmDao()
     private val lookup = FilmLookup(OmdbHttpClient(preferences::baseUrl), object : FilmStore {
         override suspend fun cached(key: String) = dao.cached(key)
@@ -87,8 +91,15 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
 
     init {
         scope.launch(Dispatchers.IO) {
-            combine(database.sourceDao().observeActive(), preferences.refresh, epg.states) { source, _, _ -> source to preferences.key.value }
-                .collectLatest { (source, key) ->
+            combine(database.sourceDao().observeActive(), preferences.refresh, epg.states, futureWindows.pending) { source, revision, _, request ->
+                Triple(source, revision, request)
+            }
+                .collectLatest { (source, revision, request) ->
+                    if (request != null && !request.matches(source?.id, revision)) {
+                        futureWindows.complete(request)
+                        return@collectLatest
+                    }
+                    val key = preferences.key.value
                     if (source == null || key.isBlank()) return@collectLatest
                     while (true) {
                         val quotaDelay = preferences.quotaDelay(System.currentTimeMillis())
@@ -102,7 +113,7 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
                             val candidates = ratingCandidates(database.epgDao()
                                 .filmWindow(source.id, Films.archiveWindowStart(channels, now), now + 2 * Films.DAY).first().mapNotNull { p ->
                                     byId[p.channelId]?.let { FilmShowing(it, p.programme, null) }
-                                }, now)
+                                }, now, futureWindow = request != null)
                             retry = enrichFilms(candidates, key, lookup, {
                                 database.sourceDao().active()?.id == source.id && preferences.key.value == key
                             })
@@ -111,6 +122,10 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
                             preferences.error("INTERNAL", System.currentTimeMillis())
                             retry = true
                         } finally { mutableEnriching.value = false }
+                        if (request != null && !retry && lookup.lastError == null) {
+                            futureWindows.complete(request)
+                            return@collectLatest
+                        }
                         delay(preferences.quotaDelay(System.currentTimeMillis()).takeIf { it > 0 }
                             ?: if (retry) 60_000L else 60 * 60_000L)
                     }

@@ -3,6 +3,16 @@ package dev.firetvlite.iptv.playback
 import androidx.media3.datasource.HttpDataSource
 
 internal object PlaybackHttpError {
+    fun requestUri(error: Throwable?): String? {
+        val seen = hashSetOf<Throwable>()
+        var cause = error
+        while (cause != null && seen.add(cause) && seen.size <= 12) {
+            if (cause is HttpDataSource.InvalidResponseCodeException) return cause.dataSpec?.uri?.toString()
+            cause = cause.cause
+        }
+        return null
+    }
+
     fun status(error: Throwable?): Int? {
         val seen = hashSetOf<Throwable>()
         var cause = error

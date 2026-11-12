@@ -107,6 +107,8 @@ internal const val CHANNEL_OVERLAY_ROW_DP = 48
 internal const val CHANNEL_OVERLAY_GAP_DP = 4
 internal const val CHANNEL_OVERLAY_LOGO_DP = 32
 
+internal fun channelGuideQueryMinute(time: Long): Long = Math.floorDiv(time, 60_000L)
+
 /**
  * Live TV browser: groups on the left, the channels of the selected group in the middle (loaded page by page),
  * details of the focused channel on the right. OK starts the channel; the Menu button toggles the favourite.
@@ -680,7 +682,8 @@ internal fun ChannelRowItem(
 ) {
     val channel = row.channel
     val epg = (LocalContext.current.applicationContext as FireLiteApplication).container.epg
-    val guide by remember(channel.id, now) { epg.observeCurrentAndNextAt(channel.id, now) }
+    val guideMinute = channelGuideQueryMinute(now)
+    val guide by remember(channel.id, guideMinute) { epg.observeCurrentAndNextAt(channel.id, now) }
         .collectAsState(initial = CurrentAndNext(null, null))
     FocusSurface(
         onClick = onClick,

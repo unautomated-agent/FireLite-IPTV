@@ -33,6 +33,9 @@ import androidx.compose.ui.res.stringResource
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.film.Films
 import dev.firetvlite.iptv.data.film.rankedFilms
+import dev.firetvlite.iptv.data.film.rankingStatus
+import dev.firetvlite.iptv.data.film.RankingStatus
+import dev.firetvlite.iptv.data.epg.EpgState
 import dev.firetvlite.iptv.ui.components.ChannelLogo
 import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.FocusSurface
@@ -51,8 +54,11 @@ import kotlinx.coroutines.launch
 @OptIn(ExperimentalComposeUiApi::class)
 fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, active: Boolean, onSettings: () -> Unit) {
     val key by library.films.preferences.key.collectAsState()
-    val films by library.films.showings.collectAsState()
+    val catalogue by library.films.catalogue.collectAsState()
+    val enriching by library.films.enriching.collectAsState()
+    val epgStates by library.epgStates.collectAsState()
     val source by library.source.collectAsState()
+    val films = if (catalogue.sourceId == source?.id) catalogue.films else emptyList()
     val now by minuteClock()
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -62,6 +68,8 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
     val settingsFocus = remember { FocusRequester() }
     val states = remember { List(3) { LazyListState() } }
     val rows = remember(films, tab, now) { rankedFilms(films, now, tab) }
+    val status = rankingStatus(catalogue.loaded && catalogue.sourceId == source?.id,
+        epgStates[source?.id] == EpgState.Running, catalogue.hasEpg, enriching, rows.isNotEmpty())
     val colors = FireLiteTheme.colors
     LaunchedEffect(active, key.isNotBlank()) {
         if (active) {
@@ -83,7 +91,16 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
                         Modifier.focusRequester(tabFocus[index]))
                 }
             }
-            if (rows.isEmpty()) FLText(stringResource(R.string.films_empty), style = FireLiteTheme.typography.body)
+            when (status) {
+                RankingStatus.Loading -> Row(verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Spinner()
+                    FLText(stringResource(R.string.films_loading), style = FireLiteTheme.typography.body)
+                }
+                RankingStatus.MissingEpg -> FLText(stringResource(R.string.films_missing_epg), style = FireLiteTheme.typography.body)
+                RankingStatus.Empty -> FLText(stringResource(R.string.films_empty), style = FireLiteTheme.typography.body)
+                RankingStatus.Ready -> Unit
+            }
             LazyColumn(state = states[tab], verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 items(rows, key = { it.identity }) { film ->
                     val p = film.programme

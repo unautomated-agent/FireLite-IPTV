@@ -226,7 +226,7 @@ private fun StatusLayer(status: PlaybackStatus) {
 }
 
 @Composable
-private fun Spinner() {
+internal fun Spinner() {
     val transition = rememberInfiniteTransition(label = "spinner")
     val angle by transition.animateFloat(0f, 360f,
         animationSpec = infiniteRepeatable(tween(900, easing = LinearEasing)), label = "spinnerAngle")

@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.onStart
 
 data class FilmShowing(val channel: ChannelEntity, val programme: ProgrammeEntity, val rating: FilmRatingEntity?) {
     val identity: String get() = "${channel.id}:${programme.start}"
@@ -60,19 +61,20 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
     val ratings = observeFilmRatings(dao.observeRatings(), preferences.key, clock)
         .stateIn(scope, SharingStarted.Eagerly, emptyMap())
 
-    val showings = database.sourceDao().observeActive().flatMapLatest { source ->
-        if (source == null) flowOf(emptyList()) else combine(clock, database.epgDao().filmChannels(source.id)) { now, channels ->
+    val catalogue = database.sourceDao().observeActive().flatMapLatest { source ->
+        (if (source == null) flowOf(FilmCatalogue(loaded = true)) else combine(clock, database.epgDao().filmChannels(source.id)) { now, channels ->
             now to channels
         }.flatMapLatest { (now, channels) ->
             combine(database.epgDao().filmWindow(source.id, Films.archiveWindowStart(channels, now), now + 2 * Films.DAY),
-                ratings) { programmes, scores ->
+                ratings, database.epgDao().observeMatchedCount(source.id)) { programmes, scores, matched ->
                 val byId = channels.associateBy { it.id }
-                programmes.filter { Films.candidate(it.programme) }.mapNotNull { p ->
+                val films = programmes.filter { Films.candidate(it.programme) }.mapNotNull { p ->
                     byId[p.channelId]?.let { FilmShowing(it, p.programme, scores[Films.key(p.programme)]) }
                 }
+                FilmCatalogue(source.id, loaded = true, hasEpg = matched > 0, films = films)
             }
-        }
-    }.stateIn(scope, SharingStarted.WhileSubscribed(5_000), emptyList())
+        }).onStart { emit(FilmCatalogue(sourceId = source?.id)) }
+    }.stateIn(scope, SharingStarted.WhileSubscribed(5_000), FilmCatalogue())
 
     init {
         scope.launch(Dispatchers.IO) {

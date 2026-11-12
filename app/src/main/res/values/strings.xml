@@ -12,7 +12,9 @@
     <string name="films_archive_remaining">Dostępny jeszcze: %1$d godz. %2$d min</string>
     <string name="films_archive_expired">Ten film nie jest już dostępny w archiwum.</string>
     <string name="films_selected_tab">● %1$s</string>
-    <string name="films_empty">Brak filmów w tym przedziale. Odśwież EPG w Ustawieniach.</string>
+    <string name="films_empty">Brak filmów w tym przedziale.</string>
+    <string name="films_loading">Wczytywanie rankingu i ocen IMDb…</string>
+    <string name="films_missing_epg">Brak EPG dla kanałów tej listy. Odśwież EPG w Ustawieniach.</string>
     <string name="films_starts_at">Zaczyna się o %1$s</string>
     <string name="films_airing_time">NA ŻYWO · %1$s</string>
     <string name="imdb_rating">IMDb %1$s/10</string>

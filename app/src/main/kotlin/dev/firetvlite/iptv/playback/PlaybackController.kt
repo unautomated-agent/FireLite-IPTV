@@ -129,6 +129,7 @@ class PlaybackController internal constructor(
     private var startupJob: Job? = null
     private var progressJob: Job? = null
     private var rendered = false
+    private val rendererReadiness = mutableMapOf<Int, Boolean>()
     private var startupTiming: StartupTiming? = null
     private var retries = 0
     @Volatile private var activeSession = 0L
@@ -219,6 +220,10 @@ class PlaybackController internal constructor(
     }
 
     private val analytics = object : AnalyticsListener {
+        override fun onRendererReadyChanged(eventTime: AnalyticsListener.EventTime, rendererIndex: Int,
+            trackType: Int, isRendererReady: Boolean) {
+            rendererReadiness[trackType] = isRendererReady
+        }
         override fun onAudioPositionAdvancing(eventTime: AnalyticsListener.EventTime, playoutStartSystemTimeMs: Long) {
             val player = exo ?: return
             if (player.playbackState == Player.STATE_READY && player.audioFormat != null &&
@@ -248,7 +253,7 @@ class PlaybackController internal constructor(
     }
 
     private fun describe(format: Format): String =
-        "${format.sampleMimeType ?: "?"}/${format.codecs ?: "?"} ch=${format.channelCount} bps=${format.bitrate}" +
+        "${format.sampleMimeType ?: "?"}/${format.codecs ?: "?"} ch=${format.channelCount} sr=${format.sampleRate} bps=${format.bitrate}" +
             if (format.width > 0) " ${format.width}x${format.height}@${format.frameRate}" else ""
 
     private fun selectedFormats(): String = listOfNotNull(
@@ -306,6 +311,7 @@ class PlaybackController internal constructor(
                 } else if (!reported && (System.nanoTime() - since) / 1_000_000 >= startupTimeoutMs) {
                     recordPlayback(true, diagnostic(code = code, details = listOf(
                         "Channel: ${request.channelName.ifBlank { "unknown" }}",
+                        *TimeoutEvidence.lines(player, rendererReadiness).toTypedArray(),
                         "Player: ${player.playbackState}; pos=${player.currentPosition}; buffered=${player.bufferedPosition}",
                         "Source: $sourceType", "openHTTP=${connections.get()}",
                         "HTTP: ${lastHttp?.takeIf { it.first == activeSession }?.second ?: "not available"}",
@@ -343,6 +349,7 @@ class PlaybackController internal constructor(
             }
             recordPlayback(true, diagnostic(startupError, code = "START_TIMEOUT", details = listOf(
                 "Channel: ${request.channelName.ifBlank { "unknown" }}",
+                *TimeoutEvidence.lines(player, rendererReadiness).toTypedArray(),
                 *timing.detail().lines().toTypedArray(),
                 if (timing.waitingForPrevious)
                     "Ownership: previous session connections/player/tracks; requested stream not prepared"
@@ -388,6 +395,7 @@ class PlaybackController internal constructor(
         if (gate.onRequest(request.url) == StreamGate.Action.Ignore) return
         clearProgressWatch()
         rendered = false
+        rendererReadiness.clear()
         activeRequest = request
         successfulSignature = null
         retries = 0

@@ -144,4 +144,25 @@ class PlaybackDiagnosticsTest {
     fun unwritableStoreDoesNotPretendToPersist() {
         PlaybackDiagnosticsStore(temporary.newFile()).write(true, record())
     }
+
+    @Test fun richTimeoutEvidenceSurvivesSummaryAndDecodedQrWithStartupPhases() {
+        val evidence = listOf("A ready=false in=50 out=0", "A skipIn=0 skipOut=3 drop=0", "V ready=true in=50 out=49",
+            "V skipIn=0 skipOut=0 drop=1", "A rate=48000 ch=2", "Window start=1800000000000 default=15000",
+            "Window duration=30000 live=true PDT=y", "Window offset=10000 liveOffset=15000")
+        val phases = StartupTiming().detail().lines()
+        val store = PlaybackDiagnosticsStore(temporary.root)
+        for (kind in listOf("START_TIMEOUT", "SEEK_TIMEOUT", "REBUFFER_TIMEOUT")) {
+            store.write(true, PlaybackDiagnosticRecord.text("https://provider/live/secret.m3u8", "live", kind, null,
+                "audio/mpeg-L2", "video/avc", "ffmpegLavc60.3.100-mp3", Instant.EPOCH, evidence + phases))
+            store.write(false, record())
+            val report = DiagnosticsReport.text(null, null, SourceDiagnostics(), "Żółć🎬".repeat(3000), store.summary())
+            val payload = DiagnosticsReport.payload(report)
+            val matrix = DiagnosticsReport.qr(report)
+            val pixels = IntArray(matrix.width * matrix.height) { i -> if (matrix[i % matrix.width, i / matrix.width]) 0xff000000.toInt() else -1 }
+            val decoded = MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(matrix.width, matrix.height, pixels)))).text
+            assertEquals(payload, decoded)
+            assertTrue(payload.toByteArray().size <= DiagnosticsReport.QR_BYTES)
+            for (line in evidence + phases) assertTrue(decoded, decoded.contains(line))
+        }
+    }
 }

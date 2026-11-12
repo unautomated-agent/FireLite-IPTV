@@ -15,6 +15,26 @@ class PlaybackTimeTest {
     private val now = 1_800_000_000_000L
     private val dvr = PlaybackSnapshot(true, 60_000, 60_000, 120_000)
 
+    @Test fun unanchoredLiveWindowRewindUsesPositionNotRequestStart() {
+        val snapshot = PlaybackSnapshot(true, null, 15_000, 30_000, isLive = true)
+        val watched = PlaybackTime.watched(now, snapshot, null, now - 1000)
+        assertEquals(now - 15_000, watched)
+        assertEquals(SeekPlan.InWindow(5000), plan(watched - 10_000, snapshot))
+        val frame = PlaybackFrame(now, watched, snapshot)
+        assertEquals(SeekPlan.InWindow(5000), PlaybackTime.relativeSeekPlan(-10_000, frame, null, now - 1000, 1, true))
+        assertEquals(SeekPlan.Live, PlaybackTime.relativeSeekPlan(60_000, frame, null, 0, 1, true))
+        assertEquals(SeekPlan.Unavailable, PlaybackTime.relativeSeekPlan(-60_000, frame, null, 0, 0, false))
+        assertEquals(SeekPlan.Archive(now - 75_000), PlaybackTime.relativeSeekPlan(-60_000, frame, null, 0, 1, true))
+    }
+
+    @Test fun unknownAndNonSeekableLiveWindowsDoNotInventInWindowTargets() {
+        val snapshot = PlaybackSnapshot(false, null, 0, null, isLive = true)
+        assertEquals(SeekPlan.Unavailable, PlaybackTime.relativeSeekPlan(-10_000,
+            PlaybackFrame(now, now, snapshot), null, now, 0, false))
+        assertEquals(SeekPlan.InWindow(29_000), PlaybackTime.relativeSeekPlan(1000,
+            PlaybackFrame(now, now, PlaybackSnapshot(true, null, 28_000, 30_000, isLive = true)), null, 0, 0, false))
+    }
+
     @Test fun liveOffsetIdentifiesTheFrameRatherThanThePlaybackSessionStart() {
         assertEquals(now - 60_000, PlaybackTime.watched(now, dvr, null, now - 1_000))
         assertEquals(now, PlaybackTime.watched(now, dvr.copy(liveOffsetMs = -1), null, 0))

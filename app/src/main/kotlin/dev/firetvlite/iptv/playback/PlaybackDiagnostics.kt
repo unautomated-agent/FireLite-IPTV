@@ -77,7 +77,8 @@ internal class PlaybackDiagnosticsStore(private val directory: File) {
             })
         }?.joinToString("\n") ?: "Brak"
         (if (failed) "Ostatni błąd odtwarzania:\n" else "Ostatnie poprawne odtwarzanie:\n") +
-            utf8Limit(compact, if (failed) 850 else 300)
+            utf8Limit(compact, if (failed && record?.lineSequence()?.firstOrNull()?.contains("_TIMEOUT") == true) 1450
+                else if (failed) 850 else 300)
     }
 
     private fun file(failed: Boolean) = File(directory, if (failed) "playback-error.txt" else "playback-success.txt")

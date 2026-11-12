@@ -6,6 +6,7 @@ import com.google.zxing.RGBLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 import dev.firetvlite.iptv.data.library.DiagnosticsReport
 import dev.firetvlite.iptv.data.library.SourceDiagnostics
+import dev.firetvlite.iptv.data.db.SourceEntity
 import java.io.File
 import java.time.Instant
 import org.junit.Assert.assertEquals
@@ -143,5 +144,56 @@ class PlaybackDiagnosticsTest {
     @Test(expected = java.io.IOException::class)
     fun unwritableStoreDoesNotPretendToPersist() {
         PlaybackDiagnosticsStore(temporary.newFile()).write(true, record())
+    }
+
+    @Test fun richTimeoutEvidenceSurvivesSummaryAndDecodedQrWithStartupPhases() {
+        val evidence = listOf("A ready=false in=50 out=0", "A skipIn=0 skipOut=3 drop=0", "V ready=true in=50 out=49",
+            "V skipIn=0 skipOut=0 drop=1", "A rate=48000 ch=2", "Window start=1800000000000 default=15000",
+            "Window duration=30000 live=true PDT=y", "Window offset=10000 liveOffset=15000")
+        val phases = StartupTiming().detail().lines()
+        val store = PlaybackDiagnosticsStore(temporary.root)
+        for (kind in listOf("START_TIMEOUT", "SEEK_TIMEOUT", "REBUFFER_TIMEOUT")) {
+            store.write(true, PlaybackDiagnosticRecord.text("https://provider/live/secret.m3u8", "live", kind, null,
+                "audio/mpeg-L2", "video/avc", "ffmpegLavc60.3.100-mp3", Instant.EPOCH, evidence + phases))
+            store.write(false, record())
+            val report = DiagnosticsReport.text(null, null, SourceDiagnostics(), "Żółć🎬".repeat(3000), store.summary())
+            val payload = DiagnosticsReport.payload(report)
+            val matrix = DiagnosticsReport.qr(report)
+            val pixels = IntArray(matrix.width * matrix.height) { i -> if (matrix[i % matrix.width, i / matrix.width]) 0xff000000.toInt() else -1 }
+            val decoded = MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(matrix.width, matrix.height, pixels)))).text
+            assertEquals(payload, decoded)
+            assertTrue(payload.toByteArray().size <= DiagnosticsReport.QR_BYTES)
+            for (line in evidence + phases) assertTrue(decoded, decoded.contains(line))
+        }
+    }
+
+    @Test fun maximumTimeoutAndCrashKeepEssentialLaterSectionsInDecodedQr() {
+        val phases = StartupTiming { 0L }.detail().lines()
+        val readiness = listOf("A ready=false in=2147483647 out=0", "V ready=true in=2147483647 out=2147483646")
+        val store = PlaybackDiagnosticsStore(temporary.root)
+        store.write(true, PlaybackDiagnosticRecord.text("https://provider.org/live/private-code.m3u8", "live",
+            "START_TIMEOUT", null, "video/avc", "audio/mpeg-L2", "ffmpegLavc60.3.100-mp3", Instant.EPOCH,
+            listOf("Channel: TVP Seriale") + readiness + phases + List(40) { "Extra $it: ${"Żółć🎬".repeat(40)}" }))
+        store.write(false, record())
+        val summary = store.summary()
+        assertTrue(summary.substringBefore("Ostatnie poprawne odtwarzanie:").toByteArray().size >= 1450)
+        val source = SourceEntity(name = "Review playlist", url = "https://provider.org/private-code", userAgent = "TV",
+            rawCatchupChannels = 7, playlistUserAgent = "TV", playlistDeviceType = "FIRE_TV", epgUrl = "https://guide.org/epg.xml")
+        val report = DiagnosticsReport.text(source, null, SourceDiagnostics(42, 40),
+            "IllegalStateException: crash-marker ${"Żółć🎬".repeat(3000)}", summary)
+        val payload = DiagnosticsReport.payload(report)
+        val matrix = DiagnosticsReport.qr(report)
+        val pixels = IntArray(matrix.width * matrix.height) { i -> if (matrix[i % matrix.width, i / matrix.width]) 0xff000000.toInt() else -1 }
+        val decoded = MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(matrix.width, matrix.height, pixels)))).text
+        assertEquals(payload, decoded)
+        assertEquals(payload, DiagnosticsReport.payload(payload))
+        assertTrue(decoded.toByteArray().size <= DiagnosticsReport.QR_BYTES)
+        for (line in phases + readiness + listOf("START_TIMEOUT", "Lista: Review playlist", "Kanały: 42",
+                "M3U atrybuty archiwum: 7", "M3U User-Agent: własny (ukryty)", "M3U DEVICE TYPE: FIRE_TV",
+                "EPG: guide[.]org/__path_hidden__", "Ostatni raport błędu:", "crash-marker")) {
+            assertTrue(decoded, decoded.contains(line))
+        }
+        assertFalse(decoded.contains("private-code"))
+        assertFalse(Regex("(?i)https?://|www\\.|\\w+\\.(com|org|pl|net|tv)\\b").containsMatchIn(decoded))
     }
 }

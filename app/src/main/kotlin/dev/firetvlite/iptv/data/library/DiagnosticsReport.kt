@@ -80,6 +80,59 @@ object DiagnosticRedactor {
 object DiagnosticsReport {
     const val QR_BYTES = 1800
 
+    private val essentialPrefixes = listOf(
+        "FireLite ·", "Ostatni błąd odtwarzania:", "Ostatnie poprawne odtwarzanie:", "Channel:",
+        "Startup:", "STOPPING_PREVIOUS=", "CLOSE_GRACE=", "WAITING_PREVIOUS_CONNECTION=",
+        "PREPARING_BUFFERING=", "RECOVERY_DELAY=", "WAITING_RECOVERY_CONNECTION=",
+        "A ready=", "V ready=", "A rate=", "Window start=", "Window duration=", "Window offset=",
+        "Lista:", "Kanały:", "M3U atrybuty archiwum:", "M3U User-Agent:", "M3U DEVICE TYPE:",
+        "EPG:", "EPG stan:", "Ostatni raport błędu:",
+    )
+
+    private fun compact(text: String, bytes: Int): String {
+        val lines = text.lines()
+        val required = essentialPrefixes.mapNotNull { prefix ->
+            lines.indexOfFirst { it.startsWith(prefix) }.takeIf { it >= 0 }
+        }.toMutableSet()
+        lines.indexOfFirst { Regex(" · (START|SEEK|REBUFFER)_TIMEOUT$").containsMatchIn(it) }
+            .takeIf { it >= 0 }?.let { required.add(it) }
+        lines.indexOfFirst { it == "Ostatni raport błędu:" }.takeIf { it >= 0 }?.let { index ->
+            if (!lines.getOrNull(index + 1).isNullOrBlank()) required.add(index + 1)
+        }
+        if (required.isEmpty()) return utf8Limit(text, bytes)
+        val lineBytes = minOf(100, (bytes - required.size + 1) / required.size)
+        val selected = required.associateWith { utf8Limit(lines[it], lineBytes) }.toMutableMap()
+        var used = selected.values.sumOf { it.toByteArray(Charsets.UTF_8).size } + selected.size - 1
+        lines.forEachIndexed { index, line ->
+            if (index !in selected) {
+                val value = utf8Limit(line, 100)
+                val cost = value.toByteArray(Charsets.UTF_8).size + 1
+                if (used + cost <= bytes) {
+                    selected[index] = value
+                    used += cost
+                }
+            }
+        }
+        return selected.toSortedMap().values.joinToString("\n")
+    }
+
+    private fun shareable(text: String, known: Set<String> = emptySet()): String {
+        val normalized = text.replace(Regex("(?i)(https?)\\[:\\]//")) { "${it.groupValues[1]}://" }
+        val masked = DiagnosticRedactor.mask(normalized, known)
+        val withoutSchemes = Regex("(?i)https?://[^\\s<>\"']+").replace(masked) { match ->
+            val uri = runCatching { URI(match.value) }.getOrNull()
+            if (uri?.host == null) "[adres ukryty]" else
+                uri.host.replace(".", "[.]").replace(":", "[:]") +
+                    (if (uri.port >= 0) ":${uri.port}" else "") + uri.rawPath.orEmpty() +
+                    (uri.rawQuery?.let { "?$it" } ?: "")
+        }
+        return withoutSchemes.replace(Regex("(?i)(?:[\\p{L}\\p{N}](?:[\\p{L}\\p{N}-]*[\\p{L}\\p{N}])?\\.)+[\\p{L}][\\p{L}\\p{N}-]*")) {
+            it.value.replace(".", "[.]")
+        }.replace(Regex("(?<!\\w)(?:[0-9]{1,3}\\.){3}[0-9]{1,3}(?!\\w)")) { it.value.replace(".", "[.]") }
+            .replace(Regex("(?i)https?://"), "")
+            .replace(Regex("(?i)www\\."), "www[.]")
+    }
+
     fun text(source: SourceEntity?, state: EpgState?, stats: SourceDiagnostics, crash: String?, playback: String = ""): String {
         val urls = source?.let { runCatching { EpgSources.urls(it.epgUrl, it.discoveredEpgUrls, it.url) }.getOrDefault(emptyList()) }.orEmpty()
         val status = when (state) {
@@ -115,16 +168,14 @@ object DiagnosticsReport {
         val known = stats.secrets + DiagnosticRedactor.secrets(source?.let {
             listOf(it.url, it.epgUrl, *it.discoveredEpgUrls.split(Regex("[,\\s]+")).toTypedArray())
         }.orEmpty())
-        return DiagnosticRedactor.mask(raw, known)
+        return shareable(raw, known)
     }
 
     fun payload(text: String): String {
-        val masked = DiagnosticRedactor.mask(text).replace(Regex("(?i)https?://")) {
-            it.value.replace("://", "[:]//")
-        }
+        val masked = shareable(text)
         if (masked.toByteArray(Charsets.UTF_8).size <= QR_BYTES) return masked
         val suffix = "\n[…raport skrócony]"
-        return utf8Limit(masked, QR_BYTES - suffix.toByteArray(Charsets.UTF_8).size) + suffix
+        return compact(masked, QR_BYTES - suffix.toByteArray(Charsets.UTF_8).size) + suffix
     }
 
     fun qr(text: String): BitMatrix = QRCodeWriter().encode(payload(text), BarcodeFormat.QR_CODE, 600, 600,

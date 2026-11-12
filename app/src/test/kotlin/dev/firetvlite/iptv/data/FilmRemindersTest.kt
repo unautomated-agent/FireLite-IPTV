@@ -50,6 +50,33 @@ class FilmRemindersTest {
         assertEquals(25 * 3_600_000L, FilmReminders.tomorrow(autumn) - autumn)
     }
 
+    @Test fun soonReminderCrossesWarsawMidnightButDailyRemainsTodayOnly() {
+        val late = time("2026-11-12T22:52:00Z")
+        val midnight = showing(time("2026-11-12T23:00:00Z"))
+        val airing = showing(late - 3_600_000)
+        assertEquals(FilmReminderCard.Soon(midnight), FilmReminders.next(listOf(midnight), late, null, emptySet()))
+        assertEquals(FilmReminderCard.Soon(midnight),
+            FilmReminders.next(listOf(midnight), late, FilmReminders.day(late), emptySet()))
+        assertTrue(FilmReminders.matches(listOf(midnight), late).isEmpty())
+        assertEquals(FilmReminderCard.Daily(FilmReminders.day(late), listOf(airing)),
+            FilmReminders.next(listOf(midnight, airing), late, null, setOf(midnight.key)))
+        assertNull(FilmReminders.next(listOf(midnight), late, null, setOf(midnight.key)))
+        assertNull(FilmReminders.next(listOf(midnight), late, FilmReminders.day(late), emptySet(), midnight.channelId))
+        assertNull(FilmReminders.next(listOf(midnight.copy(start = late + FilmReminders.TEN_MINUTES + 1)), late, null, emptySet()))
+    }
+
+    @Test fun queryIncludesNextTenMinutesAtExclusiveSqlBoundaryEvenAcrossMidnight() {
+        val late = time("2026-11-12T22:52:00Z")
+        assertEquals(FilmReminders.tomorrow(now), FilmReminders.queryUntil(now))
+        assertEquals(late + FilmReminders.TEN_MINUTES + 1, FilmReminders.queryUntil(late))
+        val atTenMinutes = showing(late + FilmReminders.TEN_MINUTES)
+        assertTrue(atTenMinutes.start < FilmReminders.queryUntil(late))
+        assertEquals(FilmReminderCard.Soon(atTenMinutes), FilmReminders.next(listOf(atTenMinutes), late, null, emptySet()))
+        val exactlyBeforeMidnight = time("2026-11-12T22:50:00Z")
+        assertEquals(FilmReminders.tomorrow(exactlyBeforeMidnight) + 1, FilmReminders.queryUntil(exactlyBeforeMidnight))
+        assertNull(FilmReminders.next(listOf(atTenMinutes), atTenMinutes.start, FilmReminders.day(atTenMinutes.start), emptySet()))
+    }
+
     @Test fun tenMinuteWindowIsInclusiveAtTenMinutesAndExcludesStartedFilms() {
         val film = showing(now + FilmReminders.TEN_MINUTES)
         val ack = FilmReminders.day(now)

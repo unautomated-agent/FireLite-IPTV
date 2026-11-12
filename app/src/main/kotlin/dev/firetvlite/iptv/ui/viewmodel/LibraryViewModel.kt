@@ -50,7 +50,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     val reminderPreferences = container.reminderPreferences
 
     suspend fun reminderShowings(sourceId: Long, now: Long) = container.database.epgDao()
-        .reminderWindow(sourceId, now, dev.firetvlite.iptv.data.film.FilmReminders.tomorrow(now))
+        .reminderWindow(sourceId, now, dev.firetvlite.iptv.data.film.FilmReminders.queryUntil(now))
     private val channelDao = container.database.channelDao()
     private val userDao = container.database.userDao()
 

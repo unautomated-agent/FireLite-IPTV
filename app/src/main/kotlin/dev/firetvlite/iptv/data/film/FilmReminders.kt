@@ -1,6 +1,8 @@
 package dev.firetvlite.iptv.data.film
 
 import java.time.Instant
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 data class ReminderShowing(val channelId: Long, val channelName: String, val start: Long, val stop: Long,
     val title: String, val originalTitle: String?) {
@@ -23,7 +25,10 @@ object FilmReminders {
 
     fun queryUntil(now: Long): Long = maxOf(tomorrow(now), now + TEN_MINUTES + 1)
 
-    private fun candidates(showings: List<ReminderShowing>, now: Long): List<ReminderShowing> = showings.filter { showing ->
+    internal suspend fun loadCandidates(now: Long, load: suspend () -> List<ReminderShowing>): List<ReminderShowing> =
+        withContext(Dispatchers.Default) { candidates(load(), now) }
+
+    internal fun candidates(showings: List<ReminderShowing>, now: Long): List<ReminderShowing> = showings.filter { showing ->
         showing.stop > now &&
             WATCH_PATTERNS.any { pattern ->
                 Films.normalized(showing.title).contains(pattern) || Films.normalized(showing.originalTitle.orEmpty()).contains(pattern)

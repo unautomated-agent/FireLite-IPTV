@@ -7,10 +7,57 @@ import org.junit.Test
 
 class ProgrammePlaybackTest {
     private val now = 1_800_000_000_000L
+    private val bufferedFrame = PlaybackFrame(now, now - 30_000,
+        PlaybackSnapshot(true, 30_000, positionMs = 90_000, durationMs = 120_000))
     private fun programme(start: Long, stop: Long) = ProgrammeEntity(
         sourceId = 1, generation = "test", epgKey = "channel", start = start, stop = stop,
         title = "Programme", description = null, category = null,
     )
+
+    @Test fun currentHistoryProgrammeWithoutCatchupRestartsAtItsBufferedStart() {
+        val current = programme(now - 60_000, now + 60_000)
+        val item = TimelineItem(current.start, current.stop, current)
+        assertEquals(TimelineAction.Live, ChannelTimeline.selection(item, now, 0, false))
+        assertEquals(60_000L, ProgrammePlayback.bufferedStart(item.programme, bufferedFrame, true, false))
+        assertEquals(119_000L,
+            ProgrammePlayback.bufferedStart(programme(now - 1_000, now + 60_000), bufferedFrame, true, false))
+    }
+
+    @Test fun bufferBoundariesAreCheckedWithoutClampingAnExpiredProgrammeStart() {
+        assertEquals(0L,
+            ProgrammePlayback.bufferedStart(programme(now - 120_000, now + 1), bufferedFrame, true, false))
+        assertNull(ProgrammePlayback.bufferedStart(programme(now - 120_001, now + 1), bufferedFrame, true, false))
+        assertNull(ProgrammePlayback.bufferedStart(programme(now, now + 60_000), bufferedFrame, true, false))
+    }
+
+    @Test fun explicitLiveOtherChannelsArchiveAndUnseekableWindowsDoNotUseBufferedRestart() {
+        val current = programme(now - 60_000, now + 60_000)
+        assertNull(ProgrammePlayback.bufferedStart(null, bufferedFrame, true, false))
+        assertNull(ProgrammePlayback.bufferedStart(current, bufferedFrame, false, false))
+        assertNull(ProgrammePlayback.bufferedStart(current, bufferedFrame, true, true))
+        assertNull(ProgrammePlayback.bufferedStart(current,
+            bufferedFrame.copy(snapshot = bufferedFrame.snapshot.copy(seekable = false)), true, false))
+        assertNull(ProgrammePlayback.bufferedStart(current,
+            bufferedFrame.copy(snapshot = bufferedFrame.snapshot.copy(durationMs = null)), true, false))
+        assertNull(ProgrammePlayback.bufferedStart(programme(now + 1, now + 60_000), bufferedFrame, true, false))
+        assertNull(ProgrammePlayback.bufferedStart(programme(now - 60_000, now), bufferedFrame, true, false))
+    }
+
+    @Test fun guideAndHistoryShareTheSameChannelSeekPathWithoutDirectStreamRequests() {
+        val guide = File("src/main/kotlin/dev/firetvlite/iptv/ui/screens/LiveTvScreen.kt").readText()
+        assertTrue(guide.contains("player.openLiveProgramme(it, index, selected, row.channel, programme)"))
+        val model = File("src/main/kotlin/dev/firetvlite/iptv/ui/viewmodel/PlayerViewModel.kt").readText()
+        val liveSelection = model.substringAfter("TimelineAction.Live -> {").substringBefore("TimelineAction.Past ->")
+        assertTrue(liveSelection.contains("openLiveProgramme(target.zap, target.index, target.group, target.channel,"))
+        assertTrue(liveSelection.contains("if (item.live) null else item.programme"))
+        val method = model.substringAfter("fun openLiveProgramme(").substringBefore("fun playTimeline(")
+        assertTrue(method.contains("activeChannel?.streamUrl == channel.streamUrl && archiveStartMs == null"))
+        assertTrue(method.contains("if (position != null) playback.seekTo(position) else playback.seekToLiveEdge()"))
+        assertFalse(method.contains("playback.play("))
+        assertFalse(method.contains("openArchive("))
+        assertFalse(method.contains("prepare("))
+        assertTrue(model.contains("else if (!sameChannel || archiveStartMs != null || status.value is PlaybackStatus.Failed) startLive(first)"))
+    }
 
     @Test fun retainedPastAndCurrentlyAiringProgrammesSelectArchive() {
         for (programme in listOf(programme(now - 60_000, now), programme(now - 60_000, now + 60_000),

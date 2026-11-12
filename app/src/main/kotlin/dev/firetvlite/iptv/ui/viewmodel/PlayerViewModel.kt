@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import androidx.media3.exoplayer.ExoPlayer
 import dev.firetvlite.iptv.FireLiteApplication
 import dev.firetvlite.iptv.data.db.ChannelEntity
+import dev.firetvlite.iptv.data.db.ProgrammeEntity
 import dev.firetvlite.iptv.data.db.FavoriteEntity
 import dev.firetvlite.iptv.data.db.RecentEntity
 import dev.firetvlite.iptv.data.library.LibraryRepository
@@ -21,6 +22,7 @@ import dev.firetvlite.iptv.data.epg.CurrentAndNext
 import dev.firetvlite.iptv.playback.StreamRequest
 import dev.firetvlite.iptv.playback.ZapMath
 import dev.firetvlite.iptv.playback.ChannelTimeline
+import dev.firetvlite.iptv.playback.ProgrammePlayback
 import dev.firetvlite.iptv.playback.TimelineAction
 import dev.firetvlite.iptv.playback.TimelineItem
 import dev.firetvlite.iptv.playback.PreviousChannel
@@ -311,6 +313,16 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun closeTimeline() { mutableTimeline.value = null }
 
+    fun openLiveProgramme(zap: ZapContext, index: Int, group: GroupKey, channel: ChannelEntity, programme: ProgrammeEntity?) {
+        closeTimeline()
+        if (activeChannel?.streamUrl == channel.streamUrl && archiveStartMs == null) {
+            val position = ProgrammePlayback.bufferedStart(programme, updateFrame(), sameLiveChannel = true,
+                supportsCatchup = CatchupUrlBuilder.isSupported(channel))
+            if (position != null) playback.seekTo(position) else playback.seekToLiveEdge()
+        }
+        open(zap, index, group)
+    }
+
     fun playTimeline(item: TimelineItem) {
         val target = mutableTimeline.value ?: return
         val now = System.currentTimeMillis()
@@ -321,10 +333,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 openArchive(target.zap, target.index, target.group, item.programme!!.start)
             }
             TimelineAction.Live -> {
-                closeTimeline()
-                if (activeChannel?.streamUrl == target.channel.streamUrl && archiveStartMs == null)
-                    playback.seekToLiveEdge()
-                open(target.zap, target.index, target.group)
+                openLiveProgramme(target.zap, target.index, target.group, target.channel,
+                    if (item.live) null else item.programme)
             }
             TimelineAction.Past -> {
                 val channel = target.channel

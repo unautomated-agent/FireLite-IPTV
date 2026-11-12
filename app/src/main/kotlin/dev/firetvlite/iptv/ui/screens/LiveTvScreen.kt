@@ -515,8 +515,16 @@ private fun ChannelBrowser(
         Column(modifier = Modifier.weight(1f).fillMaxHeight()) {
             if (!overlay) GuideHeader(windowStart) else FocusSurface(
                 onClick = { onShowGroups(!showGroups) }, modifier = Modifier.fillMaxWidth(), focusedScale = 1.02f) {
-                FLText("‹  ${groupLabel(selected)}  ›", style = FireLiteTheme.typography.title,
-                    modifier = Modifier.padding(12.dp), maxLines = 1)
+                Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    verticalAlignment = Alignment.CenterVertically) {
+                    val strip = categoryStrip(groups.map { it.key }, selected)
+                    strip.forEachIndexed { index, group ->
+                        val current = strip.size == 1 || index == 1
+                        FLText(groupLabel(group), style = if (current) FireLiteTheme.typography.title else FireLiteTheme.typography.label,
+                            color = if (current) FireLiteTheme.colors.accent else FireLiteTheme.colors.textSecondary.copy(alpha = 0.55f),
+                            modifier = Modifier.weight(if (current) 1.3f else 1f), maxLines = 1)
+                    }
+                }
             }
             Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
                 if (pagingItems.itemCount == 0 && pagingItems.loadState.refresh is LoadState.NotLoading) {

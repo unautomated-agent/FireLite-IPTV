@@ -47,6 +47,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     private val container = (application as FireLiteApplication).container
     private val repository: LibraryRepository = container.library
     val films = container.films
+    val reminderPreferences = container.reminderPreferences
+
+    suspend fun reminderShowings(sourceId: Long, now: Long) = container.database.epgDao()
+        .reminderWindow(sourceId, now, dev.firetvlite.iptv.data.film.FilmReminders.queryUntil(now))
     private val channelDao = container.database.channelDao()
     private val userDao = container.database.userDao()
 

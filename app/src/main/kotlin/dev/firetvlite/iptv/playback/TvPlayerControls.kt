@@ -17,17 +17,22 @@ enum class TvAction(val seekMs: Long? = null) {
 
 data class TvPlayerControls(val banner: BannerState = BannerState.Hidden, val deadline: Long = 0,
     val hideMs: Long = HIDE_MS) {
-    fun touch(now: Long) = if (banner == BannerState.Hidden) this else copy(deadline = now + hideMs)
-    fun expire(now: Long) = if (banner != BannerState.Hidden && now >= deadline) TvPlayerControls() else this
+    fun touch(now: Long) = when (banner) {
+        BannerState.Hidden -> this
+        BannerState.Compact -> copy(deadline = now + hideMs)
+        BannerState.Expanded -> copy(deadline = 0)
+    }
+    fun expire(now: Long) = if (banner == BannerState.Compact && now >= deadline) TvPlayerControls() else this
 
-    fun key(key: TvKey, now: Long, panelOpen: Boolean = false): Pair<TvPlayerControls, TvAction> {
+    fun key(key: TvKey, now: Long, panelOpen: Boolean = false, canScrollDown: Boolean = true,
+        repeat: Boolean = false): Pair<TvPlayerControls, TvAction> {
         if (panelOpen) return TvPlayerControls() to TvAction.None
         val action = when (key) {
             TvKey.Up -> if (banner == BannerState.Expanded) TvAction.ScrollUp else TvAction.None
             TvKey.Down -> when (banner) {
                 BannerState.Hidden -> TvAction.PreviousChannel
                 BannerState.Compact -> TvAction.None
-                BannerState.Expanded -> TvAction.ScrollDown
+                BannerState.Expanded -> if (canScrollDown) TvAction.ScrollDown else TvAction.None
             }
             TvKey.Left -> TvAction.Back10
             TvKey.Right -> TvAction.Forward10
@@ -45,7 +50,8 @@ data class TvPlayerControls(val banner: BannerState = BannerState.Hidden, val de
                 hideMs = HIDE_MS)
             TvKey.Left, TvKey.Right, TvKey.Rewind, TvKey.FastForward ->
                 copy(banner = if (banner == BannerState.Hidden) BannerState.Compact else banner, hideMs = SEEK_HIDE_MS)
-            TvKey.Down -> if (banner == BannerState.Compact) TvPlayerControls() else this
+            TvKey.Down -> if (banner == BannerState.Compact ||
+                banner == BannerState.Expanded && !canScrollDown && !repeat) TvPlayerControls() else this
             TvKey.Back, TvKey.Ok, TvKey.LongOk, TvKey.Menu, TvKey.LongMenu -> TvPlayerControls()
             else -> this
         }

@@ -8,6 +8,8 @@ import androidx.activity.viewModels
 import dev.firetvlite.iptv.playback.PlaybackLifecycle
 import dev.firetvlite.iptv.ui.navigation.GuideBackAction
 import dev.firetvlite.iptv.ui.navigation.guideBackAction
+import dev.firetvlite.iptv.ui.navigation.OverlayBackAction
+import dev.firetvlite.iptv.ui.navigation.overlayBackAction
 import dev.firetvlite.iptv.ui.viewmodel.LibraryViewModel
 import dev.firetvlite.iptv.ui.viewmodel.PlayerViewModel
 import dev.firetvlite.iptv.update.UpdateViewModel
@@ -21,6 +23,11 @@ class MainActivity : ComponentActivity() {
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+            when (overlayBackAction(playerViewModel.mode.value, event.action == KeyEvent.ACTION_UP, event.isCanceled)) {
+                OverlayBackAction.Pass -> Unit
+                OverlayBackAction.Consume -> return true
+                OverlayBackAction.Close -> { playerViewModel.closeOverlay(); return true }
+            }
             when (guideBackAction(playerViewModel.mode.value, playerViewModel.channel.value != null,
                 event.action == KeyEvent.ACTION_UP, event.isCanceled)) {
                 GuideBackAction.Pass -> Unit

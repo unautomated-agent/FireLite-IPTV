@@ -5,6 +5,7 @@ import androidx.room.Insert
 import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import kotlinx.coroutines.flow.Flow
+import dev.firetvlite.iptv.data.film.ReminderShowing
 
 private const val MAPPED_PROGRAMMES =
     "FROM channel c JOIN source s ON s.id = c.sourceId " +
@@ -16,9 +17,15 @@ private const val PROGRAMME_AT =
 
 @Dao
 interface EpgDao {
+    @Query("SELECT c.id AS channelId, c.name AS channelName, p.start, p.stop, p.title, p.originalTitle " +
+        "$MAPPED_PROGRAMMES WHERE c.sourceId=:sourceId AND p.start < :until AND p.stop > :now ORDER BY p.start, c.id")
+    suspend fun reminderWindow(sourceId: Long, now: Long, until: Long): List<ReminderShowing>
+
     @Query("SELECT * FROM channel WHERE sourceId=:sourceId ORDER BY position")
     fun filmChannels(sourceId: Long): Flow<List<ChannelEntity>>
-    @Query("SELECT c.id AS channelId, p.* $MAPPED_PROGRAMMES WHERE c.sourceId=:sourceId " +
+    @Query("SELECT c.id AS channelId, p.id, p.sourceId, p.generation, p.epgKey, p.start, p.stop, p.title, " +
+        "NULL AS description, p.category, p.year, p.originalTitle, NULL AS credits, p.episodeNum, p.categories " +
+        "$MAPPED_PROGRAMMES WHERE c.sourceId=:sourceId AND p.stop - p.start >= 4800000 " +
         "AND p.start < :until AND p.stop > :from ORDER BY p.start, c.id")
     fun filmWindow(sourceId: Long, from: Long, until: Long): Flow<List<ChannelProgramme>>
     @Query("SELECT COUNT(*) FROM channel c JOIN source s ON s.id=c.sourceId " +

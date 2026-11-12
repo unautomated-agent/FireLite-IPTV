@@ -12,6 +12,8 @@ import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,6 +21,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -58,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import androidx.media3.common.Player
 import androidx.media3.common.Tracks
 import dev.firetvlite.iptv.R
+import dev.firetvlite.iptv.playback.AudioTrackChoice
 import dev.firetvlite.iptv.ui.components.ChannelLogo
 import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.requestFocusWhenReady
@@ -126,10 +130,11 @@ internal fun PlayerQuickMenu(viewModel: PlayerViewModel, active: Boolean, onClos
                     style = FireLiteTheme.typography.body, modifier = Modifier.padding(14.dp))
                 LazyColumn(Modifier.heightIn(max = 240.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(tracks, key = { "${it.group}:${it.index}" }) { track ->
-                        QuickMenuRow(track.title, if (track.selected) R.drawable.menu_radio_checked else R.drawable.menu_radio,
-                            subtitle = if (track.selected) stringResource(R.string.quick_menu_audio_selected) else null,
+                        QuickMenuRow(track.readableName, if (track.selected) R.drawable.menu_radio_checked else R.drawable.menu_radio,
+                            subtitle = track.details.takeIf { it.isNotBlank() },
                             onClick = { viewModel.selectAudioTrack(track); revision++ }, active = active,
-                            modifier = Modifier.semantics { selected = track.selected }, radio = true)
+                            modifier = Modifier.semantics { selected = track.selected }, radio = true,
+                            leading = { AudioTrackChip(track, it) })
                     }
                 }
             } else {
@@ -141,8 +146,7 @@ internal fun PlayerQuickMenu(viewModel: PlayerViewModel, active: Boolean, onClos
                         QuickMenuAction.Audio -> R.drawable.menu_audio
                     }
                     val subtitle = when (action) {
-                        QuickMenuAction.Audio -> tracks.firstOrNull { it.selected }?.title
-                            ?: stringResource(R.string.quick_menu_no_audio)
+                        QuickMenuAction.Audio -> if (tracks.isEmpty()) stringResource(R.string.quick_menu_no_audio) else null
                         QuickMenuAction.Favorite -> stringResource(if (favorite) R.string.quick_menu_is_favorite else R.string.quick_menu_not_favorite)
                         else -> null
                     }
@@ -157,7 +161,9 @@ internal fun PlayerQuickMenu(viewModel: PlayerViewModel, active: Boolean, onClos
                         QuickMenuAction.Films -> Modifier.focusRequester(firstFocus)
                         QuickMenuAction.Audio -> Modifier.focusRequester(audioFocus)
                         else -> Modifier
-                    })
+                    }, extra = if (action == QuickMenuAction.Audio && tracks.isNotEmpty()) {
+                        { foreground -> AudioTrackChips(tracks, foreground) }
+                    } else null)
                 }
             }
         }
@@ -166,7 +172,8 @@ internal fun PlayerQuickMenu(viewModel: PlayerViewModel, active: Boolean, onClos
 
 @Composable
 private fun QuickMenuRow(title: String, icon: Int, subtitle: String? = null, onClick: () -> Unit,
-    active: Boolean, modifier: Modifier = Modifier, radio: Boolean = false) {
+    active: Boolean, modifier: Modifier = Modifier, radio: Boolean = false,
+    leading: (@Composable (Color) -> Unit)? = null, extra: (@Composable (Color) -> Unit)? = null) {
     var focused by remember { mutableStateOf(false) }
     val colors = FireLiteTheme.colors
     val background by animateColorAsState(if (focused) colors.textPrimary else Color.Transparent, tween(150), label = "menuPill")
@@ -181,12 +188,37 @@ private fun QuickMenuRow(title: String, icon: Int, subtitle: String? = null, onC
         Box(Modifier.size(36.dp).background(foreground.copy(alpha = 0.09f), CircleShape), contentAlignment = Alignment.Center) {
             Image(painterResource(icon), contentDescription = null, colorFilter = ColorFilter.tint(foreground), modifier = Modifier.size(22.dp))
         }
+        leading?.invoke(foreground)
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             FLText(title, style = FireLiteTheme.typography.title, color = foreground, maxLines = 1)
             subtitle?.let {
                 FLText(it, style = FireLiteTheme.typography.label,
                     color = if (focused) foreground.copy(alpha = 0.7f) else colors.textSecondary, maxLines = 1)
             }
+            extra?.invoke(foreground)
         }
+    }
+}
+
+@Composable
+@OptIn(ExperimentalLayoutApi::class)
+private fun AudioTrackChips(tracks: List<AudioTrackChoice>, foreground: Color) {
+    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        tracks.forEach { AudioTrackChip(it, foreground) }
+    }
+}
+
+@Composable
+private fun AudioTrackChip(track: AudioTrackChoice, foreground: Color) {
+    val background = if (track.selected) FireLiteTheme.colors.accent else foreground.copy(alpha = 0.1f)
+    val content = if (track.selected) FireLiteTheme.colors.background else foreground
+    Row(Modifier.clip(RoundedCornerShape(6.dp)).background(background).padding(horizontal = 7.dp, vertical = 3.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        FLText(track.languageChip, style = FireLiteTheme.typography.label, color = content, maxLines = 1,
+            modifier = Modifier.widthIn(max = 100.dp))
+        if (track.audioDescription) FLText("AD", style = FireLiteTheme.typography.label, color = content)
+        if (track.hearingImpaired) Image(painterResource(R.drawable.menu_hearing),
+            contentDescription = stringResource(R.string.audio_hearing), colorFilter = ColorFilter.tint(content),
+            modifier = Modifier.size(16.dp))
     }
 }

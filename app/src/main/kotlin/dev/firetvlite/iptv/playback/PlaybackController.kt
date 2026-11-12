@@ -373,7 +373,8 @@ class PlaybackController internal constructor(
         if (group.type != C.TRACK_TYPE_AUDIO) emptyList() else (0 until group.length).mapNotNull { index ->
             if (!group.isTrackSupported(index)) null else group.getTrackFormat(index).let { format ->
                 AudioTrackChoice(groupIndex, index, format.language, format.label,
-                    format.codecs ?: format.sampleMimeType, group.isTrackSelected(index))
+                    format.codecs ?: format.sampleMimeType, group.isTrackSelected(index),
+                    format.roleFlags, format.selectionFlags, format.channelCount)
             }
         }
     }

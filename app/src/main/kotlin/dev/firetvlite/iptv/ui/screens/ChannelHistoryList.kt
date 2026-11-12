@@ -47,6 +47,7 @@ import dev.firetvlite.iptv.ui.components.clockTime
 import dev.firetvlite.iptv.ui.components.requestFocusWhenReady
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 import dev.firetvlite.iptv.ui.viewmodel.ChannelTimelineTarget
+import dev.firetvlite.iptv.playback.RemotePress
 import dev.firetvlite.iptv.ui.viewmodel.LibraryViewModel
 import dev.firetvlite.iptv.ui.viewmodel.PlayerViewModel
 
@@ -72,6 +73,7 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
     val frame by player.frame.collectAsState()
     val playingIndex = if (target.playing) ChannelTimeline.historyFocusIndex(items, frame.watchedMs) else -1
     val requester = remember { FocusRequester() }
+    val menuPress = remember(target) { RemotePress() }
     val listState = rememberLazyListState(initialFirstVisibleItemIndex = index)
     LaunchedEffect(Unit) { requester.requestFocusWhenReady() }
     LaunchedEffect(index, items.size) {
@@ -88,7 +90,8 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
             .focusRequester(requester)
             .onPreviewKeyEvent { event ->
                 if (event.key == Key.Menu) {
-                    if (event.type == KeyEventType.KeyUp) player.closeTimeline()
+                    if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0) menuPress.begin()
+                    if (event.type == KeyEventType.KeyUp && menuPress.release()) player.dismissTimeline()
                     true
                 } else if (event.type != KeyEventType.KeyDown) false else when (event.key) {
                     Key.DirectionLeft, Key.DirectionRight -> true

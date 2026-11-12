@@ -27,7 +27,7 @@ class RealEpgBudgetAuditTest {
             Films.archived(it.channel, it.programme, now)) }
         .sortedWith(compareBy<FilmShowing> {
             when {
-                Films.inWindow(it.programme, now, 0) -> 0
+                it.programme.start < now + Films.DAY && it.programme.stop > now -> 0
                 Films.archived(it.channel, it.programme, now) -> 1
                 else -> 2
             }
@@ -107,9 +107,10 @@ class RealEpgBudgetAuditTest {
                 val future = ratingCandidates(visible, now, futureWindow = true)
                 val backgroundKeys = after.map(Films::key).toSet()
                 val allCandidates = (after + future).distinctBy(Films::key)
-                val tabs = (0..2).map { tab -> rankedFilms(visible, now, tab).map { Films.key(it.programme) }.toSet() }
-                assertEquals(tabs[0] + tabs[2], backgroundKeys)
-                assertEquals(tabs[1], future.map(Films::key).toSet())
+                val rated = visible.map { it.copy(rating = FilmRatingEntity("audit", 8.0, 100L, "tt123", now)) }
+                val tabs = (0 until Films.TAB_COUNT).map { tab -> rankedFilms(rated, now, tab).map { Films.key(it.programme) }.toSet() }
+                assertEquals(tabs[Films.LIVE_TAB] + tabs[Films.UPCOMING_TAB] + tabs[Films.ARCHIVE_TAB], backgroundKeys)
+                assertEquals(tabs[Films.FUTURE_TAB], future.map(Films::key).toSet())
                 assertEquals(before.map(Films::key).toSet(), allCandidates.map(Films::key).toSet())
                 val beforeCeiling = before.sumOf { beforeQueries(it).size }
                 val backgroundCeiling = after.sumOf { Films.queries(it).size }

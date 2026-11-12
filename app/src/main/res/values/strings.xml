@@ -1,18 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Default (and only) UI language: Polish. Resource names are English. -->
 <resources>
+    <string name="reminder_today">Dziś w TV</string>
+    <string name="reminder_soon">Za 10 min:</string>
+    <string name="reminder_daily_row">%1$s · %2$s · %3$s</string>
+    <string name="reminder_soon_row">%1$s · %2$s · %3$s</string>
+    <string name="reminder_more">I jeszcze %1$d emisji</string>
+    <string name="reminder_dismiss">OK – zamknij</string>
     <string name="settings_appearance">Wygląd</string>
     <string name="settings_clock_on">Zegar w lewym górnym rogu: włączony</string>
     <string name="settings_clock_off">Zegar w lewym górnym rogu: wyłączony</string>
     <string name="nav_films">Najlepsze filmy</string>
     <string name="films_setup_hint">Ustaw klucz OMDb w Ustawieniach, aby zobaczyć oceny IMDb i ranking filmów.</string>
     <string name="films_first_window">Najbliższe 24 h</string>
-    <string name="films_second_window">Pojutrze (24–48 h)</string>
+    <string name="films_second_window">Pojutrze</string>
+    <string name="films_live">Na żywo</string>
+    <string name="audio_hearing">Dla osób niesłyszących</string>
     <string name="films_archive">Z archiwum</string>
     <string name="films_archive_remaining">Dostępny jeszcze: %1$d godz. %2$d min</string>
     <string name="films_archive_expired">Ten film nie jest już dostępny w archiwum.</string>
     <string name="films_selected_tab">● %1$s</string>
-    <string name="films_empty">Brak filmów w tym przedziale.</string>
+    <string name="films_empty">Brak ocenionych filmów w tej zakładce.</string>
     <string name="films_loading">Wczytywanie rankingu i ocen IMDb…</string>
     <string name="films_missing_epg">Brak EPG dla kanałów tej listy. Odśwież EPG w Ustawieniach.</string>
     <string name="films_starts_at">Zaczyna się o %1$s</string>

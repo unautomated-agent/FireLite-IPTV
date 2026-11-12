@@ -18,7 +18,11 @@ import kotlinx.coroutines.withContext
 object Films {
     internal const val VARIANT_PREFIX = "@variant:"
     const val DAY = 86_400_000L
-    const val ARCHIVE_TAB = 2
+    const val LIVE_TAB = 0
+    const val ARCHIVE_TAB = 1
+    const val UPCOMING_TAB = 2
+    const val FUTURE_TAB = 3
+    const val TAB_COUNT = 4
     val zone: ZoneId = ZoneId.of("Europe/Warsaw")
     private val series = Regex("(?iu)\\b(serial\\w*|series|odc\\.?|odcinek|sezon|season|episode|s\\d{1,2}\\s*e\\d+|e\\d+)\\b|\\(\\d+/\\d+\\)")
     private val genre = Regex("(?imu)\\b(sensacja|dramat|komedia|thriller|horror|western|sci-fi|science fiction|kryminał|przygodowy|wojenny|obyczajowy|romans|fantasy|biograficzny|animowany film|action|drama|comedy|crime|adventure|war|romance|biographical|animated film|animated movie|feature film|television film|tv movie)\\b|\\bfilm (fabularny|kinowy|telewizyjny|animowany)\\b|^(films?|movies?|motion pictures?)$")
@@ -45,8 +49,9 @@ object Films {
         now - rating.fetchedAt < 30 * DAY
     fun day(now: Long): Long = Instant.ofEpochMilli(now).atZone(zone).toLocalDate().toEpochDay()
     fun inWindow(p: ProgrammeEntity, now: Long, tab: Int): Boolean = when (tab) {
-        0 -> p.start < now + DAY && p.stop > now
-        1 -> p.start >= now + DAY && p.start < now + 2 * DAY
+        LIVE_TAB -> p.start <= now && p.stop > now
+        UPCOMING_TAB -> p.start > now && p.start < now + DAY
+        FUTURE_TAB -> p.start >= now + DAY && p.start < now + 2 * DAY
         else -> false
     }
     fun archiveUntil(channel: ChannelEntity, p: ProgrammeEntity): Long? =

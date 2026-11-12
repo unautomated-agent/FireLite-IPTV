@@ -13,6 +13,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -28,6 +29,8 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.zIndex
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
+
+val LocalFocusedScale = staticCompositionLocalOf { 1.06f }
 
 /**
  * The basic focusable element of the TV UI: cards, buttons and list rows are built on it.
@@ -48,7 +51,7 @@ fun FocusSurface(
     modifier: Modifier = Modifier,
     shape: Shape = FireLiteTheme.shapes.medium,
     background: Brush = SolidColor(FireLiteTheme.colors.surface),
-    focusedScale: Float = 1.06f,
+    focusedScale: Float = LocalFocusedScale.current,
     onFocusChanged: (Boolean) -> Unit = {},
     onMenuKey: (() -> Unit)? = null,
     content: @Composable BoxScope.(focused: Boolean) -> Unit,

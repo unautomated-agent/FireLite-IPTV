@@ -62,6 +62,7 @@ data class ChannelTimelineTarget(
     val frame: PlaybackFrame,
     val liveWindowStart: Long?,
     val playing: Boolean,
+    val fromOverlay: Boolean = false,
 )
 
 /**
@@ -100,6 +101,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private val mutableChannel = MutableStateFlow<ChannelEntity?>(null)
     val channel: StateFlow<ChannelEntity?> = mutableChannel.asStateFlow()
+    private val mutableLiveChannelId = MutableStateFlow<Long?>(null)
+    val liveChannelId: StateFlow<Long?> = mutableLiveChannelId.asStateFlow()
 
     private val mutablePosition = MutableStateFlow(ZapPosition(0, 0))
     val position: StateFlow<ZapPosition> = mutablePosition.asStateFlow()
@@ -221,7 +224,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             playingGroup = group
             val sameChannel = mutableMode.value != PlayerMode.Closed && mutableChannel.value?.streamUrl == first.streamUrl
             setMode(mode)
-            show(first)
+            show(first, archive = archiveTime != null)
             if (sameChannel) {
                 activeChannel = first
                 activeIndex = index
@@ -307,11 +310,21 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val frame = if (playing) current else PlaybackFrame(current.nowMs, current.nowMs)
         val windowStart = if (playing && archiveStartMs == null && frame.snapshot.seekable)
             frame.watchedMs - frame.snapshot.positionMs else null
-        mutableTimeline.value = ChannelTimelineTarget(channel, zap, index, group, frame, windowStart, playing)
+        mutableTimeline.value = ChannelTimelineTarget(channel, zap, index, group, frame, windowStart, playing,
+            fromOverlay = mutableMode.value == PlayerMode.Overlay)
         setMode(PlayerMode.Fullscreen)
     }
 
     fun closeTimeline() { mutableTimeline.value = null }
+
+    fun dismissTimeline() {
+        val target = mutableTimeline.value ?: return
+        closeTimeline()
+        if (target.fromOverlay) {
+            mutableBrowserTarget.value = BrowserTarget(target.group, target.channel, ++targetToken)
+            setMode(PlayerMode.Overlay)
+        }
+    }
 
     fun openLiveProgramme(zap: ZapContext, index: Int, group: GroupKey, channel: ChannelEntity, programme: ProgrammeEntity?) {
         closeTimeline()
@@ -388,7 +401,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         zapJob?.cancel()
         zapJob = viewModelScope.launch {
             val next = zap.at(zapIndex) ?: return@launch
-            show(next) // the info bar shows the new name at once
+            show(next, archive = false) // the info bar shows the new name at once
             delay(ZAP_DEBOUNCE_MS)
             startLive(next)
             markWatched(next)
@@ -407,6 +420,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         setMode(PlayerMode.Closed)
         mutableBrowserTarget.value = null
         mutableChannel.value = null
+        mutableLiveChannelId.value = null
         activeChannel = null
         archiveStartMs = null
         pendingSeekMs = null
@@ -515,12 +529,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
         archiveStartMs = start * 1000
+        mutableLiveChannelId.value = null
         val request = StreamRequest(url, userAgent, archive = true, channelName = channel.name)
         if (restartIfActive) playback.playArchiveFromStart(request) else playback.play(request)
         updateFrame()
     }
 
-    private fun show(channel: ChannelEntity) {
+    private fun show(channel: ChannelEntity, archive: Boolean = archiveStartMs != null) {
+        mutableLiveChannelId.value = channel.id.takeUnless { archive }
         mutableChannel.value = channel
         mutablePosition.value = ZapPosition(zapIndex + 1, zapCount)
     }
@@ -530,6 +546,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         activeIndex = zapIndex
         archiveStartMs = null
         fallbackStartMs = System.currentTimeMillis()
+        mutableLiveChannelId.value = channel.id
         playback.play(StreamRequest(channel.streamUrl, userAgent, channelName = channel.name))
         updateFrame()
     }

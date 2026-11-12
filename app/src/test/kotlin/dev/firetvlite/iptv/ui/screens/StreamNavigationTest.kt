@@ -9,6 +9,51 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StreamNavigationTest {
+    @Test fun reminderExclusionUsesRequestedLiveChannelBeforeFramesOrPlaybackAreReady() {
+        val screen = File("src/main/kotlin/dev/firetvlite/iptv/ui/screens/PlayerScreen.kt").readText()
+            .substringAfter("fun PlayerLayer(").substringBefore("private fun PlayerContent(")
+        assertTrue(screen.contains("val liveChannelId by viewModel.liveChannelId.collectAsState()"))
+        assertTrue(screen.contains("watchingLiveChannelId = liveChannelId"))
+        assertFalse(screen.contains("frame.nowMs"))
+        assertFalse(screen.contains("viewModel.isArchive()"))
+        val model = File("src/main/kotlin/dev/firetvlite/iptv/ui/viewmodel/PlayerViewModel.kt").readText()
+        val select = model.substringAfter("private fun select(").substringBefore("private fun setMode(")
+        assertTrue(select.contains("show(first, archive = archiveTime != null)"))
+        assertTrue(select.indexOf("show(first,") < select.indexOf("startLive(first)"))
+        val zap = model.substringAfter("fun zap(").substringBefore("fun close()")
+        assertTrue(zap.contains("show(next, archive = false)"))
+        assertTrue(zap.indexOf("show(next,") < zap.indexOf("delay(ZAP_DEBOUNCE_MS)"))
+        val show = model.substringAfter("private fun show(").substringBefore("private fun startLive(")
+        assertTrue(show.contains("archive: Boolean = archiveStartMs != null"))
+        assertTrue(show.contains("mutableLiveChannelId.value = channel.id.takeUnless { archive }"))
+        assertTrue(show.indexOf("mutableLiveChannelId.value") < show.indexOf("mutableChannel.value"))
+        val startLive = model.substringAfter("private fun startLive(").substringBefore("private fun markWatched(")
+        assertTrue(startLive.indexOf("mutableLiveChannelId.value = channel.id") < startLive.indexOf("playback.play("))
+        val archive = model.substringAfter("private fun applyCatchup(").substringBefore("private fun show(")
+        assertTrue(archive.contains("mutableLiveChannelId.value = null"))
+        val close = model.substringAfter("fun close()").substringBefore("override fun onCleared()")
+        assertTrue(close.contains("mutableLiveChannelId.value = null"))
+    }
+
+    @Test fun restoredChannelOverlayClosesOnFirstBackBeforeComposeCanClearRowFocus() {
+        val restored = PlayerMode.Overlay
+        assertEquals(OverlayBackAction.Consume, overlayBackAction(restored, false, false))
+        assertEquals(OverlayBackAction.Consume, overlayBackAction(restored, false, false))
+        assertEquals(OverlayBackAction.Consume, overlayBackAction(restored, true, true))
+        assertEquals(OverlayBackAction.Close, overlayBackAction(restored, true, false))
+        val closed = restored.afterBack()
+        assertEquals(PlayerMode.Fullscreen, closed)
+        for (mode in PlayerMode.entries.filter { it != restored }) {
+            assertEquals(OverlayBackAction.Pass, overlayBackAction(mode, false, false))
+            assertEquals(OverlayBackAction.Pass, overlayBackAction(mode, true, false))
+        }
+        val activity = File("src/main/kotlin/dev/firetvlite/iptv/MainActivity.kt").readText()
+        val dispatch = activity.substringAfter("override fun dispatchKeyEvent(").substringBefore("override fun onCreate(")
+        assertTrue(dispatch.indexOf("overlayBackAction(") < dispatch.indexOf("super.dispatchKeyEvent(event)"))
+        assertTrue(dispatch.contains("OverlayBackAction.Consume -> return true"))
+        assertTrue(dispatch.contains("OverlayBackAction.Close -> { playerViewModel.closeOverlay(); return true }"))
+    }
+
     @Test fun guideBackBypassesFocusExitAndActsOnceOnReleaseWithOrWithoutPlayback() {
         for (hasChannel in listOf(false, true)) {
             assertEquals(GuideBackAction.Consume, guideBackAction(PlayerMode.Guide, hasChannel, false, false))

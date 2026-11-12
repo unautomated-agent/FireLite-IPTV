@@ -2,12 +2,43 @@ package dev.firetvlite.iptv.ui.screens
 
 import dev.firetvlite.iptv.playback.ChannelTimeline
 import dev.firetvlite.iptv.playback.TimelineItem
+import dev.firetvlite.iptv.playback.RemotePress
+import java.io.File
 import java.time.Instant
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HistoryNavigationTest {
+    @Test fun openingMenuReleaseCannotDismissHistoryWithoutANewPress() {
+        val menu = RemotePress()
+        assertTrue(!menu.release())
+        menu.begin()
+        assertTrue(menu.release())
+        assertTrue(!menu.release())
+    }
+
+    @Test fun dismissRestoresOverlayTargetWithoutDispatchingPlayback() {
+        val model = File("src/main/kotlin/dev/firetvlite/iptv/ui/viewmodel/PlayerViewModel.kt").readText()
+        val dismiss = model.substringAfter("fun dismissTimeline()").substringBefore("fun openLiveProgramme(")
+        assertTrue(dismiss.contains("if (target.fromOverlay)"))
+        assertTrue(dismiss.contains("BrowserTarget(target.group, target.channel, ++targetToken)"))
+        assertTrue(dismiss.contains("setMode(PlayerMode.Overlay)"))
+        assertTrue(!dismiss.contains("playback."))
+        assertTrue(!dismiss.contains("open("))
+        val open = model.substringAfter("fun openTimeline(").substringBefore("fun closeTimeline()")
+        assertTrue(open.contains("fromOverlay = mutableMode.value == PlayerMode.Overlay"))
+        assertTrue(!open.contains("playback."))
+        val screen = File("src/main/kotlin/dev/firetvlite/iptv/ui/screens/PlayerScreen.kt").readText()
+        assertTrue(screen.contains("if (timeline != null) viewModel.dismissTimeline()"))
+        val history = File("src/main/kotlin/dev/firetvlite/iptv/ui/screens/ChannelHistoryList.kt").readText()
+        assertTrue(history.contains("menuPress.release()) player.dismissTimeline()"))
+        val browser = File("src/main/kotlin/dev/firetvlite/iptv/ui/screens/LiveTvScreen.kt").readText()
+        val overlayRow = browser.substringAfter(") else ChannelRowItem(").substringBefore("Spacer(Modifier.fillMaxWidth()")
+        assertTrue(overlayRow.contains("onMenu = { openChannelHistory() }"))
+        assertTrue(!overlayRow.contains("toggleFavorite"))
+    }
+
     private fun time(value: String) = Instant.parse(value).toEpochMilli()
     private val now = time("2026-11-11T20:15:00Z")
     private val items = ChannelTimeline.history(ChannelTimeline.items(emptyList(), now, now - 2 * ChannelTimeline.DAY))

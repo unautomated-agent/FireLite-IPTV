@@ -3,11 +3,49 @@ package dev.firetvlite.iptv.data
 import android.content.SharedPreferences
 import dev.firetvlite.iptv.data.film.OmdbPreferences
 import dev.firetvlite.iptv.data.film.OmdbResult
+import dev.firetvlite.iptv.data.film.OmdbMovie
 import java.lang.reflect.Proxy
 import org.junit.Assert.*
 import org.junit.Test
 
 class OmdbPreferencesTest {
+    @Test fun successfulLookupClearsCurrentFailureButRetainsLastErrorForDiagnostics() {
+        val backend = Backend()
+        val now = 1_800_000_000_000L
+        val preferences = OmdbPreferences(backend.preferences) { now }
+        preferences.error("HTTP_401", now)
+        preferences.completed(OmdbResult.Found(OmdbMovie("movie", 2002, 7.1, 100, "tt123")), now)
+        assertNull(preferences.currentError.value)
+        assertNull(OmdbPreferences(backend.preferences) { now }.currentError.value)
+        assertEquals("HTTP_401", preferences.stats.value.lastError)
+        assertEquals(1, preferences.stats.value.hits)
+        preferences.error("not a safe code", now)
+        assertEquals("UNKNOWN", preferences.currentError.value)
+    }
+
+    @Test fun savingTheSameKeyAfterActivationRetriggersLookupAndClearsOnlyCurrentError() {
+        val backend = Backend()
+        val now = 1_800_000_000_000L
+        val preferences = OmdbPreferences(backend.preferences) { now }
+        preferences.save("fixture")
+        val firstRefresh = preferences.refresh.value
+        preferences.completed(OmdbResult.Failed("HTTP_401"), now)
+        assertEquals("HTTP_401", preferences.currentError.value)
+        assertEquals("HTTP_401", OmdbPreferences(backend.preferences) { now }.currentError.value)
+        preferences.save("fixture")
+        assertEquals("fixture", preferences.key.value)
+        assertEquals(firstRefresh + 1, preferences.refresh.value)
+        assertNull(preferences.currentError.value)
+        assertEquals("HTTP_401", preferences.stats.value.lastError)
+        preferences.completed(OmdbResult.Failed("AUTH"), now)
+        preferences.completed(OmdbResult.Missing, now)
+        assertNull(preferences.currentError.value)
+        assertEquals("AUTH", preferences.stats.value.lastError)
+        preferences.save("")
+        assertTrue(preferences.key.value.isBlank())
+        assertEquals(firstRefresh + 2, preferences.refresh.value)
+    }
+
     @Test fun requestStatsPersistWithoutCountingKeyConfigurationAsValidation() {
         val backend = Backend()
         val now = 1_800_000_000_000L

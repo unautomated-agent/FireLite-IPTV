@@ -7,6 +7,12 @@ import dev.firetvlite.iptv.data.film.*
 import dev.firetvlite.iptv.R
 import java.time.Instant
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.take
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.first
 import org.junit.Assert.*
@@ -95,6 +101,30 @@ class FilmsTest {
         val ratings = observeFilmRatings(flowOf(listOf(row)), flowOf("fixture"), flowOf(now)) { now + 1001 }.first()
         assertEquals(row, ratings["film"])
         assertTrue(observeFilmRatings(flowOf(listOf(row)), flowOf(""), flowOf(now)) { now + 1001 }.first().isEmpty())
+    }
+
+    @Test fun subscribedRatingsUpdateWhenRoomEmitsWithoutAnotherClockTick() = runBlocking {
+        val programme = film()
+        val row = FilmRatingEntity(Films.key(programme), 7.1, 125, "tt0276751", now + 1000)
+        val rows = MutableStateFlow<List<FilmRatingEntity>>(emptyList())
+        val initial = CompletableDeferred<Unit>()
+        val received = mutableListOf<Map<String, FilmRatingEntity>>()
+        withTimeout(5000) {
+            val observer = launch {
+                observeFilmRatings(rows, flowOf("fixture"), flowOf(now)) { now + 1001 }
+                    .take(2).collect {
+                        received.add(it)
+                        initial.complete(Unit)
+                    }
+            }
+            initial.await()
+            rows.value = listOf(row)
+            observer.join()
+        }
+        assertTrue(received.first().isEmpty())
+        assertEquals(row, received.last()[Films.key(programme)])
+        val showing = FilmShowing(channel(), programme, received.last()[Films.key(programme)])
+        assertEquals(row, rankedFilms(listOf(showing), now, 0).single().rating)
     }
 
     private class Store : FilmStore {

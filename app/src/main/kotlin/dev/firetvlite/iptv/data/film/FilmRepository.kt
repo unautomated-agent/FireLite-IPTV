@@ -78,7 +78,7 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
 
     init {
         scope.launch(Dispatchers.IO) {
-            combine(database.sourceDao().observeActive(), preferences.key, epg.states) { source, key, _ -> source to key }
+            combine(database.sourceDao().observeActive(), preferences.refresh, epg.states) { source, _, _ -> source to preferences.key.value }
                 .collectLatest { (source, key) ->
                     if (source == null || key.isBlank()) return@collectLatest
                     while (true) {

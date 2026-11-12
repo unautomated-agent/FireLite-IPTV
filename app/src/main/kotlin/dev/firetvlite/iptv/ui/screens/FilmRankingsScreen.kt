@@ -34,6 +34,7 @@ import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.film.Films
 import dev.firetvlite.iptv.data.film.rankedFilms
 import dev.firetvlite.iptv.data.film.rankingStatus
+import dev.firetvlite.iptv.data.film.omdbIssueMessage
 import dev.firetvlite.iptv.data.film.RankingStatus
 import dev.firetvlite.iptv.data.epg.EpgState
 import dev.firetvlite.iptv.ui.components.ChannelLogo
@@ -56,6 +57,7 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
     val key by library.films.preferences.key.collectAsState()
     val catalogue by library.films.catalogue.collectAsState()
     val enriching by library.films.enriching.collectAsState()
+    val omdbError by library.films.preferences.currentError.collectAsState()
     val epgStates by library.epgStates.collectAsState()
     val source by library.source.collectAsState()
     val films = if (catalogue.sourceId == source?.id) catalogue.films else emptyList()
@@ -90,6 +92,9 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
                     PrimaryButton(if (tab == index) stringResource(R.string.films_selected_tab, title) else title, { tab = index },
                         Modifier.focusRequester(tabFocus[index]))
                 }
+            }
+            omdbIssueMessage(omdbError)?.let { message ->
+                FLText(stringResource(message, omdbError.orEmpty()), style = FireLiteTheme.typography.label)
             }
             when (status) {
                 RankingStatus.Loading -> Row(verticalAlignment = Alignment.CenterVertically,

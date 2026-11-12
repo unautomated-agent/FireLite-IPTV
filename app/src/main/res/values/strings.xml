@@ -27,6 +27,10 @@
     <string name="imdb_unrated">IMDb —</string>
     <string name="omdb_key_label">Klucz OMDb (oceny IMDb)</string>
     <string name="omdb_key_help">Darmowy klucz: omdbapi.com/apikey.aspx</string>
+    <string name="omdb_key_activation_help">Darmowy klucz wymaga aktywacji linkiem z wiadomości e-mail. Po aktywacji zapisz go ponownie, aby od razu ponowić pobieranie ocen.</string>
+    <string name="omdb_issue_auth">OMDb odrzuciło klucz (%1$s). Sprawdź klucz i jego aktywację e-mail, a następnie zapisz go ponownie w Ustawieniach.</string>
+    <string name="omdb_issue_limit">Osiągnięto limit zapytań OMDb (%1$s). Oceny z pamięci nadal są dostępne; nowe zostaną pobrane po odnowieniu limitu.</string>
+    <string name="omdb_issue_error">Nie udało się pobrać ocen OMDb (%1$s). Szczegóły w diagnostyce.</string>
     <string name="omdb_key_save">Zapisz klucz OMDb</string>
     <string name="omdb_key_set">ustawiony</string>
     <string name="omdb_key_missing">brak</string>

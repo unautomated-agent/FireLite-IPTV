@@ -160,6 +160,42 @@ class FilmsTest {
         assertEquals(1, requests)
     }
 
+    @Test fun requestedFutureComesBeforeBackgroundWithoutDuplicatingFilms() {
+        val archiveChannel = channel().copy(catchupType = "shift", catchupDays = 7)
+        fun showing(title: String, start: Long) = FilmShowing(archiveChannel,
+            film(title).copy(originalTitle = title, start = start, stop = start + 7_200_000), null)
+        val future = showing("Future", now + Films.DAY)
+        val duplicateToday = showing("Future", now)
+        val today = showing("Today", now)
+        val archive = showing("Archive", now - Films.DAY)
+        val inputs = listOf(archive, today, duplicateToday, future)
+        assertEquals(listOf(future.programme, today.programme, archive.programme),
+            enrichmentCandidates(inputs, now, futureRequested = true))
+        assertEquals(ratingCandidates(inputs, now), enrichmentCandidates(inputs, now, futureRequested = false))
+        assertTrue(enrichmentCandidates(emptyList(), now, futureRequested = true).isEmpty())
+    }
+
+    @Test fun retryingFuturePassStillEnrichesTodayAndArchive() = runBlocking {
+        val archiveChannel = channel().copy(catchupType = "shift", catchupDays = 7)
+        fun showing(title: String, start: Long) = FilmShowing(archiveChannel,
+            film(title).copy(originalTitle = title, start = start, stop = start + 7_200_000), null)
+        val future = showing("Future", now + Films.DAY)
+        val today = showing("Today", now)
+        val archive = showing("Archive", now - Films.DAY)
+        val candidates = enrichmentCandidates(listOf(archive, future, today), now, futureRequested = true)
+        val store = Store()
+        val calls = mutableListOf<String>()
+        val lookup = FilmLookup(OmdbClient { _, title, _ ->
+            calls.add(title)
+            if (title == "Future") OmdbResult.Failed("HTTP_503")
+            else OmdbResult.Found(OmdbMovie("movie", 2002, 7.1, 100, "tt123"))
+        }, store, { now }) {}
+        repeat(2) { assertTrue(enrichFilms(candidates, "fixture", lookup, { true }) { now }) }
+        assertEquals(listOf("Future", "Today", "Archive", "Future"), calls)
+        assertNotNull(store.rows[Films.key(today.programme)])
+        assertNotNull(store.rows[Films.key(archive.programme)])
+    }
+
     @Test fun tabRequestsOnlyLookupUncachedFutureFilmsAndShareTheDailyBudget() = runBlocking {
         val store = Store()
         store.used[Films.day(now)] = 399

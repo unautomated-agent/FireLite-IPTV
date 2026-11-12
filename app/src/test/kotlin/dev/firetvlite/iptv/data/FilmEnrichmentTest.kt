@@ -181,6 +181,20 @@ class FilmEnrichmentTest {
         assertNull(requests.pending.value)
     }
 
+    @Test fun emptyFutureRequestSurvivesImportAndCompletesAfterDataArrives() {
+        val requests = FilmWindowRequests()
+        requests.request(1, 0)
+        val request = requests.pending.value!!
+        if (futureWindowComplete(false, null, hasCandidates = false, epgRunning = true)) requests.complete(request)
+        assertEquals(request, requests.pending.value)
+        assertTrue(futureWindowComplete(false, null, hasCandidates = true, epgRunning = true))
+        assertTrue(futureWindowComplete(false, null, hasCandidates = false, epgRunning = false))
+        assertFalse(futureWindowComplete(true, null, hasCandidates = true, epgRunning = false))
+        assertFalse(futureWindowComplete(false, "REMOTE_LIMIT", hasCandidates = true, epgRunning = false))
+        if (futureWindowComplete(false, null, hasCandidates = true, epgRunning = false)) requests.complete(request)
+        assertNull(requests.pending.value)
+    }
+
     @Test fun emptyNoKeyChangedSourceCancellationAndExhaustedBudgetNeverOpenRequests() = runBlocking {
         val store = Store()
         val lookup = FilmLookup(OmdbClient { _, _, _ -> fail("Unexpected request"); found }, store, { now }) {}

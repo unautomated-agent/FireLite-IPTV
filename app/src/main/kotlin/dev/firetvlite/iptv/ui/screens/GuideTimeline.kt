@@ -1,6 +1,8 @@
 package dev.firetvlite.iptv.ui.screens
 
 import dev.firetvlite.iptv.data.db.ProgrammeEntity
+import dev.firetvlite.iptv.playback.ProgrammePlayback
+import dev.firetvlite.iptv.playback.TimelineAction
 
 data class GuideBounds(val earliest: Long, val latest: Long)
 data class GuideCell(val start: Long, val stop: Long, val programme: ProgrammeEntity?)
@@ -60,8 +62,10 @@ object GuideTimeline {
         focusedTime: Long = now, hasGuide: Boolean = programme != null): GuideAction = when {
         programme == null && hasGuide && focusedTime > now -> GuideAction.Details
         programme == null -> GuideAction.Live
-        programme.start <= now && programme.stop > now -> GuideAction.Live
-        programme.stop <= now && supportsCatchup && catchupDays > 0 && programme.start >= now - catchupDays * DAY -> GuideAction.Archive
-        else -> GuideAction.Details
+        else -> when (ProgrammePlayback.action(programme, now, catchupDays, supportsCatchup)) {
+            TimelineAction.Archive -> GuideAction.Archive
+            TimelineAction.Live -> GuideAction.Live
+            TimelineAction.Past, TimelineAction.None -> GuideAction.Details
+        }
     }
 }

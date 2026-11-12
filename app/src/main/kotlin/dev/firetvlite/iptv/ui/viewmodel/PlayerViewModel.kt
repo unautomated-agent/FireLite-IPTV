@@ -313,8 +313,13 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun playTimeline(item: TimelineItem) {
         val target = mutableTimeline.value ?: return
-        when (ChannelTimeline.action(item)) {
+        val now = System.currentTimeMillis()
+        when (ChannelTimeline.selection(item, now, target.channel.catchupDays, CatchupUrlBuilder.isSupported(target.channel))) {
             TimelineAction.None -> return
+            TimelineAction.Archive -> {
+                closeTimeline()
+                openArchive(target.zap, target.index, target.group, item.programme!!.start)
+            }
             TimelineAction.Live -> {
                 closeTimeline()
                 if (activeChannel?.streamUrl == target.channel.streamUrl && archiveStartMs == null)
@@ -324,7 +329,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             TimelineAction.Past -> {
                 val channel = target.channel
                 if (CatchupUrlBuilder.isSupported(channel) && channel.catchupDays > 0) {
-                    val limit = System.currentTimeMillis() - channel.catchupDays.toLong() * ChannelTimeline.DAY
+                    if (item.programme != null) {
+                        closeTimeline()
+                        open(target.zap, target.index, target.group)
+                        return
+                    }
+                    val limit = now - channel.catchupDays.toLong() * ChannelTimeline.DAY
                     if (item.stop <= limit) return
                     closeTimeline()
                     openArchive(target.zap, target.index, target.group, maxOf(item.start, limit))
@@ -333,6 +343,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     if (!frame.snapshot.seekable) { notify(PlayerMessage.SeekUnsupported); return }
                     closeTimeline()
                     seekAbsolute(maxOf(item.start, frame.watchedMs - frame.snapshot.positionMs))
+                } else {
+                    closeTimeline()
+                    open(target.zap, target.index, target.group)
                 }
             }
         }

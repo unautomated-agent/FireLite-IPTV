@@ -19,7 +19,6 @@ import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DecoderReuseEvaluation
 import androidx.media3.exoplayer.analytics.AnalyticsListener
-import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.LoadEventInfo
 import androidx.media3.exoplayer.source.MediaLoadData
 import kotlinx.coroutines.CoroutineScope
@@ -108,14 +107,14 @@ class PlaybackController internal constructor(
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
             .setEnableDecoderFallback(true)
         ExoPlayer.Builder(context, renderers)
-            .setMediaSourceFactory(DefaultMediaSourceFactory(httpFactory))
+            .setMediaSourceFactory(PlaybackMediaSourceFactory(httpFactory))
             .build().apply {
                 trackSelectionParameters = trackSelectionParameters.buildUpon()
                     .setPreferredAudioLanguages(*AudioPreferences.languages(listOf(Locale.getDefault())).toTypedArray())
                     .build()
             }
     }, { Log.d("FireLiteStream", it) }, setStream = { player, item, factory ->
-        player.setMediaSource(DefaultMediaSourceFactory(factory).createMediaSource(item))
+        player.setMediaSource(PlaybackMediaSourceFactory(factory).createMediaSource(item))
     }, recordPlayback = diagnosticRecorder(context, scope))
 
     private val gate = StreamGate()

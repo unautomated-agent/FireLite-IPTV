@@ -6,11 +6,26 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.Util
 import androidx.media3.datasource.DataSource
 import androidx.media3.exoplayer.source.MediaSource
+import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MediaSourceCompatibilityTest {
+    @Test fun hlsAllowsNonIdrKeyframesAndRetainsDefaultCaptionExposure() {
+        val factory = PlaybackMediaSourceFactory.hlsExtractors()
+        val flags = factory.javaClass.getDeclaredField("payloadReaderFactoryFlags").apply { isAccessible = true }.getInt(factory)
+        assertTrue(flags and DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES != 0)
+        assertTrue(factory.javaClass.getDeclaredField("exposeCea608WhenMissingDeclarations")
+            .apply { isAccessible = true }.getBoolean(factory))
+    }
+
+    @Test fun progressiveTsFallbackAlsoAllowsNonIdrKeyframes() {
+        val factory = PlaybackMediaSourceFactory.progressiveExtractors()
+        val flags = factory.javaClass.getDeclaredField("tsFlags").apply { isAccessible = true }.getInt(factory)
+        assertTrue(flags and DefaultTsPayloadReaderFactory.FLAG_ALLOW_NON_IDR_KEYFRAMES != 0)
+    }
+
     @Test fun adaptiveFactoriesHaveTheConstructorsUsedReflectivelyByMedia3() {
         for (name in listOf("dash.DashMediaSource", "smoothstreaming.SsMediaSource", "hls.HlsMediaSource")) {
             val factory = Class.forName("androidx.media3.exoplayer.$name\$Factory")

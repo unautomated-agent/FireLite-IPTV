@@ -12,7 +12,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.Timeline
-import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.datasource.DataSpec
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
@@ -43,6 +43,7 @@ data class StreamRequest(
     val userAgent: String,
     val archive: Boolean = false,
     val channelName: String = "",
+    val headers: Map<String, String> = emptyMap(),
 )
 
 sealed interface PlaybackStatus {
@@ -52,7 +53,7 @@ sealed interface PlaybackStatus {
     data object Playing : PlaybackStatus
     data object Paused : PlaybackStatus
     data object Ended : PlaybackStatus
-    data class Failed(val code: String) : PlaybackStatus
+    data class Failed(val code: String, val httpStatus: Int? = null) : PlaybackStatus
 }
 
 /** Position and server window timestamps used to locate the watched frame in the guide. */
@@ -118,11 +119,6 @@ class PlaybackController internal constructor(
     }, recordPlayback = diagnosticRecorder(context, scope))
 
     private val gate = StreamGate()
-    private val httpFactory = DefaultHttpDataSource.Factory()
-        .setAllowCrossProtocolRedirects(true)
-        .setConnectTimeoutMs(15_000)
-        .setReadTimeoutMs(20_000)
-
     private var exo: ExoPlayer? = null
     private var startJob: Job? = null
     private var startupJob: Job? = null
@@ -132,7 +128,8 @@ class PlaybackController internal constructor(
     private var startupTiming: StartupTiming? = null
     private var retries = 0
     @Volatile private var activeSession = 0L
-    @Volatile private var lastHttp: Pair<Long, String>? = null
+    @Volatile private var lastHttp: Pair<Long, HttpRequestEvidence>? = null
+    @Volatile private var lastHttpFailure: Pair<Long, HttpRequestEvidence>? = null
     private var sourceType = "auto"
     private var startupError: PlaybackException? = null
     private var recovery = PlaybackRecovery()
@@ -143,14 +140,25 @@ class PlaybackController internal constructor(
     private var successfulSignature: String? = null
     private val connections = AtomicInteger()
     private val connectionGate = HttpConnectionGate()
-    private fun trackedFactory(session: Long) = object : HttpDataSource.Factory {
+    private fun trackedFactory(session: Long) = object : ClassifiedHttpFactory {
+        private val request = activeRequest
+        private var headers = request?.headers.orEmpty()
         override fun setDefaultRequestProperties(properties: Map<String, String>): HttpDataSource.Factory {
-            httpFactory.setDefaultRequestProperties(properties)
+            headers = properties
             return this
         }
 
-        override fun createDataSource(): HttpDataSource {
-            val delegate = httpFactory.createDataSource()
+        override fun createDataSource(dataType: Int): HttpDataSource {
+            val calls = PlaybackHttp.calls(request?.url.orEmpty(), dataType) { evidence ->
+                if (session == activeSession) {
+                    lastHttp = session to evidence
+                    if (evidence.status >= 400) lastHttpFailure = session to evidence
+                }
+            }
+            val delegate = OkHttpDataSource.Factory(calls)
+                .setUserAgent(headers["User-Agent"] ?: request?.userAgent)
+                .setDefaultRequestProperties(headers)
+                .createDataSource()
             return object : HttpDataSource by delegate {
                 private var connected = false
                 private var stream = 0
@@ -162,20 +170,11 @@ class PlaybackController internal constructor(
                     connected = true
                     trace("HTTP_OPEN session=$session stream=$stream active=${connections.incrementAndGet()}")
                     return try {
-                        delegate.open(dataSpec).also { captureHttp() }
+                        delegate.open(dataSpec)
                     } catch (error: Exception) {
-                        captureHttp()
                         runCatching { close() }
                         throw error
                     }
-                }
-
-                private fun captureHttp() {
-                    if (session != activeSession) return
-                    runCatching {
-                        val type = delegate.responseHeaders.entries.firstOrNull { it.key.equals("Content-Type", true) }?.value?.joinToString()
-                        "HTTP=${delegate.responseCode}; Content-Type=${type ?: "unknown"}"
-                    }.getOrNull()?.let { lastHttp = session to it }
                 }
 
                 override fun close() {
@@ -271,12 +270,24 @@ class PlaybackController internal constructor(
         val request = activeRequest ?: return ""
         val mode = (if (preview) "preview/" else "") + if (request.archive) "archive" else "live"
         return PlaybackDiagnosticRecord.text(request.url, mode, code, error,
-            selectedFormats(), availableFormats(), audioDecoder, details = details)
+            selectedFormats(), availableFormats(), audioDecoder, details =
+                (httpEvidence()?.lines() ?: listOf("HTTP: not available")) + listOfNotNull(error?.let {
+                    "Screen: ${PlaybackHttpError.message(it.errorCodeName, it, httpEvidence()?.status)}; code=${it.errorCodeName}"
+                }) + details)
     }
+
+    private fun httpEvidence(): HttpRequestEvidence? =
+        lastHttpFailure?.takeIf { it.first == activeSession }?.second
+            ?: lastHttp?.takeIf { it.first == activeSession }?.second
+
+    private fun failed(error: PlaybackException): PlaybackStatus.Failed = PlaybackStatus.Failed(error.errorCodeName,
+        PlaybackHttpError.displayedStatus(error.errorCodeName, error, httpEvidence()?.status))
 
     private fun renderingStarted() {
         if (activeRequest == null) return
         rendered = true
+        lastHttpFailure = null
+        startupError = null
         retries = 0
         clearStartupWatch()
     }
@@ -313,7 +324,6 @@ class PlaybackController internal constructor(
                         *TimeoutEvidence.lines(player, rendererReadiness).toTypedArray(),
                         "Player: ${player.playbackState}; pos=${player.currentPosition}; buffered=${player.bufferedPosition}",
                         "Source: $sourceType", "openHTTP=${connections.get()}",
-                        "HTTP: ${lastHttp?.takeIf { it.first == activeSession }?.second ?: "not available"}",
                     )))
                     mutableStartupDelayed.value = true
                     reported = true
@@ -355,7 +365,6 @@ class PlaybackController internal constructor(
                 else "Ownership: requested stream session",
                 "Player: $state; pos=${player?.currentPosition}; buffered=${player?.bufferedPosition}; openHTTP=${connections.get()}",
                 "Source: $sourceType",
-                "HTTP: ${lastHttp?.takeIf { it.first == activeSession }?.second ?: "not available"}",
             )))
             mutableStartupDelayed.value = true
         }
@@ -417,9 +426,9 @@ class PlaybackController internal constructor(
             else -> "auto/progressive"
         }
         lastHttp = null
+        lastHttpFailure = null
         startupError = null
         watchStartup(request)
-        httpFactory.setUserAgent(request.userAgent)
 
         val player = prepareSafely { ensurePlayer() } ?: return
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
@@ -466,7 +475,7 @@ class PlaybackController internal constructor(
         recordPlayback(true, diagnostic(error))
         activeRequest = null
         gate.onStopped()
-        mutableStatus.value = PlaybackStatus.Failed(error.errorCodeName)
+        mutableStatus.value = failed(error)
         runCatching { exo?.stop() }
     }
 
@@ -648,7 +657,7 @@ class PlaybackController internal constructor(
             }
         } else {
             clearStartupWatch()
-            mutableStatus.value = PlaybackStatus.Failed(error.errorCodeName)
+            mutableStatus.value = failed(error)
             activeRequest = null
             gate.onStopped() // lets the user try the same channel again
             exo?.stop()

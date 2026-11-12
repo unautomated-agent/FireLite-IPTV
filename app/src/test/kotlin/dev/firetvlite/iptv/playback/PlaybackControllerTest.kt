@@ -21,6 +21,41 @@ import org.junit.Test
 class PlaybackControllerTest {
     private val request = StreamRequest("https://example.org/live", "FireLite")
 
+    @Test fun finalNetworkErrorUsesRecordedHttpFailureAndNewChannelClearsIt() = runBlocking {
+        val fake = FakePlayer()
+        val records = mutableListOf<String>()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            recordPlayback = { failed, text -> if (failed) records += text })
+        controller.play(request)
+        delay(450)
+        val evidence = HttpRequestEvidence(404, "application/vnd.apple.mpegurl", "media playlist",
+            "…/[redacted].m3u8", 1, 2, setOf("User-Agent", "Referer"), "original", "final")
+        PlaybackController::class.java.getDeclaredField("lastHttpFailure").apply { isAccessible = true }
+            .set(controller, 1L to evidence)
+        repeat(4) { fake.listener!!.onPlayerError(TestError(2001)) }
+        assertEquals(PlaybackStatus.Failed("ERROR_CODE_IO_NETWORK_CONNECTION_FAILED", 404), controller.status.value)
+        assertEquals(true, records.last().contains("HTTP: HTTP=404"))
+        assertEquals(true, records.last().contains("Screen: Kanał niedostępny u dostawcy (HTTP 404)"))
+        assertEquals(true, records.last().contains("Request: media playlist"))
+        assertEquals(1, fake.calls.count { it == "prepare" })
+        controller.play(request.copy(url = "https://example.org/other"))
+        delay(450)
+        repeat(4) { fake.listener!!.onPlayerError(TestError(2001)) }
+        assertEquals(PlaybackStatus.Failed("ERROR_CODE_IO_NETWORK_CONNECTION_FAILED"), controller.status.value)
+        controller.stop()
+    }
+
+    @Test fun finalTypedHttpErrorPropagatesToScreenStateWithoutAdditionalStreamSources() = runBlocking {
+        val fake = FakePlayer()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY })
+        controller.play(request)
+        delay(450)
+        repeat(4) { fake.listener!!.onPlayerError(TestError(2004, httpFailure(410))) }
+        assertEquals(PlaybackStatus.Failed("ERROR_CODE_IO_BAD_HTTP_STATUS", 410), controller.status.value)
+        assertEquals(1, fake.calls.count { it == "prepare" })
+        controller.stop()
+    }
+
     @Test fun explicitSelectionOfTheActiveArchiveSeeksToZeroWithoutReopening() = runBlocking {
         val fake = FakePlayer()
         val trace = mutableListOf<String>()

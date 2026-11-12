@@ -74,6 +74,7 @@ data class ChannelEntity(
     val catchupDays: Int,
     val tvgName: String? = null,
     @ColumnInfo(defaultValue = "'UTC'") val catchupTimezone: String = "UTC",
+    @ColumnInfo(defaultValue = "''") val requestHeaders: String = "",
 )
 
 @Entity(tableName = "xtream_channel", primaryKeys = ["sourceId", "streamId"],

@@ -7,6 +7,7 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.exoplayer.drm.DrmSessionManagerProvider
 import androidx.media3.exoplayer.hls.DefaultHlsExtractorFactory
 import androidx.media3.exoplayer.hls.HlsMediaSource
+import androidx.media3.exoplayer.hls.HlsDataSourceFactory
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.exoplayer.upstream.CmcdConfiguration
@@ -16,7 +17,9 @@ import androidx.media3.extractor.text.SubtitleParser
 import androidx.media3.extractor.ts.DefaultTsPayloadReaderFactory
 
 internal class PlaybackMediaSourceFactory(dataSource: DataSource.Factory) : MediaSource.Factory {
-    private val hls = HlsMediaSource.Factory(dataSource).setExtractorFactory(hlsExtractors())
+    private val hls = HlsMediaSource.Factory(HlsDataSourceFactory { type ->
+        if (dataSource is ClassifiedHttpFactory) dataSource.createDataSource(type) else dataSource.createDataSource()
+    }).setExtractorFactory(hlsExtractors())
     private val other = DefaultMediaSourceFactory(dataSource, progressiveExtractors())
 
     override fun createMediaSource(mediaItem: MediaItem): MediaSource {

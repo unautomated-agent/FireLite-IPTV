@@ -55,6 +55,7 @@ class PlaylistImporter(
                             catchupType = parsed.catchupType,
                             catchupSource = parsed.catchupSource,
                             catchupDays = parsed.catchupDays,
+                            requestHeaders = PlaylistHttpHeaders.encode(parsed.headers),
                         ),
                     )
                 }
@@ -143,7 +144,7 @@ class PlaylistImporter(
     }
 
     companion object {
-        const val PARSER_REVISION = 1
+        const val PARSER_REVISION = 2
         const val MAX_BYTES = 200L * 1024 * 1024
         const val MAX_REDIRECTS = 6
     }

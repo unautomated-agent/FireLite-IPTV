@@ -101,6 +101,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private val mutableChannel = MutableStateFlow<ChannelEntity?>(null)
     val channel: StateFlow<ChannelEntity?> = mutableChannel.asStateFlow()
+    private val mutableLiveChannelId = MutableStateFlow<Long?>(null)
+    val liveChannelId: StateFlow<Long?> = mutableLiveChannelId.asStateFlow()
 
     private val mutablePosition = MutableStateFlow(ZapPosition(0, 0))
     val position: StateFlow<ZapPosition> = mutablePosition.asStateFlow()
@@ -222,7 +224,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             playingGroup = group
             val sameChannel = mutableMode.value != PlayerMode.Closed && mutableChannel.value?.streamUrl == first.streamUrl
             setMode(mode)
-            show(first)
+            show(first, archive = archiveTime != null)
             if (sameChannel) {
                 activeChannel = first
                 activeIndex = index
@@ -399,7 +401,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         zapJob?.cancel()
         zapJob = viewModelScope.launch {
             val next = zap.at(zapIndex) ?: return@launch
-            show(next) // the info bar shows the new name at once
+            show(next, archive = false) // the info bar shows the new name at once
             delay(ZAP_DEBOUNCE_MS)
             startLive(next)
             markWatched(next)
@@ -418,6 +420,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         setMode(PlayerMode.Closed)
         mutableBrowserTarget.value = null
         mutableChannel.value = null
+        mutableLiveChannelId.value = null
         activeChannel = null
         archiveStartMs = null
         pendingSeekMs = null
@@ -526,12 +529,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
         archiveStartMs = start * 1000
+        mutableLiveChannelId.value = null
         val request = StreamRequest(url, userAgent, archive = true, channelName = channel.name)
         if (restartIfActive) playback.playArchiveFromStart(request) else playback.play(request)
         updateFrame()
     }
 
-    private fun show(channel: ChannelEntity) {
+    private fun show(channel: ChannelEntity, archive: Boolean = archiveStartMs != null) {
+        mutableLiveChannelId.value = channel.id.takeUnless { archive }
         mutableChannel.value = channel
         mutablePosition.value = ZapPosition(zapIndex + 1, zapCount)
     }
@@ -541,6 +546,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         activeIndex = zapIndex
         archiveStartMs = null
         fallbackStartMs = System.currentTimeMillis()
+        mutableLiveChannelId.value = channel.id
         playback.play(StreamRequest(channel.streamUrl, userAgent, channelName = channel.name))
         updateFrame()
     }

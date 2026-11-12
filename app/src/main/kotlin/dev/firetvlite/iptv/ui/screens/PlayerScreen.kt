@@ -84,7 +84,7 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
     val status by viewModel.status.collectAsState()
     val startupDelayed by viewModel.startupDelayed.collectAsState()
     val timeline by viewModel.timeline.collectAsState()
-    val frame by viewModel.frame.collectAsState()
+    val liveChannelId by viewModel.liveChannelId.collectAsState()
     var quickMenu by remember { mutableStateOf(false) }
     var bannerVisible by remember { mutableStateOf(false) }
     var playWhenReady by remember(player) { mutableStateOf(player?.playWhenReady == true) }
@@ -144,7 +144,7 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
                 .background(Color.Black.copy(alpha = 0.7f)).padding(12.dp))
         FilmReminderOverlay(library,
             eligible = mode == PlayerMode.Fullscreen && channel != null && timeline == null && !quickMenu && !bannerVisible,
-            watchingLiveChannelId = channel?.id?.takeIf { playWhenReady && !viewModel.isArchive() && frame.nowMs > 0 })
+            watchingLiveChannelId = liveChannelId)
     }
 }
 

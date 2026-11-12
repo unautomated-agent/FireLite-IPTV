@@ -193,13 +193,16 @@ private fun ChannelBrowser(
     val focusGeneration = categoryFocus.generation
     var pendingCategoryFocus by remember { mutableStateOf<CategoryFocusRequest?>(null) }
     var focusJob by remember { mutableStateOf<Job?>(null) }
+    val guideFocus = remember { GuideFocusMemory() }
+    var manualGuideFocus by remember { mutableStateOf(false) }
     val now by wallClock()
     val limits by remember(selected) { library.guideLimits(selected) }.collectAsState(initial = 0 to null)
     val bounds = GuideTimeline.bounds(now, limits.first, limits.second)
-    var requestedStart by remember(selected) { mutableStateOf(now / (GuideTimeline.HOUR / 2) * (GuideTimeline.HOUR / 2)) }
+    var requestedStart by remember(selected) { mutableStateOf(if (guideOnly) guideFocus.cell(selected, now).windowStart
+        else now / (GuideTimeline.HOUR / 2) * (GuideTimeline.HOUR / 2)) }
     val windowStart = GuideTimeline.windowStart(requestedStart, bounds)
-    var focusedTime by remember(selected) { mutableStateOf(now) }
-    var programmeFocus by remember(selected) { mutableStateOf(false) }
+    var focusedTime by remember(selected) { mutableStateOf(if (guideOnly) guideFocus.cell(selected, now).time else now) }
+    var programmeFocus by remember(selected) { mutableStateOf(guideOnly && guideFocus.cell(selected, now).programme) }
     var focusedProgramme by remember(selected) { mutableStateOf<ProgrammeEntity?>(null) }
     fun switchCategory(delta: Int) {
         val current = categoryFocus.selection(library.selectedGroup.value)
@@ -236,6 +239,20 @@ private fun ChannelBrowser(
     var pendingRestore by remember { mutableStateOf<Pair<GroupKey, Int>?>(null) }
     var handledRestore by remember { mutableStateOf<Int?>(null) }
     var channelsHaveFocus by remember { mutableStateOf(false) }
+    fun saveGuideCell() {
+        if (guideOnly && channelsHaveFocus && selected == library.selectedGroup.value) {
+            guideFocus.save(selected, GuideCellFocus(requestedStart, focusedTime, programmeFocus))
+        }
+    }
+    fun takeGuideFocus() {
+        saveGuideCell()
+        manualGuideFocus = true
+        focusJob?.cancel()
+        pendingRestore = null
+        handledRestore = restore?.token
+        categoryFocus.cancel()
+        pendingCategoryFocus = null
+    }
     val rowRequesters = remember { HashMap<Long, FocusRequester>() }
     fun rowRequester(row: ChannelRow): FocusRequester =
         rowRequesters.getOrPut(row.channel.id) { FocusRequester() }
@@ -274,7 +291,19 @@ private fun ChannelBrowser(
         }
     }
     fun focusSelectedGroup() {
-        focusGroup(groups.indexOfFirst { it.key == selected })
+        if (guideOnly) takeGuideFocus()
+        focusGroup(groups.indexOfFirst { it.key == library.selectedGroup.value })
+    }
+    fun moveGuideFocus(forward: Boolean, repeatCount: Int) {
+        when (GuideFocusMemory.destination(forward, repeatCount)) {
+            GuideFocusPane.Groups -> focusSelectedGroup()
+            GuideFocusPane.Grid -> {
+                takeGuideFocus()
+                pendingCategoryFocus = categoryFocus.begin(library.selectedGroup.value)
+                browserFocus.requestFocus()
+            }
+            null -> Unit
+        }
     }
 
     var focusedChannel by remember { mutableStateOf<ChannelRow?>(null) }
@@ -308,8 +337,9 @@ private fun ChannelBrowser(
     }
     DisposableEffect(selected) { onDispose { focusJob?.cancel() } }
     DisposableEffect(Unit) { onDispose { if (!overlay) player.cancelPreview() } }
-    LaunchedEffect(active, restore?.token) {
+    LaunchedEffect(active, restore?.token, manualGuideFocus) {
         val target = restore ?: return@LaunchedEffect
+        if (guideOnly && manualGuideFocus) return@LaunchedEffect
         if (!active || handledRestore == target.token) return@LaunchedEffect
         programmeFocus = guideOnly
         focusedTime = now
@@ -320,6 +350,7 @@ private fun ChannelBrowser(
             group = GroupKey.Named(target.channel.groupName)
             index = library.channelIndex(group, target.channel.streamUrl)
         }
+        if (guideOnly && manualGuideFocus) return@LaunchedEffect
         if (index != null) {
             pendingRestore = group to index
             library.selectGroup(group)
@@ -328,20 +359,24 @@ private fun ChannelBrowser(
             handledRestore = target.token
         }
     }
-    LaunchedEffect(active, pendingRestore, selected, pagingItems.itemCount) {
+    LaunchedEffect(active, pendingRestore, selected, pagingItems.itemCount, manualGuideFocus) {
+        if (guideOnly && manualGuideFocus) return@LaunchedEffect
         val (group, index) = pendingRestore ?: return@LaunchedEffect
         if (!active || selected != group || index !in 0 until pagingItems.itemCount) return@LaunchedEffect
-        restoreIndex = index
-        channelListState.scrollToItem(index)
-        val row = snapshotFlow { pagingItems.peek(index) }.filterNotNull().first()
-        rowRequester(row).requestFocusWhenReady()
-        handledRestore = restore?.token
-        pendingRestore = null
+        focusJob?.cancel()
+        focusJob = launch {
+            restoreIndex = index
+            channelListState.scrollToItem(index)
+            val row = snapshotFlow { pagingItems.peek(index) }.filterNotNull().first()
+            rowRequester(row).requestFocusWhenReady()
+            handledRestore = restore?.token
+            pendingRestore = null
+        }
     }
     val initialGroup = remember { library.selectedGroup.value }
     var initialFocusRequested by remember { mutableStateOf(false) }
     LaunchedEffect(groups.isNotEmpty(), active) {
-        if (active && !overlay && restore == null && groups.isNotEmpty() && !initialFocusRequested) {
+        if (active && !overlay && restore == null && groups.isNotEmpty() && !initialFocusRequested && !manualGuideFocus) {
             initialFocusRequested = true
             val index = groups.indexOfFirst { it.key == initialGroup }
             if (index >= 0) {
@@ -379,7 +414,10 @@ private fun ChannelBrowser(
                     focusedChannel = row
                     focusedIndex = index
                 }
-            } else if (categoryFocus.complete(request)) pendingCategoryFocus = null
+            } else if (categoryFocus.complete(request)) {
+                pendingCategoryFocus = null
+                if (guideOnly) focusSelectedGroup()
+            }
         }
     }
 
@@ -402,8 +440,14 @@ private fun ChannelBrowser(
                     Key.MediaFastForward -> { if (event.nativeKeyEvent.repeatCount == 0) switchCategory(1); true }
                     else -> false
                 } else when (event.key) {
-                    Key.MediaRewind -> { shiftWindow(-GuideTimeline.HOUR); true }
-                    Key.MediaFastForward -> { shiftWindow(GuideTimeline.HOUR); true }
+                    Key.MediaRewind -> {
+                        if (guideOnly) moveGuideFocus(false, event.nativeKeyEvent.repeatCount) else shiftWindow(-GuideTimeline.HOUR)
+                        true
+                    }
+                    Key.MediaFastForward -> {
+                        if (guideOnly) moveGuideFocus(true, event.nativeKeyEvent.repeatCount) else shiftWindow(GuideTimeline.HOUR)
+                        true
+                    }
                     Key.MediaPlayPause -> {
                         focusedTime = now
                         requestedStart = now / (GuideTimeline.HOUR / 2) * (GuideTimeline.HOUR / 2)
@@ -413,7 +457,7 @@ private fun ChannelBrowser(
                     else -> false
                 }
             }
-            .then(if (overlay) Modifier.focusable() else Modifier)
+            .then(if (overlay || guideOnly) Modifier.focusable() else Modifier)
             .padding(start = 16.dp, end = 24.dp, top = 20.dp, bottom = 24.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
     ) {

@@ -78,6 +78,7 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
     val mode by viewModel.mode.collectAsState()
     val player by viewModel.player.collectAsState()
     val status by viewModel.status.collectAsState()
+    val startupDelayed by viewModel.startupDelayed.collectAsState()
     val timeline by viewModel.timeline.collectAsState()
     var playWhenReady by remember(player) { mutableStateOf(player?.playWhenReady == true) }
     DisposableEffect(player) {
@@ -122,6 +123,10 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
         if (mode == PlayerMode.Fullscreen && timeline == null) PlayerContent(viewModel, onMainMenu)
         if (mode == PlayerMode.Overlay) PlayerChannelOverlay(library, viewModel)
         timeline?.let { ChannelHistoryList(it, viewModel, library) }
+        if (startupDelayed && mode != PlayerMode.Closed) FLText(stringResource(R.string.player_start_delayed),
+            style = FireLiteTheme.typography.label, color = FireLiteTheme.colors.textPrimary,
+            modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
+                .background(Color.Black.copy(alpha = 0.7f)).padding(12.dp))
     }
 }
 

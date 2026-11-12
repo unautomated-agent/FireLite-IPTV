@@ -19,6 +19,11 @@ internal class CategoryFocusMemory {
 
     fun isCurrent(request: CategoryFocusRequest): Boolean = pending == request
 
+    fun cancel() {
+        generation++
+        pending = null
+    }
+
     fun record(group: GroupKey, generation: Long, target: ChannelFocusTarget): Boolean {
         if (generation != this.generation || pending != null) return false
         targets[group] = target

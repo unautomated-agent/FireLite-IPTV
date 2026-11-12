@@ -20,6 +20,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
+import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.db.ChannelEntity
 import dev.firetvlite.iptv.data.epg.CurrentAndNext
 import dev.firetvlite.iptv.playback.PlaybackFrame
@@ -67,9 +69,11 @@ internal fun PlayerInfoBanner(channel: ChannelEntity?, frame: PlaybackFrame, gui
                         style = type.label, color = colors.textSecondary)
                 }
                 ProgressBar(PlaybackTime.progress(frame.watchedMs, current.start, current.stop))
-                guide.next?.let { FLText("Następnie: ${it.title}", style = type.body, maxLines = 1, color = colors.accent) }
-                if (!current.description.isNullOrBlank()) FLText(current.description.orEmpty(), style = type.body,
-                    maxLines = if (expanded) Int.MAX_VALUE else 3, color = colors.textSecondary,
+            }
+            guide.next?.let { FLText(stringResource(R.string.channel_next_programme, clockTime(it.start), it.title),
+                style = type.body, maxLines = 1, color = colors.accent) }
+            current?.description?.takeIf { it.isNotBlank() }?.let { description ->
+                FLText(description, style = type.body, maxLines = if (expanded) Int.MAX_VALUE else 3, color = colors.textSecondary,
                     modifier = if (expanded) Modifier.heightIn(max = 260.dp).verticalScroll(scroll) else Modifier)
             }
         }

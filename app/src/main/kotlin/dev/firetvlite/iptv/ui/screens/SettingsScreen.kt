@@ -17,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
@@ -29,10 +30,12 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import dev.firetvlite.iptv.R
+import dev.firetvlite.iptv.FireLiteApplication
 import dev.firetvlite.iptv.data.db.SourceEntity
 import dev.firetvlite.iptv.data.db.SavedSource
 import dev.firetvlite.iptv.data.epg.EpgState
@@ -91,6 +94,13 @@ fun SettingsScreen(
             style = FireLiteTheme.typography.display,
             modifier = Modifier.padding(start = 4.dp),
         )
+        SettingsCard {
+            val preferences = (LocalContext.current.applicationContext as FireLiteApplication).container.clockPreferences
+            val visible by preferences.visible.collectAsState()
+            FLText(stringResource(R.string.settings_appearance), style = FireLiteTheme.typography.title)
+            PrimaryButton(stringResource(if (visible) R.string.settings_clock_on else R.string.settings_clock_off),
+                { preferences.setVisible(!visible) })
+        }
         SettingsCard { OmdbSettings() }
         SourceSection(
             source = source,

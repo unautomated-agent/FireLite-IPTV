@@ -1,10 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Default (and only) UI language: Polish. Resource names are English. -->
 <resources>
+    <string name="settings_appearance">Wygląd</string>
+    <string name="settings_clock_on">Zegar w lewym górnym rogu: włączony</string>
+    <string name="settings_clock_off">Zegar w lewym górnym rogu: wyłączony</string>
     <string name="nav_films">Najlepsze filmy</string>
     <string name="films_setup_hint">Ustaw klucz OMDb w Ustawieniach, aby zobaczyć oceny IMDb i ranking filmów.</string>
     <string name="films_first_window">Najbliższe 24 h</string>
     <string name="films_second_window">Pojutrze (24–48 h)</string>
+    <string name="films_archive">Z archiwum</string>
+    <string name="films_archive_remaining">Dostępny jeszcze: %1$d godz. %2$d min</string>
+    <string name="films_archive_expired">Ten film nie jest już dostępny w archiwum.</string>
     <string name="films_selected_tab">● %1$s</string>
     <string name="films_empty">Brak filmów w tym przedziale. Odśwież EPG w Ustawieniach.</string>
     <string name="films_starts_at">Zaczyna się o %1$s</string>
@@ -120,9 +126,11 @@
     <string name="channel_timeline_hour">Przedział godzinowy</string>
     <string name="channel_timeline_today">Dziś</string>
     <string name="channel_timeline_yesterday">Wczoraj</string>
+    <string name="channel_timeline_tomorrow">Jutro</string>
+    <string name="channel_timeline_upcoming">%1$s · Wkrótce · %2$s</string>
     <string name="channel_timeline_start">Początek archiwum</string>
     <string name="channel_timeline_unavailable">Ten kanał nie ma dostępnego archiwum.</string>
-    <string name="channel_timeline_future">Ten program jeszcze się nie rozpoczął.</string>
+    <string name="channel_timeline_future">Zaczyna się o %1$s</string>
     <string name="channel_timeline_hint">Góra/Dół: audycja · ⏪/⏩: dzień · OK: oglądaj · Wstecz: zamknij</string>
     <string name="channel_timeline_overlay_hint">Prawo: historia audycji</string>
     <string name="player_seek_unsupported">Przewijanie nie jest dostępne dla tego kanału.</string>
@@ -165,4 +173,5 @@
     <string name="import_error_empty">Lista jest pusta albo to nie jest plik M3U.</string>
     <string name="import_error_no_source">Najpierw dodaj adres listy.</string>
 
+    <string name="player_start_delayed">Odtwarzanie trwa dłużej niż zwykle. Zapisano diagnostykę; nadal czekamy na obraz.</string>
 </resources>

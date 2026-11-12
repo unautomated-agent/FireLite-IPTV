@@ -58,9 +58,11 @@ class FilmsTest {
         val future = film("Future").copy(originalTitle = "Future", start = now + Films.DAY, stop = now + Films.DAY + 120 * 60_000)
         val ended = airing.copy(stop = now)
         val outside = future.copy(start = now + 2 * Films.DAY, stop = now + 2 * Films.DAY + 120 * 60_000)
-        assertEquals(listOf(airing, future), ratingCandidates(listOf(airing, future, ended, outside, airing), now))
+        assertEquals(listOf(airing, future), ratingCandidates(listOf(airing, future, ended, outside, airing).map {
+            FilmShowing(channel(), it, null)
+        }, now))
         assertTrue(ratingCandidates(emptyList(), now).isEmpty())
-        assertTrue(ratingCandidates(listOf(airing.copy(episodeNum = "S1 E1")), now).isEmpty())
+        assertTrue(ratingCandidates(listOf(FilmShowing(channel(), airing.copy(episodeNum = "S1 E1"), null)), now).isEmpty())
     }
     @Test fun selectsOriginalThenPolishAndAdjacentYearsWithoutDuplicateQueries() {
         assertEquals(listOf("About a Boy" to 2002, "Był sobie chłopiec" to 2002,
@@ -185,6 +187,71 @@ class FilmsTest {
     }
     private fun channel() = ChannelEntity(id = 1, sourceId = 1, position = 0, name = "Kino", groupName = "Filmy",
         streamUrl = "unused", logoUrl = null, tvgId = null, catchupType = null, catchupSource = null, catchupDays = 0)
+
+    @Test fun archiveEligibilityUsesStartWindowEndedStatusAndSupportedCatchup() {
+        val channel = channel().copy(catchupType = "shift", catchupDays = 2)
+        val boundary = film().copy(start = now - 2 * Films.DAY, stop = now - 2 * Films.DAY + 120 * 60_000)
+        assertTrue(Films.archived(channel, boundary, now))
+        assertEquals(now, Films.archiveUntil(channel, boundary))
+        assertFalse(Films.archived(channel, boundary.copy(start = boundary.start - 1), now))
+        assertTrue(Films.archived(channel, boundary.copy(stop = now), now))
+        assertFalse(Films.archived(channel, boundary.copy(stop = now + 1), now))
+        assertFalse(Films.archived(channel, boundary.copy(stop = boundary.start), now))
+        assertFalse(Films.archived(channel.copy(catchupDays = 0), boundary, now))
+        assertFalse(Films.archived(channel.copy(catchupType = "unsupported"), boundary, now))
+        assertFalse(Films.archived(channel.copy(catchupType = "default", catchupSource = null), boundary, now))
+        assertEquals(now - 2 * Films.DAY, Films.archiveWindowStart(listOf(channel,
+            channel.copy(catchupDays = 20, catchupType = "unsupported")), now))
+        assertEquals(now, Films.archiveWindowStart(emptyList(), now))
+    }
+
+    @Test fun archiveRankingsSortRatingsThenVotesAndExcludeExpiredUnsupportedAndAiring() {
+        val channel = channel().copy(catchupType = "shift", catchupDays = 2)
+        fun showing(score: Double?, votes: Long) = FilmShowing(channel,
+            film().copy(start = now - Films.DAY - votes * 60_000, stop = now - Films.DAY - votes * 60_000 + 120 * 60_000),
+            score?.let { FilmRatingEntity("k", it, votes, "tt123", now) })
+        val best = showing(9.0, 10)
+        val votes = showing(8.0, 100)
+        val fewerVotes = showing(8.0, 1)
+        val unrated = showing(null, 0)
+        val expired = best.copy(programme = best.programme.copy(start = now - 3 * Films.DAY,
+            stop = now - 3 * Films.DAY + 120 * 60_000))
+        val unsupported = best.copy(channel = channel.copy(catchupType = "unsupported"))
+        val airing = best.copy(programme = film().copy(start = now - 60_000))
+        val duplicate = best.copy(programme = best.programme.copy(stop = best.programme.stop + 1_000))
+        val films = listOf(unrated, fewerVotes, votes, expired, unsupported, airing, best, duplicate)
+        assertEquals(listOf(best, votes, fewerVotes, unrated), rankedFilms(films, now, Films.ARCHIVE_TAB))
+        assertTrue(rankedFilms(emptyList(), now, Films.ARCHIVE_TAB).isEmpty())
+        assertTrue(rankedFilms(films, now, 3).isEmpty())
+    }
+
+    @Test fun enrichmentIncludesArchiveOnlyOnSupportedChannelsAndPrioritizesUpcomingCopies() {
+        val channel = channel().copy(catchupType = "shift", catchupDays = 2)
+        val past = film().copy(start = now - Films.DAY, stop = now - Films.DAY + 120 * 60_000)
+        val archive = FilmShowing(channel, past, null)
+        val future = FilmShowing(channel, film(), null)
+        assertEquals(listOf(past), ratingCandidates(listOf(archive), now))
+        assertEquals(listOf(future.programme), ratingCandidates(listOf(archive, future), now))
+        assertTrue(ratingCandidates(listOf(archive.copy(channel = channel.copy(catchupDays = 0)),
+            archive.copy(programme = past.copy(start = now - 3 * Films.DAY, stop = now - 3 * Films.DAY + 120 * 60_000)),
+            archive.copy(programme = past.copy(episodeNum = "S1 E1"))), now).isEmpty())
+    }
+
+    @Test fun archiveLookupsShareTheSameCacheAndDailyBudgetAsUpcomingFilms(): Unit = runBlocking {
+        val store = Store()
+        store.used[Films.day(now)] = 399
+        var requests = 0
+        val lookup = FilmLookup(OmdbClient { _, _, _ ->
+            requests++
+            OmdbResult.Found(OmdbMovie("movie", 2002, 8.0, 100, "tt123"))
+        }, store, { now }) {}
+        val past = film().copy(start = now - Films.DAY, stop = now - Films.DAY + 120 * 60_000)
+        assertNotNull(lookup.lookup(past, "fixture", now))
+        assertNotNull(lookup.lookup(film(), "fixture", now))
+        assertNull(lookup.lookup(past.copy(title = "Other film", originalTitle = "Other film"), "fixture", now))
+        assertEquals(1, requests)
+        assertEquals(400, store.used[Films.day(now)])
+    }
     @Test fun rankingsUseHalfOpenWindowsIncludeAiringAndSortRatingThenVotes() {
         fun showing(start: Long, score: Double?, votes: Long = 100) = FilmShowing(channel(), film().copy(start = start,
             stop = start + 120 * 60_000), score?.let { FilmRatingEntity("k", it, votes, "tt123", now) })

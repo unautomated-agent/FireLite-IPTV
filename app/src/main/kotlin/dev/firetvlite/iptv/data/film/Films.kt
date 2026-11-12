@@ -1,7 +1,9 @@
 package dev.firetvlite.iptv.data.film
 
 import dev.firetvlite.iptv.data.db.ProgrammeEntity
+import dev.firetvlite.iptv.data.db.ChannelEntity
 import dev.firetvlite.iptv.data.db.FilmRatingEntity
+import dev.firetvlite.iptv.playback.CatchupUrlBuilder
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -11,6 +13,7 @@ import kotlinx.coroutines.flow.combine
 
 object Films {
     const val DAY = 86_400_000L
+    const val ARCHIVE_TAB = 2
     val zone: ZoneId = ZoneId.of("Europe/Warsaw")
     private val series = Regex("(?iu)\\b(serial\\w*|series|odc\\.?|odcinek|sezon|season|episode|s\\d{1,2}\\s*e\\d+|e\\d+)\\b|\\(\\d+/\\d+\\)")
     private val genre = Regex("(?imu)\\b(sensacja|dramat|komedia|thriller|horror|western|sci-fi|science fiction|kryminał|przygodowy|wojenny|obyczajowy|romans|fantasy|biograficzny|animowany film|action|drama|comedy|crime|adventure|war|romance|biographical|animated film|animated movie|feature film|television film|tv movie)\\b|\\bfilm (fabularny|kinowy|telewizyjny|animowany)\\b|^(films?|movies?|motion pictures?)$")
@@ -33,8 +36,19 @@ object Films {
     fun fresh(rating: FilmRatingEntity, now: Long): Boolean = now >= rating.fetchedAt &&
         now - rating.fetchedAt < (if (rating.imdbId == null) 7 else 30) * DAY
     fun day(now: Long): Long = Instant.ofEpochMilli(now).atZone(zone).toLocalDate().toEpochDay()
-    fun inWindow(p: ProgrammeEntity, now: Long, tab: Int): Boolean = if (tab == 0)
-        p.start < now + DAY && p.stop > now else p.start >= now + DAY && p.start < now + 2 * DAY
+    fun inWindow(p: ProgrammeEntity, now: Long, tab: Int): Boolean = when (tab) {
+        0 -> p.start < now + DAY && p.stop > now
+        1 -> p.start >= now + DAY && p.start < now + 2 * DAY
+        else -> false
+    }
+    fun archiveUntil(channel: ChannelEntity, p: ProgrammeEntity): Long? =
+        if (CatchupUrlBuilder.isSupported(channel)) p.start + channel.catchupDays.toLong() * DAY else null
+
+    fun archived(channel: ChannelEntity, p: ProgrammeEntity, now: Long): Boolean =
+        p.stop > p.start && p.stop <= now && (archiveUntil(channel, p)?.let { it >= now } == true)
+
+    fun archiveWindowStart(channels: List<ChannelEntity>, now: Long): Long = now -
+        (channels.filter { CatchupUrlBuilder.isSupported(it) }.maxOfOrNull { it.catchupDays.toLong() } ?: 0) * DAY
     fun time(time: Long): String = DateTimeFormatter.ofPattern("EEE d.MM HH:mm", Locale.forLanguageTag("pl-PL"))
         .withZone(zone).format(Instant.ofEpochMilli(time))
 }

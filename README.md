@@ -41,6 +41,9 @@ with posters, seasons, history and resume.
 
 ## Live TV
 
+Settings → Wygląd toggles the top-left Warsaw clock across the app and fullscreen playback. The setting
+is saved locally and defaults to on. Turning it off does not change programme/banner times or their zone.
+
 - **Provider compatibility**: M3U guide attributes `x-tvg-url`, `url-tvg`, `tvg-url` accept mixed case,
   double/single quotes or bare values, multiple comma/space-separated feeds and separate option headers.
   XMLTV feeds are streamed in bounded batches, merged by case-insensitive IDs (including `.pl` aliases),
@@ -109,12 +112,14 @@ with posters, seasons, history and resume.
   Long-press Left jumps to the current programme's start when catch-up is available. Archive seeks stay inside
   a seekable archive or re-request it after debounce; reaching the live edge returns to live.
 - **Programme history**: a translucent right-side list leaves video full-size behind it. Compact single-line
-  time/title rows run oldest first, with Na żywo at the bottom and initially focused. Rewind/FastForward jump
-  to the previous/next Warsaw calendar day, clamped to the archive range and today; a day header and details
+  time/title rows run oldest first, with Na żywo initially focused and upcoming programmes below it.
+  Future rows are dimmed and marked Wkrótce; OK shows their start time without changing playback.
+  Rewind/FastForward jump to the previous/next available Warsaw calendar day, clamped to the archive range
+  and the last known EPG programme; a day header and details
   follow the selection. Up/Down select; one OK starts the programme from its start (clipped to
   the archive/window limit), including the current programme when rewind is available. Na żywo returns live.
-  The next programme is shown dimmed above the list, not selectable. Without archive or a seekable window,
-  only Na żywo is selectable. Back or Menu closes without changing playback. Opening/browsing history never
+  Without archive or a seekable window, only Na żywo can start playback; upcoming programmes remain browsable.
+  Back or Menu closes without changing playback. Opening/browsing history never
   previews, prefetches or probes a stream; only final OK uses the existing gated playback path.
 - **Overlay remote**: Up/Down browse without zapping; Right on a channel opens its history;
   short OK plays and closes the panel; long OK opens the full guide on the highlighted channel.
@@ -138,13 +143,21 @@ may still deliver their sole track: track selection cannot transcode or reduce t
 
 The Live browser uses a paged 2.5-hour programme grid. Up/Down preserve the selected absolute time;
 Left/Right move between programmes, and Left from a channel name returns to its group. Rewind/fast-forward
-shift the window by an hour; Play/Pause returns to now. Menu toggles the row's favourite. OK plays a current
+shift the window by an hour in the Live browser. In Program TV (both the main-menu tab and the full guide
+opened by long OK), Rewind focuses the selected group; Fast-forward returns to that group's remembered
+grid row and programme time/window. Group changes keep focus in the group list. Play/Pause returns to now.
+Menu toggles the row's favourite. OK plays a current
 programme live or a retained catch-up programme from its start; future/unavailable cells only show details.
 The group determines history bounds (at most seven days); future browsing ends at the guide's end, capped
 at three days. Focusing a row always previews live, including after leaving archive playback. The fullscreen
 overlay remains a simple channel list.
 
 ## IMDb film ratings
+
+Najlepsze filmy includes a third tab, Z archiwum, for ended films whose start remains inside the
+channel's supported catch-up window. It uses the same IMDb cache and daily lookup budget (upcoming
+films take priority), sorts by rating/votes, shows remaining availability and opens the normal archive
+playback path at the programme start. Each tab keeps its list state; changing tabs leaves focus on the tab.
 
 Settings accepts a locally stored, masked OMDb key (free keys: omdbapi.com/apikey.aspx).
 Diagnostics exposes only whether it is configured. Without a key, badges are hidden and

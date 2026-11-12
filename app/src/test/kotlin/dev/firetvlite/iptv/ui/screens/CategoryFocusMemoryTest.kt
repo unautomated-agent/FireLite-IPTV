@@ -53,4 +53,19 @@ class CategoryFocusMemoryTest {
         assertEquals(kino, memory.target(GroupKey.All))
         assertFalse(memory.complete(empty, natura))
     }
+
+    @Test fun returningToGroupsCancelsPendingGridRestoresWithoutLosingTheTarget() {
+        val memory = CategoryFocusMemory()
+        memory.record(GroupKey.All, 0, kino)
+        val old = memory.begin(GroupKey.All)
+        memory.cancel()
+        assertFalse(memory.isCurrent(old))
+        assertFalse(memory.complete(old, natura))
+        assertFalse(memory.record(GroupKey.All, old.generation, natura))
+        assertEquals(kino, memory.target(GroupKey.All))
+        val next = memory.begin(GroupKey.All)
+        assertEquals(kino, next.target)
+        assertFalse(memory.complete(old, natura))
+        assertTrue(memory.complete(next, kino))
+    }
 }

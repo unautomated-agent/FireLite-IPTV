@@ -23,6 +23,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.LoadEventInfo
 import androidx.media3.exoplayer.source.MediaLoadData
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.Dispatchers
@@ -35,12 +36,14 @@ import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
 import java.io.Closeable
 import java.util.Locale
+import java.net.URI
 
 /** What to play. */
 data class StreamRequest(
     val url: String,
     val userAgent: String,
     val archive: Boolean = false,
+    val channelName: String = "",
 )
 
 sealed interface PlaybackStatus {
@@ -94,6 +97,7 @@ class PlaybackController internal constructor(
     private val preparationError: (Throwable) -> PlaybackException = {
         PlaybackException("Nie udało się przygotować odtwarzania", it, PlaybackException.ERROR_CODE_FAILED_RUNTIME_CHECK)
     },
+    private val startupTimeoutMs: Long = 10_000L,
 ) {
     internal constructor(scope: CoroutineScope, createPlayer: (HttpDataSource.Factory) -> ExoPlayer) :
         this(scope, createPlayer, {})
@@ -121,8 +125,13 @@ class PlaybackController internal constructor(
 
     private var exo: ExoPlayer? = null
     private var startJob: Job? = null
+    private var startupJob: Job? = null
+    private var startupTiming: StartupTiming? = null
     private var retries = 0
-    private var activeSession = 0L
+    @Volatile private var activeSession = 0L
+    @Volatile private var lastHttp: Pair<Long, String>? = null
+    private var sourceType = "auto"
+    private var startupError: PlaybackException? = null
     private var recovery = PlaybackRecovery()
     private var activeRequest: StreamRequest? = null
     private var suspendedRequest: StreamRequest? = null
@@ -150,11 +159,20 @@ class PlaybackController internal constructor(
                     connected = true
                     trace("HTTP_OPEN session=$session stream=$stream active=${connections.incrementAndGet()}")
                     return try {
-                        delegate.open(dataSpec)
+                        delegate.open(dataSpec).also { captureHttp() }
                     } catch (error: Exception) {
+                        captureHttp()
                         runCatching { close() }
                         throw error
                     }
+                }
+
+                private fun captureHttp() {
+                    if (session != activeSession) return
+                    runCatching {
+                        val type = delegate.responseHeaders.entries.firstOrNull { it.key.equals("Content-Type", true) }?.value?.joinToString()
+                        "HTTP=${delegate.responseCode}; Content-Type=${type ?: "unknown"}"
+                    }.getOrNull()?.let { lastHttp = session to it }
                 }
 
                 override fun close() {
@@ -178,6 +196,8 @@ class PlaybackController internal constructor(
 
     private val mutableStatus = MutableStateFlow<PlaybackStatus>(PlaybackStatus.Idle)
     val status: StateFlow<PlaybackStatus> = mutableStatus.asStateFlow()
+    private val mutableStartupDelayed = MutableStateFlow(false)
+    val startupDelayed: StateFlow<Boolean> = mutableStartupDelayed.asStateFlow()
 
     private val listener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) = refreshStatus()
@@ -189,9 +209,18 @@ class PlaybackController internal constructor(
         override fun onIsPlayingChanged(isPlaying: Boolean) { if (isPlaying) recordSuccess() }
 
         override fun onTracksChanged(tracks: Tracks) { recordSuccess() }
+
+        override fun onRenderedFirstFrame() {
+            if (exo?.playbackState == Player.STATE_READY || exo?.playbackState == Player.STATE_BUFFERING) renderingStarted()
+        }
     }
 
     private val analytics = object : AnalyticsListener {
+        override fun onAudioPositionAdvancing(eventTime: AnalyticsListener.EventTime, playoutStartSystemTimeMs: Long) {
+            val player = exo ?: return
+            if (player.playbackState == Player.STATE_READY && player.audioFormat != null &&
+                player.currentTracks.groups.none { it.type == C.TRACK_TYPE_VIDEO }) renderingStarted()
+        }
         override fun onLoadCompleted(eventTime: AnalyticsListener.EventTime, loadEventInfo: LoadEventInfo,
             mediaLoadData: MediaLoadData) {
             if (activeRequest != null && mediaLoadData.dataType == C.DATA_TYPE_MANIFEST)
@@ -216,7 +245,8 @@ class PlaybackController internal constructor(
     }
 
     private fun describe(format: Format): String =
-        "${format.sampleMimeType ?: "?"}/${format.codecs ?: "?"} ch=${format.channelCount} bps=${format.bitrate}"
+        "${format.sampleMimeType ?: "?"}/${format.codecs ?: "?"} ch=${format.channelCount} bps=${format.bitrate}" +
+            if (format.width > 0) " ${format.width}x${format.height}@${format.frameRate}" else ""
 
     private fun selectedFormats(): String = listOfNotNull(
         exo?.audioFormat?.let { "A ${describe(it)}" },
@@ -230,11 +260,52 @@ class PlaybackController internal constructor(
                 if (group.isTrackSupported(index)) "" else " [nieobsługiwany]"
         } }.joinToString("; ")
 
-    private fun diagnostic(error: PlaybackException? = null): String {
+    private fun diagnostic(error: PlaybackException? = null, code: String? = error?.errorCodeName, details: List<String> = emptyList()): String {
         val request = activeRequest ?: return ""
         val mode = (if (preview) "preview/" else "") + if (request.archive) "archive" else "live"
-        return PlaybackDiagnosticRecord.text(request.url, mode, error?.errorCodeName, error,
-            selectedFormats(), availableFormats(), audioDecoder)
+        return PlaybackDiagnosticRecord.text(request.url, mode, code, error,
+            selectedFormats(), availableFormats(), audioDecoder, details = details)
+    }
+
+    private fun renderingStarted() {
+        if (activeRequest == null) return
+        retries = 0
+        clearStartupWatch()
+    }
+
+    private fun clearStartupWatch() {
+        startupJob?.cancel()
+        startupJob = null
+        startupTiming = null
+        mutableStartupDelayed.value = false
+    }
+
+    private fun watchStartup(request: StreamRequest) {
+        clearStartupWatch()
+        val timing = StartupTiming()
+        startupTiming = timing
+        startupJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            delay(startupTimeoutMs)
+            if (activeRequest !== request) return@launch
+            val player = exo
+            val state = when (player?.playbackState) {
+                Player.STATE_BUFFERING -> "BUFFERING"
+                Player.STATE_READY -> "READY"
+                Player.STATE_ENDED -> "ENDED"
+                else -> "IDLE"
+            }
+            recordPlayback(true, diagnostic(startupError, code = "START_TIMEOUT", details = listOf(
+                "Channel: ${request.channelName.ifBlank { "unknown" }}",
+                *timing.detail().lines().toTypedArray(),
+                if (timing.waitingForPrevious)
+                    "Ownership: previous session connections/player/tracks; requested stream not prepared"
+                else "Ownership: requested stream session",
+                "Player: $state; pos=${player?.currentPosition}; buffered=${player?.bufferedPosition}; openHTTP=${connections.get()}",
+                "Source: $sourceType",
+                "HTTP: ${lastHttp?.takeIf { it.first == activeSession }?.second ?: "not available"}",
+            )))
+            mutableStartupDelayed.value = true
+        }
     }
 
     private fun recordSuccess() {
@@ -273,6 +344,14 @@ class PlaybackController internal constructor(
         retries = 0
         recovery = PlaybackRecovery()
         startJob?.cancel()
+        sourceType = when (runCatching { URI(request.url).path.substringAfterLast('.').lowercase() }.getOrNull()) {
+            "m3u8" -> "HLS"
+            "mpd" -> "DASH"
+            else -> "auto/progressive"
+        }
+        lastHttp = null
+        startupError = null
+        watchStartup(request)
         httpFactory.setUserAgent(request.userAgent)
 
         val player = prepareSafely { ensurePlayer() } ?: return
@@ -285,9 +364,13 @@ class PlaybackController internal constructor(
         trace("STOP before switch")
         mutableStatus.value = PlaybackStatus.Connecting
 
+        startupTiming?.enter(StartupTiming.Phase.CLOSE_GRACE)
+
         startJob = scope.launch {
             delay(CLOSE_GRACE_MS) // ... and give the server time to notice, only then open the new one
+            startupTiming?.enter(StartupTiming.Phase.WAITING_PREVIOUS_CONNECTION)
             awaitConnectionClose()
+            startupTiming?.enter(StartupTiming.Phase.PREPARING_BUFFERING)
             trace("PREPARE session=$session player=${System.identityHashCode(player)} stream=${request.url.hashCode()}")
             prepareSafely {
                 setStream(player, mediaItem(request.url), trackedFactory(session))
@@ -310,6 +393,7 @@ class PlaybackController internal constructor(
     }
 
     private fun failPreparation(cause: Throwable) {
+        clearStartupWatch()
         val error = preparationError(cause)
         recordPlayback(true, diagnostic(error))
         activeRequest = null
@@ -320,6 +404,7 @@ class PlaybackController internal constructor(
 
     /** Closes the stream for good. */
     fun stop() {
+        clearStartupWatch()
         startJob?.cancel()
         startJob = null
         activeRequest = null
@@ -437,7 +522,6 @@ class PlaybackController internal constructor(
             Player.STATE_BUFFERING -> mutableStatus.value = PlaybackStatus.Buffering
             Player.STATE_READY -> {
                 recovery.onReady()
-                retries = 0
                 mutableStatus.value =
                     if (player.playWhenReady) PlaybackStatus.Playing else PlaybackStatus.Paused
             }
@@ -448,6 +532,7 @@ class PlaybackController internal constructor(
 
     private fun handleError(error: PlaybackException) {
         if (activeRequest == null) return
+        startupError = error
         recordPlayback(true, diagnostic(error))
         if (retries < MAX_RETRIES) {
             retries++
@@ -457,19 +542,24 @@ class PlaybackController internal constructor(
             mutableStatus.value = PlaybackStatus.Connecting
             startJob?.cancel()
             exo?.stop()
+            startupTiming?.enter(StartupTiming.Phase.RECOVERY_DELAY)
             startJob = scope.launch {
                 delay(if (action == RecoveryAction.Retry) RETRY_DELAY_MS * retries else CLOSE_GRACE_MS)
+                startupTiming?.enter(StartupTiming.Phase.WAITING_RECOVERY_CONNECTION)
                 awaitConnectionClose()
                 val player = exo ?: return@launch
                 if (activeRequest !== request || activeSession != session) return@launch
+                startupTiming?.enter(StartupTiming.Phase.PREPARING_BUFFERING)
                 prepareSafely {
                     recovery.onRecovery(action)
                     when (action) {
                         RecoveryAction.LiveEdge -> player.seekToDefaultPosition()
                         RecoveryAction.Progressive -> {
+                            sourceType = "progressive/MP2T fallback"
                             setStream(player, progressiveItem(request.url), trackedFactory(session))
                         }
                         RecoveryAction.RestoreHls -> {
+                            sourceType = "HLS"
                             setStream(player, mediaItem(request.url), trackedFactory(session))
                         }
                         RecoveryAction.Retry -> Unit
@@ -479,6 +569,7 @@ class PlaybackController internal constructor(
                 }
             }
         } else {
+            clearStartupWatch()
             mutableStatus.value = PlaybackStatus.Failed(error.errorCodeName)
             activeRequest = null
             gate.onStopped() // lets the user try the same channel again

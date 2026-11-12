@@ -2,8 +2,10 @@
 
 The Android vector drawables in `app/src/main/res/drawable` are the masters:
 `ic_launcher_background`, `ic_launcher_foreground`, `ic_launcher_monochrome`, and `banner`.
-The flame contains a negative-space play glyph. Its silhouette fits inside the adaptive
-icon's central 66-dp safe circle on the 108-dp canvas, including the monochrome layer.
+The rounded widescreen TV has a small pedestal and three rising signal bars, with a cyan-to-periwinkle
+frame over a deep blue-to-violet background. Its silhouette fits inside the adaptive icon's central
+66-dp safe circle on the 108-dp canvas, including the monochrome layer. Bold bezels and simple bars
+keep the mark legible in the smallest legacy icon and in the 320×180 TV banner.
 The banner wordmark is outlined DejaVu Sans Bold; no font is needed at runtime.
 The cyan `Lite` uses the UI accent, #4FC3F7.
 

@@ -140,7 +140,7 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
             FLText("$dayLabel · " +
                 (if (focused.live) "" else "${clockTime(focused.start)}–${clockTime(focused.stop)} · ") + timelineTitle(focused),
                 style = FireLiteTheme.typography.body, maxLines = 1)
-            ImdbRating(focused.programme)
+            ImdbRating(focused.programme, showVotes = true)
             FLText(focused.programme?.description?.takeIf { it.isNotBlank() }
                 ?: "",
                 style = FireLiteTheme.typography.label, maxLines = 2)

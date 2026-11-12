@@ -144,7 +144,7 @@ internal fun ProgrammeGridRow(
                         FLText(cell.programme?.title ?: stringResource(R.string.guide_no_programme),
                             style = FireLiteTheme.typography.label,
                             color = if (playable) colors.textPrimary else colors.textSecondary.copy(alpha = 0.65f), maxLines = 2)
-                        if (cellWidth >= 80.dp) ImdbRating(cell.programme)
+                        if (cellWidth >= 120.dp) ImdbRating(cell.programme)
                     }
                 }
             }

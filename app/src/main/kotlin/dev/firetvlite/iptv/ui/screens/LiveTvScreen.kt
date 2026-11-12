@@ -748,7 +748,7 @@ private fun DetailPanel(
             programme?.let { current ->
                 FLText(programmeTimes(current), style = FireLiteTheme.typography.label, color = FireLiteTheme.colors.accent)
                 FLText(current.title, style = FireLiteTheme.typography.title, maxLines = 2)
-                ImdbRating(current)
+                ImdbRating(current, showVotes = true)
                 current.description?.let { FLText(it, style = FireLiteTheme.typography.label, maxLines = 3) }
             }
             val available = programme != null && programme.start <= now &&

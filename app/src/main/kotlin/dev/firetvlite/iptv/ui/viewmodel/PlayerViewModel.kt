@@ -229,7 +229,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             if (archiveTime != null) {
                 activeChannel = first
                 activeIndex = index
-                applyCatchup(first, archiveTime)
+                applyCatchup(first, archiveTime, restartIfActive = true)
             } else if (!sameChannel || archiveStartMs != null || status.value is PlaybackStatus.Failed) startLive(first)
             markWatched(first)
         }
@@ -501,7 +501,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun applyCatchup(channel: ChannelEntity, time: Long) {
+    private fun applyCatchup(channel: ChannelEntity, time: Long, restartIfActive: Boolean = false) {
         val now = System.currentTimeMillis() / 1000
         val start = time / 1000
         val url = CatchupUrlBuilder.build(
@@ -515,7 +515,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
         archiveStartMs = start * 1000
-        playback.play(StreamRequest(url, userAgent, archive = true, channelName = channel.name))
+        val request = StreamRequest(url, userAgent, archive = true, channelName = channel.name)
+        if (restartIfActive) playback.playArchiveFromStart(request) else playback.play(request)
         updateFrame()
     }
 

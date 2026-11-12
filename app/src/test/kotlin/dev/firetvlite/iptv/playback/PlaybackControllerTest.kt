@@ -21,6 +21,83 @@ import org.junit.Test
 class PlaybackControllerTest {
     private val request = StreamRequest("https://example.org/live", "FireLite")
 
+    @Test fun explicitSelectionOfTheActiveArchiveSeeksToZeroWithoutReopening() = runBlocking {
+        val fake = FakePlayer()
+        val trace = mutableListOf<String>()
+        var creations = 0
+        val controller = PlaybackController(this, { creations++; fake.player }, { trace += it }, { MediaItem.EMPTY })
+        val archive = request.copy(url = "https://example.org/archive/123", archive = true)
+        controller.playArchiveFromStart(archive)
+        delay(450)
+        fake.position = 75_000L
+        fake.seekPosition = 75_000L
+        val streamCalls = fake.calls.filter { it in listOf("stop", "clearMediaItems", "setMediaItem", "prepare") }
+
+        controller.playArchiveFromStart(archive)
+
+        assertEquals(0L, fake.seekPosition)
+        assertEquals(1, fake.calls.count { it == "seekTo" })
+        assertEquals(streamCalls, fake.calls.filter { it in listOf("stop", "clearMediaItems", "setMediaItem", "prepare") })
+        assertEquals(1, creations)
+        assertEquals(1, trace.count { it.startsWith("PREPARE") })
+        controller.stop()
+    }
+
+    @Test fun ordinaryDuplicateArchiveAndLiveRequestsRemainNoOps() = runBlocking {
+        val fake = FakePlayer()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY })
+        for (archive in listOf(false, true)) {
+            val stream = request.copy(archive = archive)
+            controller.play(stream)
+            delay(450)
+            val calls = fake.calls.toList()
+            controller.play(stream)
+            if (!archive) controller.playArchiveFromStart(stream)
+            assertEquals(calls, fake.calls)
+            controller.stop()
+        }
+    }
+
+    @Test fun matchingUrlWithoutAnIdenticalArchiveRequestDoesNotRestart() = runBlocking {
+        val fake = FakePlayer()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY })
+        val archive = request.copy(archive = true)
+        controller.playArchiveFromStart(archive)
+        delay(450)
+        val calls = fake.calls.toList()
+        controller.playArchiveFromStart(archive.copy(userAgent = "Other"))
+        controller.playArchiveFromStart(archive.copy(archive = false))
+        assertEquals(calls, fake.calls)
+        controller.stop()
+    }
+
+    @Test fun duplicateArchiveSelectionWhilePreparingDoesNotSeekOrScheduleAnotherPrepare() = runBlocking {
+        val fake = FakePlayer()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY })
+        val archive = request.copy(archive = true)
+        controller.playArchiveFromStart(archive)
+        controller.playArchiveFromStart(archive)
+        assertEquals(0, fake.calls.count { it == "seekTo" || it == "prepare" })
+        delay(450)
+        assertEquals(1, fake.calls.count { it == "prepare" })
+        controller.stop()
+    }
+
+    @Test fun differentArchiveSelectionsStillStopBeforeOneNewPrepare() = runBlocking {
+        val fake = FakePlayer()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY })
+        controller.playArchiveFromStart(request.copy(url = "https://example.org/archive/first", archive = true))
+        delay(450)
+        fake.calls.clear()
+        controller.playArchiveFromStart(request.copy(url = "https://example.org/archive/second", archive = true))
+        assertEquals(1, fake.calls.count { it == "stop" })
+        assertEquals(0, fake.calls.count { it == "prepare" || it == "seekTo" })
+        delay(450)
+        assertEquals(1, fake.calls.count { it == "prepare" })
+        assertEquals(true, fake.calls.indexOf("stop") < fake.calls.indexOf("prepare"))
+        controller.stop()
+    }
+
     @Test fun startupAndPreviousChannelRequestsReuseThePlayerAndAlwaysStopBeforePrepare() = runBlocking {
         val fake = FakePlayer()
         val trace = mutableListOf<String>()

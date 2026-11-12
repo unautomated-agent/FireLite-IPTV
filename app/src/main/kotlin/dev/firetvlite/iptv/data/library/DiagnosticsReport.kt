@@ -80,6 +80,23 @@ object DiagnosticRedactor {
 object DiagnosticsReport {
     const val QR_BYTES = 1800
 
+    private fun shareable(text: String, known: Set<String> = emptySet()): String {
+        val normalized = text.replace(Regex("(?i)(https?)\\[:\\]//")) { "${it.groupValues[1]}://" }
+        val masked = DiagnosticRedactor.mask(normalized, known)
+        val withoutSchemes = Regex("(?i)https?://[^\\s<>\"']+").replace(masked) { match ->
+            val uri = runCatching { URI(match.value) }.getOrNull()
+            if (uri?.host == null) "[adres ukryty]" else
+                uri.host.replace(".", "[.]").replace(":", "[:]") +
+                    (if (uri.port >= 0) ":${uri.port}" else "") + uri.rawPath.orEmpty() +
+                    (uri.rawQuery?.let { "?$it" } ?: "")
+        }
+        return withoutSchemes.replace(Regex("(?i)(?:[\\p{L}\\p{N}](?:[\\p{L}\\p{N}-]*[\\p{L}\\p{N}])?\\.)+[\\p{L}][\\p{L}\\p{N}-]*")) {
+            it.value.replace(".", "[.]")
+        }.replace(Regex("(?<!\\w)(?:[0-9]{1,3}\\.){3}[0-9]{1,3}(?!\\w)")) { it.value.replace(".", "[.]") }
+            .replace(Regex("(?i)https?://"), "")
+            .replace(Regex("(?i)www\\."), "www[.]")
+    }
+
     fun text(source: SourceEntity?, state: EpgState?, stats: SourceDiagnostics, crash: String?, playback: String = ""): String {
         val urls = source?.let { runCatching { EpgSources.urls(it.epgUrl, it.discoveredEpgUrls, it.url) }.getOrDefault(emptyList()) }.orEmpty()
         val status = when (state) {
@@ -115,13 +132,11 @@ object DiagnosticsReport {
         val known = stats.secrets + DiagnosticRedactor.secrets(source?.let {
             listOf(it.url, it.epgUrl, *it.discoveredEpgUrls.split(Regex("[,\\s]+")).toTypedArray())
         }.orEmpty())
-        return DiagnosticRedactor.mask(raw, known)
+        return shareable(raw, known)
     }
 
     fun payload(text: String): String {
-        val masked = DiagnosticRedactor.mask(text).replace(Regex("(?i)https?://")) {
-            it.value.replace("://", "[:]//")
-        }
+        val masked = shareable(text)
         if (masked.toByteArray(Charsets.UTF_8).size <= QR_BYTES) return masked
         val suffix = "\n[…raport skrócony]"
         return utf8Limit(masked, QR_BYTES - suffix.toByteArray(Charsets.UTF_8).size) + suffix

@@ -141,7 +141,7 @@ class DiagnosticsReportTest {
         val report = DiagnosticsReport.text(source, EpgState.Failed("HTTP 403"), SourceDiagnostics(10, 8), null,
             "Ostatni błąd odtwarzania:\nChannel: TVP Seriale\nURL: https://my.teleelevidenie.com/play/hls-custom-c123-private-code.m3u8")
         val payload = DiagnosticsReport.payload(report)
-        assertTrue(payload.contains("https[:]//my.teleelevidenie.com/__path_hidden__"))
+        assertTrue(payload.contains("my[.]teleelevidenie[.]com/__path_hidden__"))
         assertFalse(payload.contains("https://"))
         assertFalse(payload.contains("private-code"))
         assertFalse(payload.contains("private-access-code"))
@@ -153,5 +153,33 @@ class DiagnosticsReportTest {
         val decoded = MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(matrix.width, matrix.height, pixels))))
         assertEquals(payload, decoded.text)
         assertEquals(payload, DiagnosticsReport.payload(payload))
+    }
+
+    @Test fun everyDisplayedAndDecodedSectionIsFreeOfPhoneDetectedAddresses() {
+        val source = SourceEntity(name = "www.playlist.net", url = "https://playlist.net/private-code", userAgent = "TV",
+            epgUrl = "https://iptv-epg.org/guide.xml,https://backup.pl/epg.xml",
+            rawCatchupChannels = 0, playlistDeviceType = "company.tv")
+        val report = DiagnosticsReport.text(source, EpgState.Failed("www.failed.org HTTP 403"), SourceDiagnostics(),
+            "Exception from crash.example.pl; https://crash.net/private-code",
+            "Ostatni błąd odtwarzania:\nURL: https://my.teleelevidenie.com/play/private-code\n" +
+                "Ostatnie poprawne odtwarzanie:\nURL: https://working.tv/private-code")
+        val payload = DiagnosticsReport.payload(report)
+        val matrix = DiagnosticsReport.qr(report)
+        val pixels = IntArray(matrix.width * matrix.height) { i -> if (matrix[i % matrix.width, i / matrix.width]) 0xff000000.toInt() else -1 }
+        val decoded = MultiFormatReader().decode(BinaryBitmap(HybridBinarizer(RGBLuminanceSource(matrix.width, matrix.height, pixels)))).text
+        val detectors = Regex("(?i)https?://|www\\.|\\w+\\.(com|org|pl|net|tv)\\b")
+        for (text in listOf(report, payload, decoded)) {
+            assertFalse(text, detectors.containsMatchIn(text))
+            assertFalse(text.contains("private-code"))
+            for (host in listOf("my[.]teleelevidenie[.]com", "working[.]tv", "iptv-epg[.]org", "www[.]playlist[.]net",
+                    "backup[.]pl", "crash[.]example[.]pl", "crash[.]net", "company[.]tv")) assertTrue(text, text.contains(host))
+        }
+        assertEquals(payload, decoded)
+        assertEquals(payload, DiagnosticsReport.payload(payload))
+        assertFalse(detectors.containsMatchIn(DiagnosticsReport.payload("https[:]//legacy.org/__path_hidden__")))
+        assertFalse(detectors.containsMatchIn(DiagnosticsReport.payload("HTTPS://WWW.EXAMPLE.COM/path")))
+        assertFalse(detectors.containsMatchIn(DiagnosticsReport.payload("broken https:// www. 例子.com")))
+        assertTrue(DiagnosticsReport.payload("host 192.168.1.1").contains("192[.]168[.]1[.]1"))
+        assertEquals("", DiagnosticsReport.payload(""))
     }
 }

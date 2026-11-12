@@ -4,7 +4,15 @@ import dev.firetvlite.iptv.data.db.FilmRatingEntity
 import dev.firetvlite.iptv.data.db.ProgrammeEntity
 import dev.firetvlite.iptv.data.film.*
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.yield
 import org.junit.Assert.*
 import org.junit.Test
 
@@ -48,7 +56,143 @@ class FilmEnrichmentTest {
         val lookup = FilmLookup(OmdbClient { _, title, _ -> if (title == "First") OmdbResult.Missing else found }, store, { now }) {}
         assertFalse(enrichFilms(listOf(film("First"), film("Second")), "fixture", lookup, { true }) { now })
         assertEquals(2, store.requests)
-        assertEquals(2, store.rows.size)
+        assertEquals(3, store.rows.size)
+    }
+
+    @Test fun interruptedFallbackResumesOnlyTheUnfinishedVariantAfterRecreatingLookup() = runBlocking {
+        for (failure in listOf("HTTP_503", "REMOTE_LIMIT", "AUTH", "HTTP_401")) {
+            for (first in listOf(OmdbResult.Missing, found.copy(movie = found.movie.copy(type = "series")))) {
+                val store = Store()
+                val programme = film("Display").copy(originalTitle = "Original")
+                val queries = mutableListOf<Pair<String, Int>>()
+                val interrupted = FilmLookup(OmdbClient { _, title, year ->
+                    queries.add(title to year)
+                    if (title == "Original") first else OmdbResult.Failed(failure)
+                }, store, { now }) {}
+                assertNull(interrupted.lookup(programme, "fixture", now))
+                assertNull(store.rows[Films.key(programme)])
+                val resumed = FilmLookup(OmdbClient { _, title, year ->
+                    queries.add(title to year)
+                    found
+                }, store, { now + 1000 }) {}
+                assertEquals("tt123", resumed.lookup(programme, "fixture", now + 1000)!!.imdbId)
+                assertEquals(listOf("Original" to 2002, "Display" to 2002, "Display" to 2002), queries)
+                assertEquals(3, store.requests)
+            }
+        }
+    }
+
+    @Test fun cancellationAfterAMissingResponseStillPersistsThatVariant() = runBlocking {
+        val store = Store()
+        val programme = film("Display").copy(originalTitle = "Original")
+        val queries = mutableListOf<String>()
+        val interrupted = FilmLookup(OmdbClient { _, title, _ ->
+            queries.add(title)
+            currentCoroutineContext().cancel()
+            OmdbResult.Missing
+        }, store, { now }) {}
+        launch { interrupted.lookup(programme, "fixture", now) }.join()
+        assertEquals(listOf("Original"), queries)
+        assertNull(store.rows[Films.key(programme)])
+        val resumed = FilmLookup(OmdbClient { _, title, _ -> queries.add(title); found }, store, { now }) {}
+        assertNotNull(resumed.lookup(programme, "fixture", now))
+        assertEquals(listOf("Original", "Display"), queries)
+    }
+
+    @Test fun completedMissesAndVariantMissesExpireTogetherAfterThirtyDays() = runBlocking {
+        val store = Store()
+        val programme = film("Display").copy(originalTitle = "Original")
+        var time = now
+        val lookup = FilmLookup(OmdbClient { _, _, _ -> OmdbResult.Missing }, store, { time }) {}
+        assertNull(lookup.lookup(programme, "fixture", time)!!.imdbId)
+        assertEquals(2, store.requests)
+        time += 30 * Films.DAY - 1
+        lookup.lookup(programme, "fixture", time)
+        assertEquals(2, store.requests)
+        time++
+        lookup.lookup(programme, "fixture", time)
+        assertEquals(4, store.requests)
+    }
+
+    @Test fun partialProgressAlsoExpiresAfterThirtyDays() = runBlocking {
+        val store = Store()
+        val programme = film("Display").copy(originalTitle = "Original")
+        val interrupted = FilmLookup(OmdbClient { _, title, _ ->
+            if (title == "Original") OmdbResult.Missing else OmdbResult.Failed("HTTP_503")
+        }, store, { now }) {}
+        interrupted.lookup(programme, "fixture", now)
+        val queries = mutableListOf<String>()
+        val resumed = FilmLookup(OmdbClient { _, title, _ -> queries.add(title); OmdbResult.Missing },
+            store, { now + 30 * Films.DAY }) {}
+        resumed.lookup(programme, "fixture", now + 30 * Films.DAY)
+        assertEquals(listOf("Original", "Display"), queries)
+    }
+
+    @Test fun repeatedTabRequestsShareOneRunningPassAndOneRequestPerUncachedFilm() = runBlocking {
+        val requests = FilmWindowRequests()
+        val started = CompletableDeferred<Unit>()
+        val finish = CompletableDeferred<Unit>()
+        val completed = CompletableDeferred<Unit>()
+        val store = Store()
+        val lookup = FilmLookup(OmdbClient { _, _, _ ->
+            started.complete(Unit)
+            finish.await()
+            found
+        }, store, { now }) {}
+        var passes = 0
+        val worker = launch(start = CoroutineStart.UNDISPATCHED) {
+            requests.pending.collectLatest { request ->
+                if (request != null) {
+                    passes++
+                    enrichFilms(listOf(film("Future")), "fixture", lookup, { true }) { now }
+                    requests.complete(request)
+                    completed.complete(Unit)
+                }
+            }
+        }
+        try {
+            withTimeout(5000) {
+                requests.request(1, 0)
+                started.await()
+                repeat(20) { requests.request(1, 0) }
+                yield()
+                assertEquals(1, passes)
+                assertEquals(1, store.requests)
+                finish.complete(Unit)
+                completed.await()
+                assertNull(requests.pending.value)
+                assertEquals(1, passes)
+            }
+        } finally { worker.cancel(); worker.join() }
+    }
+
+    @Test fun tabRequestsAreBoundToSourceAndKeyRevisionAndOldCompletionCannotClearANewOne() {
+        val requests = FilmWindowRequests()
+        requests.request(1, 0)
+        val old = requests.pending.value!!
+        assertTrue(old.matches(1, 0))
+        assertFalse(old.matches(null, 0))
+        assertFalse(old.matches(2, 0))
+        assertFalse(old.matches(1, 1))
+        requests.request(2, 1)
+        requests.complete(old)
+        assertTrue(requests.pending.value!!.matches(2, 1))
+        requests.complete(requests.pending.value!!)
+        assertNull(requests.pending.value)
+    }
+
+    @Test fun emptyFutureRequestSurvivesImportAndCompletesAfterDataArrives() {
+        val requests = FilmWindowRequests()
+        requests.request(1, 0)
+        val request = requests.pending.value!!
+        if (futureWindowComplete(false, null, hasCandidates = false, epgRunning = true)) requests.complete(request)
+        assertEquals(request, requests.pending.value)
+        assertTrue(futureWindowComplete(false, null, hasCandidates = true, epgRunning = true))
+        assertTrue(futureWindowComplete(false, null, hasCandidates = false, epgRunning = false))
+        assertFalse(futureWindowComplete(true, null, hasCandidates = true, epgRunning = false))
+        assertFalse(futureWindowComplete(false, "REMOTE_LIMIT", hasCandidates = true, epgRunning = false))
+        if (futureWindowComplete(false, null, hasCandidates = true, epgRunning = false)) requests.complete(request)
+        assertNull(requests.pending.value)
     }
 
     @Test fun emptyNoKeyChangedSourceCancellationAndExhaustedBudgetNeverOpenRequests() = runBlocking {
@@ -62,6 +206,8 @@ class FilmEnrichmentTest {
         assertFalse(enrichFilms(listOf(film("First")), "fixture", lookup, { true }) { now })
         assertEquals("LOCAL_BUDGET", lookup.lastError)
         assertEquals(400, store.requests)
+        assertFalse(enrichFilms(emptyList(), "fixture", lookup, { true }) { now })
+        assertNull(lookup.lastError)
         try {
             enrichFilms(listOf(film("First")), "fixture", lookup, { throw CancellationException() }) { now }
             fail("Cancellation swallowed")
@@ -88,5 +234,24 @@ class FilmEnrichmentTest {
         assertEquals("AUTH", stats.lastError)
         assertEquals("UNKNOWN", stats.error("https://secret.invalid/?key=secret").lastError)
         assertEquals(OmdbStats(Films.day(now + Films.DAY)), stats.today(now + Films.DAY))
+    }
+
+    @Test fun resumedProgressDoesNotCountSkippedVariantsAsHttpRequestsOrMisses() = runBlocking {
+        var stats = OmdbStats()
+        val observer = object : OmdbObserver {
+            override fun requested(now: Long) { stats = stats.requested(now) }
+            override fun completed(result: OmdbResult, now: Long) { stats = stats.completed(result, now) }
+        }
+        val store = Store()
+        val programme = film("Display").copy(originalTitle = "Original")
+        val interrupted = FilmLookup(OmdbClient { _, title, _ ->
+            if (title == "Original") OmdbResult.Missing else OmdbResult.Failed("HTTP_503")
+        }, store, { now }, observer) {}
+        interrupted.lookup(programme, "fixture", now)
+        assertEquals(OmdbStats(Films.day(now), 2, 0, 1, "HTTP_503"), stats)
+        val resumed = FilmLookup(OmdbClient { _, _, _ -> found }, store, { now }, observer) {}
+        resumed.lookup(programme, "fixture", now)
+        resumed.lookup(programme, "fixture", now)
+        assertEquals(OmdbStats(Films.day(now), 3, 1, 1, "HTTP_503"), stats)
     }
 }

@@ -18,13 +18,22 @@ class RealEpgBudgetAuditTest {
         val year = p.year ?: return emptyList()
         val titles = listOfNotNull(p.originalTitle?.takeIf(String::isNotBlank), p.title.takeIf(String::isNotBlank))
             .distinctBy(Films::normalized)
-        return listOf(year, year - 1, year + 1).flatMap { y -> titles.map { it to y } }
+        val years = if (p.originalTitle.isNullOrBlank()) listOf(year) else listOf(year, year - 1, year + 1)
+        return years.flatMap { y -> titles.map { it to y } }
     }
 
     private fun beforeCandidates(showings: List<FilmShowing>, now: Long) = showings
         .filter { Films.candidate(it.programme) && ((it.programme.stop > now && it.programme.start < now + 2 * Films.DAY) ||
             Films.archived(it.channel, it.programme, now)) }
-        .sortedBy { if (it.programme.stop > now) 0 else 1 }.map { it.programme }.distinctBy(Films::key)
+        .sortedWith(compareBy<FilmShowing> {
+            when {
+                Films.inWindow(it.programme, now, 0) -> 0
+                Films.archived(it.channel, it.programme, now) -> 1
+                else -> 2
+            }
+        }.thenBy { if (Films.archived(it.channel, it.programme, now)) -it.programme.stop else it.programme.start }
+            .thenBy { it.channel.position }.thenBy { it.channel.id })
+        .map { it.programme }.distinctBy(Films::key)
 
     private data class Coverage(val requests: Int, val started: Set<String>, val completed: Set<String>)
 
@@ -95,10 +104,23 @@ class RealEpgBudgetAuditTest {
                 val visible = ordered.filter { it.channel.tvgId in ids }
                 val before = beforeCandidates(visible, now)
                 val after = ratingCandidates(visible, now)
+                val future = ratingCandidates(visible, now, futureWindow = true)
+                val backgroundKeys = after.map(Films::key).toSet()
+                val allCandidates = (after + future).distinctBy(Films::key)
                 val tabs = (0..2).map { tab -> rankedFilms(visible, now, tab).map { Films.key(it.programme) }.toSet() }
-                assertEquals(tabs.flatten().toSet(), after.map(Films::key).toSet())
-                assertEquals(before.map(Films::key).toSet(), after.map(Films::key).toSet())
-                appendLine("$name: selected=${ids.size}; unique=${after.size}; per-tab unique=${tabs.map { it.size }}")
+                assertEquals(tabs[0] + tabs[2], backgroundKeys)
+                assertEquals(tabs[1], future.map(Films::key).toSet())
+                assertEquals(before.map(Films::key).toSet(), allCandidates.map(Films::key).toSet())
+                val beforeCeiling = before.sumOf { beforeQueries(it).size }
+                val backgroundCeiling = after.sumOf { Films.queries(it).size }
+                appendLine("$name: selected=${ids.size}; unique=${allCandidates.size}; background=${after.size}; per-tab unique=${tabs.map { it.size }}")
+                appendLine("  cold-cache ceilings: before=$beforeCeiling; background=$backgroundCeiling; on-demand standalone=${future.sumOf { Films.queries(it).size }}; on-demand incremental=${future.filter { Films.key(it) !in backgroundKeys }.sumOf { Films.queries(it).size }}")
+                assertTrue(after.all { p -> Films.queries(p).size <= 2 && Films.queries(p).all { it.second == p.year } })
+                if (name == "synthetic229" && now == Instant.parse("2026-11-12T13:02:08Z").toEpochMilli()) {
+                    assertEquals(2046, beforeCeiling)
+                    assertEquals(320, after.size)
+                    assertEquals(550, backgroundCeiling)
+                }
                 for (hit in listOf(true, false)) {
                     val old = beforeCoverage(before, hit)
                     val new = afterCoverage(after, now, hit)

@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalInputModeManager
@@ -73,6 +74,9 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
     val status = rankingStatus(catalogue.loaded && catalogue.sourceId == source?.id,
         epgStates[source?.id] == EpgState.Running, catalogue.hasEpg, enriching, rows.isNotEmpty())
     val colors = FireLiteTheme.colors
+    LaunchedEffect(active, tab, source?.id, key) {
+        if (active && tab == 1) source?.id?.let { library.films.requestFutureFilms(it) }
+    }
     LaunchedEffect(active, key.isNotBlank()) {
         if (active) {
             inputMode.requestInputMode(InputMode.Keyboard)
@@ -90,7 +94,11 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
                 listOf(R.string.films_first_window, R.string.films_second_window, R.string.films_archive).forEachIndexed { index, resource ->
                     val title = stringResource(resource)
                     PrimaryButton(if (tab == index) stringResource(R.string.films_selected_tab, title) else title, { tab = index },
-                        Modifier.focusRequester(tabFocus[index]))
+                        Modifier.focusRequester(tabFocus[index]).onFocusChanged {
+                            if (active && index == 1 && it.isFocused) {
+                                source?.id?.let { id -> library.films.requestFutureFilms(id) }
+                            }
+                        })
                 }
             }
             omdbIssueMessage(omdbError)?.let { message ->

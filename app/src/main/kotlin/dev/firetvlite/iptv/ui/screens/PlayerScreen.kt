@@ -56,6 +56,7 @@ import androidx.media3.common.Player
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import dev.firetvlite.iptv.R
+import dev.firetvlite.iptv.ui.navigation.screenBackReturnsToPlayback
 import dev.firetvlite.iptv.playback.BannerState
 import dev.firetvlite.iptv.playback.PlaybackStatus
 import dev.firetvlite.iptv.playback.PlayerMode
@@ -76,6 +77,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBounds: Rect?, onFilms: () -> Unit, onSettings: () -> Unit) {
     val mode by viewModel.mode.collectAsState()
+    val channel by viewModel.channel.collectAsState()
     val player by viewModel.player.collectAsState()
     val status by viewModel.status.collectAsState()
     val startupDelayed by viewModel.startupDelayed.collectAsState()
@@ -90,7 +92,7 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
     }
     val keepAwake = ScreenAwakePolicy.keepAwake(mode, status, playWhenReady)
     val density = LocalDensity.current
-    BackHandler(enabled = mode.fullFrame || mode == PlayerMode.Guide) {
+    BackHandler(enabled = mode.fullFrame || (mode == PlayerMode.Guide && screenBackReturnsToPlayback(mode, channel != null))) {
         if (timeline != null) viewModel.closeTimeline()
         else if (mode == PlayerMode.Overlay) viewModel.closeOverlay()
         else if (mode == PlayerMode.Guide) viewModel.returnToFullscreen()

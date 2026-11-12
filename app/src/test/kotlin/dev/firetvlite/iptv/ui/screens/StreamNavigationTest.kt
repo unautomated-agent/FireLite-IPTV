@@ -9,6 +9,22 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StreamNavigationTest {
+    @Test fun rootBackDefersToSystemWithoutPlaybackEvenAfterPlaylistImport() {
+        assertTrue(canChooseChannel(true, 20))
+        for (mode in listOf(PlayerMode.Closed, PlayerMode.Panel, PlayerMode.Guide)) {
+            assertFalse(screenBackReturnsToPlayback(mode, false))
+        }
+        assertFalse(screenBackReturnsToPlayback(PlayerMode.Closed, true))
+        assertTrue(screenBackReturnsToPlayback(PlayerMode.Panel, true))
+        assertTrue(screenBackReturnsToPlayback(PlayerMode.Guide, true))
+        val shell = File("src/main/kotlin/dev/firetvlite/iptv/FireLiteApp.kt").readText()
+        val backHandler = shell.substringAfter("    BackHandler(").substringBefore("\n    }")
+        assertTrue(backHandler.contains("screenBackReturnsToPlayback(mode, channel != null)"))
+        assertFalse(backHandler.contains("openGuide()"))
+        val player = File("src/main/kotlin/dev/firetvlite/iptv/ui/screens/PlayerScreen.kt").readText()
+        assertTrue(player.contains("BackHandler(enabled = mode.fullFrame || (mode == PlayerMode.Guide && screenBackReturnsToPlayback(mode, channel != null)))"))
+    }
+
     @Test fun quickMenuHasExactlyTheRequestedActionsInOrderForBothFavoriteStates() {
         val actions = listOf(QuickMenuAction.Audio, QuickMenuAction.Favorite, QuickMenuAction.Guide,
             QuickMenuAction.Films, QuickMenuAction.Settings)

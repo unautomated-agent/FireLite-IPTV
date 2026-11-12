@@ -24,6 +24,7 @@ import dev.firetvlite.iptv.ui.components.WarsawClockBox
 import dev.firetvlite.iptv.ui.navigation.StreamPanel
 import dev.firetvlite.iptv.ui.navigation.canChooseChannel
 import dev.firetvlite.iptv.ui.navigation.visiblePanel
+import dev.firetvlite.iptv.ui.navigation.screenBackReturnsToPlayback
 import dev.firetvlite.iptv.ui.screens.FilmRankingsScreen
 import dev.firetvlite.iptv.ui.screens.LiveTvScreen
 import dev.firetvlite.iptv.ui.screens.PlayerLayer
@@ -55,6 +56,7 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
     val importState by libraryViewModel.importState.collectAsState()
     val epgStates by libraryViewModel.epgStates.collectAsState()
     val mode by playerViewModel.mode.collectAsState()
+    val channel by playerViewModel.channel.collectAsState()
     val browserTarget by playerViewModel.browserTarget.collectAsState()
     var current by rememberSaveable { mutableStateOf(StreamPanel.Settings) }
 
@@ -64,8 +66,8 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
         playerViewModel.showPanel()
     }
 
-    BackHandler(enabled = mode == PlayerMode.Panel || (mode == PlayerMode.Closed && canChooseChannel(source != null, channelCount))) {
-        if (mode == PlayerMode.Closed) playerViewModel.openGuide() else playerViewModel.returnToFullscreen()
+    BackHandler(enabled = mode == PlayerMode.Panel && screenBackReturnsToPlayback(mode, channel != null)) {
+        playerViewModel.returnToFullscreen()
     }
 
     Box(Modifier.fillMaxSize().background(FireLiteTheme.colors.background)) {

@@ -13,6 +13,9 @@ fun visiblePanel(mode: PlayerMode, current: StreamPanel): StreamPanel? = when (m
 
 fun canChooseChannel(hasSource: Boolean, channelCount: Int): Boolean = hasSource && channelCount > 0
 
+fun screenBackReturnsToPlayback(mode: PlayerMode, hasChannel: Boolean): Boolean =
+    hasChannel && (mode == PlayerMode.Panel || mode == PlayerMode.Guide)
+
 enum class QuickMenuAction { Audio, Favorite, Guide, Films, Settings }
 
 fun quickMenuItems(favorite: Boolean): List<Pair<QuickMenuAction, Int>> = listOf(

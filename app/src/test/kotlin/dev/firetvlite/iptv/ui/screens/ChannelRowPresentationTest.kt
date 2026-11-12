@@ -1,6 +1,7 @@
 package dev.firetvlite.iptv.ui.screens
 
 import dev.firetvlite.iptv.ui.components.clockTime
+import dev.firetvlite.iptv.ui.components.millisUntilNextMinute
 import java.io.File
 import java.time.Instant
 import java.util.Locale
@@ -9,6 +10,15 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class ChannelRowPresentationTest {
+    @Test fun homeMinuteClockWakeupAdvancesTheGuideQueryKeyWithoutNavigation() {
+        val firstFrame = Instant.parse("2026-11-12T20:15:23.456Z").toEpochMilli()
+        val wakeup = firstFrame + millisUntilNextMinute(firstFrame)
+        assertEquals(Instant.parse("2026-11-12T20:16:00Z").toEpochMilli(), wakeup)
+        assertEquals(channelGuideQueryMinute(firstFrame) + 1, channelGuideQueryMinute(wakeup))
+        assertEquals(channelGuideQueryMinute(wakeup) + 1,
+            channelGuideQueryMinute(wakeup + millisUntilNextMinute(wakeup)))
+    }
+
     @Test fun secondTicksKeepGuideQueryKeyUntilTheMinuteChanges() {
         val start = Instant.parse("2026-11-12T20:15:00Z").toEpochMilli()
         val key = channelGuideQueryMinute(start)

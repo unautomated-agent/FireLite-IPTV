@@ -27,6 +27,7 @@ import dev.firetvlite.iptv.data.library.ChannelTabPolicy
 import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.PrimaryButton
 import dev.firetvlite.iptv.ui.components.UpdateBanner
+import dev.firetvlite.iptv.ui.components.minuteClock
 import dev.firetvlite.iptv.ui.components.requestFocusWhenReady
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 import dev.firetvlite.iptv.ui.viewmodel.BrowserTarget
@@ -44,6 +45,7 @@ fun HomeScreen(
     val recent by library.recentRows.collectAsState()
     val favorites by library.homeFavorites.collectAsState()
     val source by library.source.collectAsState()
+    val now by minuteClock()
     val sections = listOf(GroupKey.Recent to recent, GroupKey.Favorites to favorites)
     val listState = rememberLazyListState()
     val requesters = remember { mutableMapOf<String, FocusRequester>() }
@@ -65,7 +67,7 @@ fun HomeScreen(
         contentPadding = PaddingValues(24.dp), verticalArrangement = Arrangement.spacedBy(24.dp)) {
         sections.forEach { (group, rows) ->
             item(key = group.id) {
-                HomeChannels(rows, group, library, requesters, returnTarget,
+                HomeChannels(rows, group, library, requesters, returnTarget, now,
                     onPlay = { index -> player.open(ListZapContext(rows.map { it.channel }), index, group) })
             }
         }
@@ -84,7 +86,7 @@ fun HomeScreen(
 @Composable
 private fun HomeChannels(
     rows: List<ChannelRow>, group: GroupKey, library: LibraryViewModel,
-    requesters: MutableMap<String, FocusRequester>, returnTarget: BrowserTarget?, onPlay: (Int) -> Unit,
+    requesters: MutableMap<String, FocusRequester>, returnTarget: BrowserTarget?, now: Long, onPlay: (Int) -> Unit,
 ) {
     val state = rememberLazyListState()
     LaunchedEffect(returnTarget?.token, rows) {
@@ -96,7 +98,7 @@ private fun HomeChannels(
             style = FireLiteTheme.typography.headline)
         LazyRow(state = state, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             itemsIndexed(rows, key = { _, row -> row.channel.id }) { index, row ->
-                ChannelRowItem(row, null, System.currentTimeMillis(), false, {}, { onPlay(index) },
+                ChannelRowItem(row, null, now, false, {}, { onPlay(index) },
                     { library.toggleFavorite(row.channel.streamUrl) },
                     Modifier.width(340.dp).focusRequester(requesters.getOrPut("${group.id}:${row.channel.id}") { FocusRequester() }))
             }

@@ -34,7 +34,7 @@
     <string name="imdb_votes_millions">%1$s mln głosów</string>
     <string name="imdb_unrated">IMDb —</string>
     <string name="omdb_key_label">Klucz OMDb (oceny IMDb)</string>
-    <string name="omdb_key_help">Darmowy klucz: omdbapi.com/apikey.aspx</string>
+    <string name="omdb_key_help">Darmowy klucz: omdbapi.com/apikey.aspx. Limit klucza: 1000 zapytań dziennie; budżet aplikacji: 950.</string>
     <string name="omdb_key_activation_help">Darmowy klucz wymaga aktywacji linkiem z wiadomości e-mail. Po aktywacji zapisz go ponownie, aby od razu ponowić pobieranie ocen.</string>
     <string name="omdb_issue_auth">OMDb odrzuciło klucz (%1$s). Wpisz krótki klucz z wiersza „Here is your key”, nie link. Otwórz raz link aktywacyjny z e-maila w przeglądarce, a następnie zapisz klucz ponownie.</string>
     <string name="omdb_key_activation_link">To jest link aktywacyjny, nie klucz API. Otwórz go raz w przeglądarce, a tutaj wpisz krótki klucz z wiersza „Here is your key” w wiadomości e-mail. Dotychczasowy klucz nie został zmieniony.</string>
@@ -154,6 +154,7 @@
     <string name="channel_timeline_future">Zaczyna się o %1$s</string>
     <string name="channel_timeline_hint">Góra/Dół: audycja · ⏪/⏩: dzień · OK: oglądaj · Wstecz: zamknij</string>
     <string name="player_seek_unsupported">Przewijanie nie jest dostępne dla tego kanału.</string>
+    <string name="player_seek_preview">Przewijanie: %1$s · ×%2$d</string>
     <string name="player_catchup_unsupported">Archiwum nie działa dla tego kanału.</string>
 
     <!-- Settings: channel list -->

@@ -24,6 +24,7 @@ import dev.firetvlite.iptv.playback.StreamRequest
 import dev.firetvlite.iptv.playback.ZapMath
 import dev.firetvlite.iptv.playback.ChannelTimeline
 import dev.firetvlite.iptv.playback.ProgrammePlayback
+import dev.firetvlite.iptv.playback.SeekDebouncer
 import dev.firetvlite.iptv.playback.TimelineAction
 import dev.firetvlite.iptv.playback.TimelineItem
 import dev.firetvlite.iptv.playback.PreviousChannel
@@ -111,6 +112,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var archiveStartMs: Long? = null
     private var fallbackStartMs = System.currentTimeMillis()
     private var pendingSeekMs: Long? = null
+    private val seekDebouncer = SeekDebouncer(viewModelScope, ::seek)
     private val mutableFrame = MutableStateFlow(PlaybackFrame())
     val frame = mutableFrame.asStateFlow()
     val programme = combine(channel, frame) { selected, frame -> selected?.id to frame.watchedMs / 1_000 }
@@ -207,6 +209,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun select(zap: ZapContext, startIndex: Int, group: GroupKey, mode: PlayerMode, archiveTime: Long? = null) {
+        seekDebouncer.cancel()
         openJob?.cancel()
         zapJob?.cancel()
         catchupJob?.cancel()
@@ -380,6 +383,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun settlePendingZap() {
+        seekDebouncer.cancel()
         openJob?.cancel()
         zapJob?.cancel()
         catchupJob?.cancel()
@@ -395,6 +399,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         if (mutableMode.value != PlayerMode.Fullscreen) return
         val zap = zapContext ?: return
         if (zapCount == 0) return
+        seekDebouncer.cancel()
         zapIndex = ZapMath.wrap(zapIndex, delta, zapCount)
         mutablePosition.value = ZapPosition(zapIndex + 1, zapCount)
         catchupJob?.cancel()
@@ -410,6 +415,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun close() {
+        seekDebouncer.cancel()
         previous.clear()
         closeTimeline()
         cancelPreview()
@@ -458,6 +464,21 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val snapshot = playback.snapshot()
         return PlaybackFrame(now, PlaybackTime.watched(now, snapshot, archiveStartMs, fallbackStartMs), snapshot)
             .also { mutableFrame.value = it }
+    }
+
+    fun beginSeek() {
+        seekDebouncer.hold()
+        if (pendingSeekMs != null) catchupJob?.cancel()
+    }
+
+    fun finishSeek(deltaMs: Long) = seekDebouncer.release(deltaMs)
+
+    fun cancelSeek() {
+        seekDebouncer.cancel()
+        if (pendingSeekMs != null) {
+            catchupJob?.cancel()
+            pendingSeekMs = null
+        }
     }
 
     fun seek(deltaMs: Long) {

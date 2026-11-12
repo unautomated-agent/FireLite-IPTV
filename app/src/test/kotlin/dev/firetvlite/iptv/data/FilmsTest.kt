@@ -204,7 +204,7 @@ class FilmsTest {
 
     @Test fun tabRequestsOnlyLookupUncachedFutureFilmsAndShareTheDailyBudget() = runBlocking {
         val store = Store()
-        store.used[Films.day(now)] = 399
+        store.used[Films.day(now)] = Films.DAILY_BUDGET - 1
         val cached = film().copy(start = now + Films.DAY, stop = now + Films.DAY + 7_200_000)
         val uncached = cached.copy(title = "Different", originalTitle = null)
         store.rows[Films.key(cached)] = FilmRatingEntity(Films.key(cached), 8.0, 100, "tt123", now)
@@ -214,7 +214,7 @@ class FilmsTest {
         val lookup = FilmLookup(OmdbClient { _, title, _ -> queries.add(title); OmdbResult.Missing }, store, { now }) {}
         assertFalse(enrichFilms(ratingCandidates(showings, now, futureWindow = true), "fixture", lookup, { true }) { now })
         assertEquals(listOf("Different"), queries)
-        assertEquals(400, store.used[Films.day(now)])
+        assertEquals(Films.DAILY_BUDGET, store.used[Films.day(now)])
         assertNull(lookup.lookup(uncached.copy(title = "Another"), "fixture", now))
         assertEquals("LOCAL_BUDGET", lookup.lastError)
         assertEquals(1, queries.size)
@@ -284,7 +284,7 @@ class FilmsTest {
         override suspend fun save(rating: FilmRatingEntity) { rows[rating.cacheKey] = rating }
         override suspend fun reserve(day: Long): Boolean {
             val count = used[day] ?: 0
-            if (count >= 400) return false
+            if (count >= Films.DAILY_BUDGET) return false
             used[day] = count + 1
             return true
         }
@@ -322,15 +322,30 @@ class FilmsTest {
     @Test fun budgetSurvivesLookupRecreationAndCountsEveryFallbackRequest() = runBlocking {
         val store = Store()
         val day = Films.day(now)
-        store.used[day] = 399
+        store.used[day] = Films.DAILY_BUDGET - 1
         var requests = 0
         val client = OmdbClient { _, _, _ -> requests++; OmdbResult.Missing }
         assertNull(FilmLookup(client, store, { now }) {}.lookup(film(), "fixture", now))
-        assertEquals(400, store.used[day])
+        assertEquals(Films.DAILY_BUDGET, store.used[day])
         assertNull(FilmLookup(client, store, { now }) {}.lookup(film(), "fixture", now))
         assertEquals(1, requests)
         FilmLookup(client, store, { now + Films.DAY }) {}.lookup(film(), "fixture", now + Films.DAY)
         assertEquals(2, requests)
+    }
+
+    @Test fun theRaisedBudgetKeepsASafetyMarginAndExistingFourHundredRequestsDoNotBlockLookup() = runBlocking {
+        assertEquals(950, Films.DAILY_BUDGET)
+        assertEquals(50, 1000 - Films.DAILY_BUDGET)
+        val store = Store()
+        store.used[Films.day(now)] = 400
+        var requests = 0
+        val lookup = FilmLookup(OmdbClient { _, _, _ ->
+            requests++
+            OmdbResult.Found(OmdbMovie("movie", 2002, 7.1, 100, "tt123"))
+        }, store, { now }) {}
+        assertNotNull(lookup.lookup(film(), "fixture", now))
+        assertEquals(1, requests)
+        assertEquals(401, store.used[Films.day(now)])
     }
     @Test fun midnightFallbackUsesTheRequestDayAndCompletionTimestamp() = runBlocking {
         var time = Instant.parse("2026-03-28T22:59:59.500Z").toEpochMilli()
@@ -350,10 +365,10 @@ class FilmsTest {
         var time = Instant.parse("2026-03-28T22:59:59.900Z").toEpochMilli()
         val started = time
         val store = Store()
-        store.used[Films.day(started)] = 400
+        store.used[Films.day(started)] = Films.DAILY_BUDGET
         val client = OmdbClient { _, _, _ -> OmdbResult.Found(OmdbMovie("movie", 2002, 7.1, 1, "tt123")) }
         assertNotNull(FilmLookup(client, store, { time }) { time += 250 }.lookup(film(), "fixture", started))
-        assertEquals(400, store.used[Films.day(started)])
+        assertEquals(Films.DAILY_BUDGET, store.used[Films.day(started)])
         assertEquals(1, store.used[Films.day(started) + 1])
     }
     @Test fun parsesRatingsVotesAndNonFatalResponses() {
@@ -419,7 +434,7 @@ class FilmsTest {
 
     @Test fun archiveLookupsShareTheSameCacheAndDailyBudgetAsUpcomingFilms(): Unit = runBlocking {
         val store = Store()
-        store.used[Films.day(now)] = 399
+        store.used[Films.day(now)] = Films.DAILY_BUDGET - 1
         var requests = 0
         val lookup = FilmLookup(OmdbClient { _, _, _ ->
             requests++
@@ -430,7 +445,7 @@ class FilmsTest {
         assertNotNull(lookup.lookup(film(), "fixture", now))
         assertNull(lookup.lookup(past.copy(title = "Other film", originalTitle = "Other film"), "fixture", now))
         assertEquals(1, requests)
-        assertEquals(400, store.used[Films.day(now)])
+        assertEquals(Films.DAILY_BUDGET, store.used[Films.day(now)])
     }
     @Test fun rankingsUseHalfOpenWindowsIncludeAiringAndSortRatingThenVotes() {
         fun showing(start: Long, score: Double?, votes: Long = 100) = FilmShowing(channel(), film().copy(start = start,

@@ -18,6 +18,7 @@ import kotlinx.coroutines.withContext
 object Films {
     internal const val VARIANT_PREFIX = "@variant:"
     const val DAY = 86_400_000L
+    const val DAILY_BUDGET = 950
     const val LIVE_TAB = 0
     const val ARCHIVE_TAB = 1
     const val UPCOMING_TAB = 2

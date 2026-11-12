@@ -164,7 +164,8 @@ Diagnostics exposes only whether it is configured. Without a key, badges are hid
 Najlepsze filmy explains how to enable them. The main menu rail and Home card open this ranking.
 The two windows are rolling 0–24 and 24–48 hours, with currently airing films included in the first.
 Rated films sort by IMDb score, then votes; unrated candidates follow in grey. OK on a future film
-only shows its start time; OK on an airing film uses the normal channel playback path.
+only shows its start time; OK on an airing film starts from the programme beginning using catch-up,
+then the existing live buffer if available, otherwise live playback.
 
 Film candidates require a four-digit XMLTV year, 60–240-minute duration, a film/genre category,
 and no episode or series markers. XMLTV imports retain all categories, original titles, years,
@@ -173,7 +174,8 @@ the previously published guide. Lookup is limited to mapped channels of the acti
 programme starts in the next 48 hours. Original title is preferred, then Polish title, then ±1 year;
 only movie responses within ±1 year are accepted. Ratings are cached in Room for 30 days,
 negative matches for 7 days. Sequential data requests are spaced by 250 ms and every request,
-including fallbacks, reserves one of 400 persisted daily slots (Warsaw calendar day).
+including fallbacks, reserves one of 950 persisted daily slots (Warsaw calendar day),
+leaving a 50-request margin below a free key's 1000/day provider limit.
 Import completion, active-source/key changes and hourly process refreshes trigger enrichment;
 cache TTLs avoid unnecessary daily requests. This uses the existing app-process refresh model,
 not an OS job that wakes a stopped application. Network/authentication failures never affect playback.

@@ -63,6 +63,9 @@ import dev.firetvlite.iptv.playback.BannerState
 import dev.firetvlite.iptv.playback.PlaybackStatus
 import dev.firetvlite.iptv.playback.PlayerMode
 import dev.firetvlite.iptv.playback.ScreenAwakePolicy
+import dev.firetvlite.iptv.playback.SeekGesture
+import dev.firetvlite.iptv.playback.SeekFeedback
+import dev.firetvlite.iptv.playback.SeekDebouncer
 import dev.firetvlite.iptv.playback.TvAction
 import dev.firetvlite.iptv.playback.TvKey
 import dev.firetvlite.iptv.playback.TvPlayerControls
@@ -157,7 +160,20 @@ private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSet
     val guide by viewModel.programme.collectAsState()
     val message by viewModel.message.collectAsState()
     var controls by remember { mutableStateOf(TvPlayerControls()) }
-    LaunchedEffect(controls.banner) { onBannerVisible(controls.banner != BannerState.Hidden) }
+    val seekGesture = remember { SeekGesture() }
+    var seekFeedback by remember(channel?.id) { mutableStateOf(SeekFeedback()) }
+    val seekPreview = seekFeedback.preview
+    DisposableEffect(viewModel, channel?.id) {
+        onDispose { seekGesture.cancel(); seekFeedback = SeekFeedback(); viewModel.cancelSeek() }
+    }
+    LaunchedEffect(seekFeedback) {
+        if (seekFeedback.held == null && seekPreview != null) {
+            delay(SeekDebouncer.DELAY_MS)
+            seekFeedback = SeekFeedback()
+        }
+    }
+    val bannerVisible = controls.banner != BannerState.Hidden || seekPreview != null
+    LaunchedEffect(bannerVisible) { onBannerVisible(bannerVisible) }
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     val focus = remember { FocusRequester() }
@@ -168,7 +184,7 @@ private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSet
         when (result.second) {
             TvAction.None -> Unit
             TvAction.PreviousChannel -> viewModel.previousChannel()
-            TvAction.Back10, TvAction.Forward10, TvAction.Back60, TvAction.Forward60 -> viewModel.seek(result.second.seekMs!!)
+            TvAction.Back10, TvAction.Forward10, TvAction.Back60, TvAction.Forward60 -> Unit
             TvAction.TogglePause -> viewModel.togglePause()
             TvAction.Channels -> viewModel.openOverlay()
             TvAction.Guide -> viewModel.openGuide()
@@ -178,30 +194,62 @@ private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSet
             TvAction.ScrollDown -> scope.launch { scroll.animateScrollBy(100f) }
         }
     }
-    LaunchedEffect(quickMenu) { if (!quickMenu) focus.requestFocusWhenReady() }
-    LaunchedEffect(controls.deadline, controls.banner) {
-        if (controls.banner == BannerState.Compact) {
+    LaunchedEffect(quickMenu) {
+        if (!quickMenu) focus.requestFocusWhenReady()
+        else { seekGesture.cancel(); seekFeedback = SeekFeedback(); viewModel.cancelSeek() }
+    }
+    LaunchedEffect(controls.deadline, controls.banner, seekPreview != null) {
+        if (controls.banner == BannerState.Compact && seekPreview == null) {
             delay((controls.deadline - SystemClock.uptimeMillis()).coerceAtLeast(0))
             controls = controls.expire(SystemClock.uptimeMillis())
         }
     }
     LaunchedEffect(controls.banner, channel?.id) { scroll.scrollTo(0) }
-    BackHandler(enabled = quickMenu || controls.banner != BannerState.Hidden) {
-        if (quickMenu) onQuickMenu(false) else key(TvKey.Back)
+    BackHandler(enabled = quickMenu || bannerVisible) {
+        if (quickMenu) onQuickMenu(false) else {
+            seekGesture.cancel()
+            seekFeedback = SeekFeedback()
+            viewModel.cancelSeek()
+            key(TvKey.Back)
+        }
     }
     Box(Modifier.fillMaxSize().focusRequester(focus)
         .onPreviewKeyEvent { if (!quickMenu) controls = controls.touch(SystemClock.uptimeMillis()); false }
         .remotePress(setOf(Key.DirectionCenter, Key.Enter, Key.NumPadEnter), { key(TvKey.Ok) }, { key(TvKey.LongOk) })
         .remotePress(setOf(Key.Menu), { key(TvKey.Menu) }, { key(TvKey.LongMenu) })
-        .remotePress(setOf(Key.DirectionLeft), { key(TvKey.Left) }, { viewModel.jumpToProgrammeStart() })
+        .onPreviewKeyEvent { event ->
+            val mapped = when (event.key) {
+                Key.DirectionLeft -> TvKey.Left
+                Key.DirectionRight -> TvKey.Right
+                Key.MediaRewind -> TvKey.Rewind
+                Key.MediaFastForward -> TvKey.FastForward
+                else -> null
+            }
+            if (mapped == null || quickMenu) false else {
+                if (event.type == KeyEventType.KeyDown) {
+                    val repeat = event.nativeKeyEvent.repeatCount != 0
+                    if (!repeat) viewModel.beginSeek()
+                    seekGesture.press(mapped, SystemClock.uptimeMillis(), repeat)
+                    seekFeedback = seekFeedback.hold(seekGesture.preview)
+                    key(mapped, repeat)
+                } else if (event.type == KeyEventType.KeyUp) {
+                    if (event.nativeKeyEvent.isCanceled) {
+                        seekGesture.cancel()
+                        seekFeedback = SeekFeedback()
+                        viewModel.cancelSeek()
+                    } else seekGesture.release(mapped)?.let { delta ->
+                        seekFeedback = seekFeedback.release(delta)
+                        viewModel.finishSeek(delta)
+                    }
+                }
+                true
+            }
+        }
         .onPreviewKeyEvent { event ->
             if (event.type != KeyEventType.KeyDown) false else {
                 val mapped = when (event.key) {
                     Key.DirectionUp -> TvKey.Up
                     Key.DirectionDown -> TvKey.Down
-                    Key.DirectionRight -> TvKey.Right
-                    Key.MediaRewind -> TvKey.Rewind
-                    Key.MediaFastForward -> TvKey.FastForward
                     Key.MediaPlayPause -> TvKey.PlayPause
                     else -> null
                 }
@@ -224,10 +272,10 @@ private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSet
                 style = FireLiteTheme.typography.title, modifier = Modifier.align(Alignment.TopCenter)
                     .padding(24.dp).background(Color(0xCC000000)).padding(16.dp))
         }
-        AnimatedVisibility(controls.banner != BannerState.Hidden, modifier = Modifier.align(Alignment.BottomCenter),
+        AnimatedVisibility(bannerVisible, modifier = Modifier.align(Alignment.BottomCenter),
             enter = fadeIn(tween(180)) + slideInVertically { it / 4 },
             exit = fadeOut(tween(180)) + slideOutVertically { it / 4 }) {
-            PlayerInfoBanner(channel, frame, guide, controls.banner == BannerState.Expanded, scroll, viewModel.isArchive())
+            PlayerInfoBanner(channel, frame, guide, controls.banner == BannerState.Expanded, scroll, viewModel.isArchive(), seekPreview)
         }
     }
     AnimatedVisibility(quickMenu,

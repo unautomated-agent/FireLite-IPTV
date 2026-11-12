@@ -136,7 +136,8 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
                             }
                         } else if (p.start <= currentTime && p.stop > currentTime) {
                             scope.launch {
-                                openFilmChannel(film.channel, library::allChannelIndex, library::zapContext, player::open)
+                                openFilmFromStart(film, library::allChannelIndex, library::zapContext,
+                                    player::openArchive, player::openLiveProgramme)
                             }
                         } else Toast.makeText(context, if (p.start > currentTime)
                             context.getString(R.string.films_starts_at, clockTime(p.start))

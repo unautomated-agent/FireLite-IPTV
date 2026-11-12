@@ -65,6 +65,7 @@ data class PlaybackSnapshot(
     val positionMs: Long,
     val durationMs: Long?,
     val windowStartMs: Long? = null,
+    val isLive: Boolean = false,
 ) {
     companion object {
         val EMPTY = PlaybackSnapshot(seekable = false, liveOffsetMs = null, positionMs = 0, durationMs = null)
@@ -482,7 +483,8 @@ class PlaybackController internal constructor(
     fun seekTo(positionMs: Long): Boolean {
         val player = exo ?: return false
         if (!player.isCurrentMediaItemSeekable) return false
-        player.seekTo(positionMs.coerceAtLeast(0))
+        val duration = player.duration.takeIf { it != C.TIME_UNSET && it > 0 }
+        player.seekTo(positionMs.coerceIn(0, duration?.minus(1) ?: Long.MAX_VALUE))
         return true
     }
 
@@ -500,6 +502,7 @@ class PlaybackController internal constructor(
             windowStartMs = if (player.currentTimeline.isEmpty) null else
                 player.currentTimeline.getWindow(player.currentMediaItemIndex, Timeline.Window())
                     .windowStartTimeMs.takeIf { it != C.TIME_UNSET },
+            isLive = player.isCurrentMediaItemLive,
         )
     }
 

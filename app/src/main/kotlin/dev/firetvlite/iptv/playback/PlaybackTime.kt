@@ -24,7 +24,21 @@ object PlaybackTime {
         snapshot.windowStartMs != null -> snapshot.windowStartMs + snapshot.positionMs
         archiveStart != null -> archiveStart + snapshot.positionMs
         snapshot.liveOffsetMs != null -> now - snapshot.liveOffsetMs.coerceAtLeast(0)
+        snapshot.isLive && snapshot.durationMs != null -> now - (snapshot.durationMs - snapshot.positionMs).coerceAtLeast(0)
         else -> fallbackStart + snapshot.positionMs
+    }
+
+    fun relativeSeekPlan(deltaMs: Long, frame: PlaybackFrame, archiveStart: Long?, fallbackStart: Long,
+        catchupDays: Int, supportsCatchup: Boolean): SeekPlan {
+        val snapshot = frame.snapshot
+        val duration = snapshot.durationMs
+        if (archiveStart == null && snapshot.isLive && snapshot.seekable && duration != null && duration > 0) {
+            val target = snapshot.positionMs + deltaMs
+            if (target in 0 until duration) return SeekPlan.InWindow(target)
+            if (target >= duration) return SeekPlan.Live
+        }
+        return seekPlan(frame.watchedMs + deltaMs, frame.nowMs, snapshot, archiveStart, fallbackStart,
+            catchupDays, supportsCatchup)
     }
 
     fun progress(time: Long, start: Long, stop: Long): Float =

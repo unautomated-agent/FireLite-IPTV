@@ -439,7 +439,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun seek(deltaMs: Long) {
-        seekAbsolute((pendingSeekMs ?: updateFrame().watchedMs) + deltaMs)
+        pendingSeekMs?.let { seekAbsolute(it + deltaMs); return }
+        val channel = mutableChannel.value ?: return
+        applySeekPlan(PlaybackTime.relativeSeekPlan(deltaMs, updateFrame(), archiveStartMs, fallbackStartMs,
+            channel.catchupDays, CatchupUrlBuilder.isSupported(channel)), channel)
     }
 
     fun jump(forward: Boolean) = seek(if (forward) BIG_SEEK_MS else -BIG_SEEK_MS)
@@ -465,6 +468,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val frame = updateFrame()
         val plan = PlaybackTime.seekPlan(time, frame.nowMs, frame.snapshot, archiveStartMs, fallbackStartMs,
             channel.catchupDays, CatchupUrlBuilder.isSupported(channel))
+        applySeekPlan(plan, channel)
+    }
+
+    private fun applySeekPlan(plan: SeekPlan, channel: ChannelEntity) {
         catchupJob?.cancel()
         pendingSeekMs = null
         when (plan) {

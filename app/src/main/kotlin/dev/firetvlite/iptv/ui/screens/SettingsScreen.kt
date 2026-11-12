@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+
 package dev.firetvlite.iptv.ui.screens
 
 import android.net.Uri
@@ -8,6 +10,7 @@ import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,6 +19,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -31,8 +35,11 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.window.Dialog
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.FireLiteApplication
@@ -46,6 +53,7 @@ import dev.firetvlite.iptv.data.library.SourceDiagnostics
 import kotlinx.coroutines.flow.Flow
 import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.FocusSurface
+import dev.firetvlite.iptv.ui.components.LocalFocusedScale
 import dev.firetvlite.iptv.ui.components.LabeledTextField
 import dev.firetvlite.iptv.ui.components.PrimaryButton
 import dev.firetvlite.iptv.ui.components.ProgressBar
@@ -84,13 +92,7 @@ fun SettingsScreen(
     onWatch: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Column(
-        modifier = modifier
-            .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(start = 16.dp, end = 24.dp, top = 24.dp, bottom = 24.dp),
-        verticalArrangement = Arrangement.spacedBy(18.dp),
-    ) {
+    SettingsLayout(modifier) {
         FLText(
             text = stringResource(R.string.nav_settings),
             style = FireLiteTheme.typography.display,
@@ -117,6 +119,18 @@ fun SettingsScreen(
             onInstall = onInstallUpdate,
             onOpenInstallSettings = onOpenInstallSettings,
         )
+    }
+}
+
+@Composable
+private fun SettingsLayout(modifier: Modifier, content: @Composable () -> Unit) {
+    val density = Density(LocalDensity.current.density, LocalConfiguration.current.fontScale)
+    CompositionLocalProvider(LocalFocusedScale provides 1f, LocalDensity provides density) {
+        Column(
+            modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState())
+                .padding(start = 16.dp, end = 24.dp, top = 24.dp, bottom = 24.dp),
+            verticalArrangement = Arrangement.spacedBy(18.dp),
+        ) { content() }
     }
 }
 
@@ -212,7 +226,7 @@ private fun SourceSection(
                     text = stringResource(R.string.source_delete_confirm, entry.name, entry.id),
                     style = typography.headline,
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     PrimaryButton(
                         text = stringResource(R.string.source_delete),
                         onClick = {
@@ -279,7 +293,7 @@ private fun SourceSection(
                     color = WarningColor,
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 PrimaryButton(
                     text = stringResource(R.string.source_save),
                     onClick = {
@@ -368,7 +382,7 @@ private fun SourceSection(
                     color = if (importState is ImportState.Failed) WarningColor else colors.accent,
                 )
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 SecondaryButton(
                     text = stringResource(R.string.source_add),
                     onClick = { openForm(null) },
@@ -451,7 +465,7 @@ private fun UpdateSection(
         if (state is UpdateState.Downloading) {
             ProgressBar(progress = state.progress ?: 0f, modifier = Modifier.width(360.dp))
         }
-        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SecondaryButton(text = stringResource(R.string.update_check), onClick = onCheck)
             if (state.pendingRelease != null && state !is UpdateState.Downloading) {
                 PrimaryButton(text = stringResource(R.string.update_install), onClick = onInstall)

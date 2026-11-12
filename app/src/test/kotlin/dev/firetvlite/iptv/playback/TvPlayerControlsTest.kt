@@ -16,16 +16,36 @@ class TvPlayerControlsTest {
         assertEquals(BannerState.Expanded, expanded.key(TvKey.Down, 400).first.banner)
     }
 
-    @Test fun timerHidesExactlyEightSecondsAfterLastKeyInBothBannerStates() {
-        for (state in listOf(BannerState.Compact, BannerState.Expanded)) {
-            val initial = TvPlayerControls(state).touch(100)
-            assertEquals(state, initial.expire(8_099).banner)
-            assertEquals(BannerState.Hidden, initial.expire(8_100).banner)
-            val reset = initial.key(TvKey.Up, 8_000).first
-            assertEquals(BannerState.Expanded, reset.expire(15_999).banner)
-            assertEquals(BannerState.Hidden, reset.expire(16_000).banner)
-        }
+    @Test fun compactExpiresButExpandedNeverAutoHides() {
+        val initial = TvPlayerControls(BannerState.Compact).touch(100)
+        assertEquals(BannerState.Compact, initial.expire(8_099).banner)
+        assertEquals(BannerState.Hidden, initial.expire(8_100).banner)
+        val expanded = initial.key(TvKey.Up, 8_000).first
+        assertEquals(0L, expanded.deadline)
+        assertEquals(BannerState.Expanded, expanded.expire(Long.MAX_VALUE).banner)
+        assertEquals(BannerState.Expanded, expanded.touch(90_000).expire(Long.MAX_VALUE).banner)
         assertEquals(TvPlayerControls(), TvPlayerControls().touch(20_000).expire(90_000))
+    }
+
+    @Test fun downScrollsThenRequiresAFreshPressAtTheBottomToHide() {
+        val expanded = TvPlayerControls(BannerState.Expanded)
+        for (repeat in listOf(false, true)) {
+            val (controls, action) = expanded.key(TvKey.Down, 100, canScrollDown = true, repeat = repeat)
+            assertEquals(BannerState.Expanded, controls.banner)
+            assertEquals(TvAction.ScrollDown, action)
+        }
+        val heldAtBottom = expanded.key(TvKey.Down, 200, canScrollDown = false, repeat = true)
+        assertEquals(BannerState.Expanded, heldAtBottom.first.banner)
+        assertEquals(TvAction.None, heldAtBottom.second)
+        val freshAtBottom = heldAtBottom.first.key(TvKey.Down, 300, canScrollDown = false)
+        assertEquals(BannerState.Hidden, freshAtBottom.first.banner)
+        assertEquals(TvAction.None, freshAtBottom.second)
+    }
+
+    @Test fun emptyOrShortDescriptionHidesOnFirstDownAndUpStillScrolls() {
+        val expanded = TvPlayerControls(BannerState.Expanded)
+        assertEquals(BannerState.Hidden, expanded.key(TvKey.Down, 100, canScrollDown = false).first.banner)
+        assertEquals(TvAction.ScrollUp, expanded.key(TvKey.Up, 100, canScrollDown = false).second)
     }
 
     @Test fun everySeekShowsCompactBannerForExactlyFourSecondsWithoutChangingTheAction() {
@@ -46,14 +66,15 @@ class TvPlayerControlsTest {
         assertEquals(BannerState.Hidden, repeat.expire(8_000).banner)
     }
 
-    @Test fun upAfterSeekUsesEightSecondsAndSeekingAnExpandedBannerUsesFour() {
+    @Test fun expandingAfterSeekAndSeekingWhileExpandedDoNotAddATimeout() {
         val seek = TvPlayerControls().key(TvKey.Left, 100).first
         val up = seek.key(TvKey.Up, 200).first
         assertEquals(BannerState.Expanded, up.banner)
-        assertEquals(8_200L, up.deadline)
+        assertEquals(0L, up.deadline)
         val expandedSeek = up.key(TvKey.Rewind, 300).first
         assertEquals(BannerState.Expanded, expandedSeek.banner)
-        assertEquals(4_300L, expandedSeek.deadline)
+        assertEquals(0L, expandedSeek.deadline)
+        assertEquals(BannerState.Expanded, expandedSeek.expire(Long.MAX_VALUE).banner)
     }
 
     @Test fun anOpenPanelSuppressesBannerAndSeekDispatch() {

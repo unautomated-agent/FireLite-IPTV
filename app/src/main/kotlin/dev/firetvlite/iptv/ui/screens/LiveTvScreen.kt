@@ -161,12 +161,13 @@ fun LiveTvScreen(
 
 @Composable
 @OptIn(ExperimentalComposeUiApi::class)
-fun PlayerChannelOverlay(library: LibraryViewModel, player: PlayerViewModel) {
+fun PlayerChannelOverlay(library: LibraryViewModel, player: PlayerViewModel, onQuickMenu: () -> Unit) {
     var showGroups by remember { mutableStateOf(false) }
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
         ChannelBrowser(
             library = library, player = player, active = true,
             overlay = true, showGroups = showGroups, onShowGroups = { showGroups = it },
+            onQuickMenu = onQuickMenu,
             modifier = Modifier.fillMaxWidth(if (showGroups) 0.66f else 0.42f).fillMaxHeight()
                 .background(Brush.horizontalGradient(listOf(Color(0xBF101820), Color(0xD2101820))))
                 .focusProperties { exit = { FocusRequester.Cancel } }.focusGroup(),
@@ -186,6 +187,7 @@ private fun ChannelBrowser(
     modifier: Modifier = Modifier,
     guideOnly: Boolean = false,
     returnTarget: BrowserTarget? = null,
+    onQuickMenu: () -> Unit = {},
 ) {
     val groups by library.groups.collectAsState()
     val selected by library.selectedGroup.collectAsState()
@@ -321,6 +323,12 @@ private fun ChannelBrowser(
         focusedChannel?.channel?.id?.let { library.guide(it, now) } ?: flowOf(CurrentAndNext(null, null))
     }.collectAsState(initial = CurrentAndNext(null, null))
     var focusedIndex by remember { mutableStateOf(0) }
+    fun openChannelHistory() {
+        val channel = focusedChannel?.channel ?: return
+        scope.launch {
+            library.zapContext(selected)?.let { player.openTimeline(it, focusedIndex, selected, channel) }
+        }
+    }
     fun recordFocus(row: ChannelRow, index: Int) {
         if (library.selectedGroup.value != selected || !categoryFocus.record(selected, focusGeneration,
                 ChannelFocusTarget(row.channel.streamUrl, index))) return
@@ -435,6 +443,8 @@ private fun ChannelBrowser(
         modifier = modifier
             .fillMaxHeight()
             .focusRequester(browserFocus)
+            .then(if (overlay) Modifier.remotePress(setOf(Key.Menu),
+                onShort = { if (channelsHaveFocus) openChannelHistory() }, onLong = onQuickMenu) else Modifier)
             .then(if (overlay) Modifier
                 .remotePress(setOf(Key.DirectionCenter, Key.Enter, Key.NumPadEnter), onShort = {
                     val channel = focusedChannel?.channel
@@ -541,10 +551,7 @@ private fun ChannelBrowser(
                     modifier = Modifier.fillMaxSize().onFocusChanged { channelsHaveFocus = it.hasFocus }.onPreviewKeyEvent { event ->
                         if (overlay && event.key == Key.DirectionRight) {
                             if (event.type == KeyEventType.KeyDown && event.nativeKeyEvent.repeatCount == 0) {
-                                val channel = focusedChannel?.channel
-                                if (channel != null) scope.launch {
-                                    library.zapContext(selected)?.let { player.openTimeline(it, focusedIndex, selected, channel) }
-                                }
+                                openChannelHistory()
                             }
                             true
                         } else if (overlay && event.key == Key.DirectionLeft) {
@@ -603,7 +610,7 @@ private fun ChannelBrowser(
                                         library.zapContext(selected)?.let { player.open(it, index, selected) }
                                     }
                                 },
-                                onMenu = { library.toggleFavorite(row.channel.streamUrl) },
+                                onMenu = { openChannelHistory() },
                             )
                         } else {
                             Spacer(Modifier.fillMaxWidth().height(80.dp))

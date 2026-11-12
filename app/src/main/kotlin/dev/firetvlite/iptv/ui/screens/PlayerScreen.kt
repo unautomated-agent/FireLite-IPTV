@@ -84,6 +84,7 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
     val status by viewModel.status.collectAsState()
     val startupDelayed by viewModel.startupDelayed.collectAsState()
     val timeline by viewModel.timeline.collectAsState()
+    var quickMenu by remember { mutableStateOf(false) }
     var playWhenReady by remember(player) { mutableStateOf(player?.playWhenReady == true) }
     DisposableEffect(player) {
         val listener = object : Player.Listener {
@@ -95,7 +96,7 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
     val keepAwake = ScreenAwakePolicy.keepAwake(mode, status, playWhenReady)
     val density = LocalDensity.current
     BackHandler(enabled = mode.fullFrame || (mode == PlayerMode.Guide && screenBackReturnsToPlayback(mode, channel != null))) {
-        if (timeline != null) viewModel.closeTimeline()
+        if (timeline != null) viewModel.dismissTimeline()
         else if (mode == PlayerMode.Overlay) viewModel.closeOverlay()
         else if (mode == PlayerMode.Guide) viewModel.returnToFullscreen()
     }
@@ -128,8 +129,12 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
             view.keepScreenOn = keepAwake
         }, onRelease = { view -> view.keepScreenOn = false; view.player = null }, modifier = video)
         if (mode == PlayerMode.Preview) Box(video) { StatusLayer(status) }
-        if (mode == PlayerMode.Fullscreen && timeline == null) PlayerContent(viewModel, onFilms, onSettings)
-        if (mode == PlayerMode.Overlay) PlayerChannelOverlay(library, viewModel)
+        if (mode == PlayerMode.Fullscreen && timeline == null) PlayerContent(viewModel, onFilms, onSettings,
+            quickMenu, { quickMenu = it })
+        if (mode == PlayerMode.Overlay) PlayerChannelOverlay(library, viewModel) {
+            viewModel.closeOverlay()
+            quickMenu = true
+        }
         timeline?.let { ChannelHistoryList(it, viewModel, library) }
         if (startupDelayed && mode != PlayerMode.Closed) FLText(stringResource(R.string.player_start_delayed),
             style = FireLiteTheme.typography.label, color = FireLiteTheme.colors.textPrimary,
@@ -139,19 +144,20 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
 }
 
 @Composable
-private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSettings: () -> Unit) {
+private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSettings: () -> Unit,
+    quickMenu: Boolean, onQuickMenu: (Boolean) -> Unit) {
     val status by viewModel.status.collectAsState()
     val channel by viewModel.channel.collectAsState()
     val frame by viewModel.frame.collectAsState()
     val guide by viewModel.programme.collectAsState()
     val message by viewModel.message.collectAsState()
     var controls by remember { mutableStateOf(TvPlayerControls()) }
-    var quickMenu by remember { mutableStateOf(false) }
     val scroll = rememberScrollState()
     val scope = rememberCoroutineScope()
     val focus = remember { FocusRequester() }
-    fun key(key: TvKey) {
-        val result = controls.key(key, SystemClock.uptimeMillis(), panelOpen = quickMenu)
+    fun key(key: TvKey, repeat: Boolean = false) {
+        val result = controls.key(key, SystemClock.uptimeMillis(), panelOpen = quickMenu,
+            canScrollDown = scroll.canScrollForward, repeat = repeat)
         controls = result.first
         when (result.second) {
             TvAction.None -> Unit
@@ -161,21 +167,21 @@ private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSet
             TvAction.Channels -> viewModel.openOverlay()
             TvAction.Guide -> viewModel.openGuide()
             TvAction.History -> viewModel.openTimeline()
-            TvAction.QuickMenu -> quickMenu = true
+            TvAction.QuickMenu -> onQuickMenu(true)
             TvAction.ScrollUp -> scope.launch { scroll.animateScrollBy(-100f) }
             TvAction.ScrollDown -> scope.launch { scroll.animateScrollBy(100f) }
         }
     }
     LaunchedEffect(quickMenu) { if (!quickMenu) focus.requestFocusWhenReady() }
-    LaunchedEffect(controls.deadline) {
-        if (controls.banner != BannerState.Hidden) {
+    LaunchedEffect(controls.deadline, controls.banner) {
+        if (controls.banner == BannerState.Compact) {
             delay((controls.deadline - SystemClock.uptimeMillis()).coerceAtLeast(0))
             controls = controls.expire(SystemClock.uptimeMillis())
         }
     }
     LaunchedEffect(controls.banner, channel?.id) { scroll.scrollTo(0) }
     BackHandler(enabled = quickMenu || controls.banner != BannerState.Hidden) {
-        if (quickMenu) quickMenu = false else key(TvKey.Back)
+        if (quickMenu) onQuickMenu(false) else key(TvKey.Back)
     }
     Box(Modifier.fillMaxSize().focusRequester(focus)
         .onPreviewKeyEvent { if (!quickMenu) controls = controls.touch(SystemClock.uptimeMillis()); false }
@@ -195,7 +201,7 @@ private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSet
                 }
                 val first = event.nativeKeyEvent.repeatCount == 0
                 if (mapped != null) {
-                    if (first || controls.banner == BannerState.Expanded && mapped in setOf(TvKey.Up, TvKey.Down)) key(mapped)
+                    if (first || controls.banner == BannerState.Expanded && mapped in setOf(TvKey.Up, TvKey.Down)) key(mapped, repeat = !first)
                     true
                 } else when (event.key) {
                     Key.ChannelUp -> { if (first) viewModel.zap(-1); true }
@@ -221,8 +227,8 @@ private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSet
     AnimatedVisibility(quickMenu,
         enter = fadeIn(tween(200)) + slideInHorizontally(tween(200)) { it / 3 },
         exit = fadeOut(tween(200)) + slideOutHorizontally(tween(200)) { it / 3 }) {
-        PlayerQuickMenu(viewModel, active = quickMenu, onClose = { quickMenu = false },
-            onFilms = { quickMenu = false; onFilms() }, onSettings = { quickMenu = false; onSettings() })
+        PlayerQuickMenu(viewModel, active = quickMenu, onClose = { onQuickMenu(false) },
+            onFilms = { onQuickMenu(false); onFilms() }, onSettings = { onQuickMenu(false); onSettings() })
     }
 }
 

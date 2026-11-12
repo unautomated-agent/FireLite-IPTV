@@ -62,6 +62,7 @@ data class ChannelTimelineTarget(
     val frame: PlaybackFrame,
     val liveWindowStart: Long?,
     val playing: Boolean,
+    val fromOverlay: Boolean = false,
 )
 
 /**
@@ -307,11 +308,21 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val frame = if (playing) current else PlaybackFrame(current.nowMs, current.nowMs)
         val windowStart = if (playing && archiveStartMs == null && frame.snapshot.seekable)
             frame.watchedMs - frame.snapshot.positionMs else null
-        mutableTimeline.value = ChannelTimelineTarget(channel, zap, index, group, frame, windowStart, playing)
+        mutableTimeline.value = ChannelTimelineTarget(channel, zap, index, group, frame, windowStart, playing,
+            fromOverlay = mutableMode.value == PlayerMode.Overlay)
         setMode(PlayerMode.Fullscreen)
     }
 
     fun closeTimeline() { mutableTimeline.value = null }
+
+    fun dismissTimeline() {
+        val target = mutableTimeline.value ?: return
+        closeTimeline()
+        if (target.fromOverlay) {
+            mutableBrowserTarget.value = BrowserTarget(target.group, target.channel, ++targetToken)
+            setMode(PlayerMode.Overlay)
+        }
+    }
 
     fun openLiveProgramme(zap: ZapContext, index: Int, group: GroupKey, channel: ChannelEntity, programme: ProgrammeEntity?) {
         closeTimeline()

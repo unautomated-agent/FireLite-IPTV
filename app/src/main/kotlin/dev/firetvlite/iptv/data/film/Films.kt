@@ -26,8 +26,9 @@ object Films {
     val zone: ZoneId = ZoneId.of("Europe/Warsaw")
     private val series = Regex("(?iu)\\b(serial\\w*|series|odc\\.?|odcinek|sezon|season|episode|s\\d{1,2}\\s*e\\d+|e\\d+)\\b|\\(\\d+/\\d+\\)")
     private val genre = Regex("(?imu)\\b(sensacja|dramat|komedia|thriller|horror|western|sci-fi|science fiction|kryminał|przygodowy|wojenny|obyczajowy|romans|fantasy|biograficzny|animowany film|action|drama|comedy|crime|adventure|war|romance|biographical|animated film|animated movie|feature film|television film|tv movie)\\b|\\bfilm (fabularny|kinowy|telewizyjny|animowany)\\b|^(films?|movies?|motion pictures?)$")
+    private val titleSeparators = Regex("[^\\p{L}\\p{N}]+")
     fun normalized(title: String): String = title.lowercase(Locale.ROOT)
-        .replace(Regex("[^\\p{L}\\p{N}]+"), " ").trim()
+        .replace(titleSeparators, " ").trim()
     fun candidate(p: ProgrammeEntity): Boolean {
         val categories = (p.categories.ifBlank { p.category.orEmpty() })
             .split('\n').joinToString("\n") { it.substringBefore("\",]\"name\":\"").trim().lowercase(Locale.ROOT) }

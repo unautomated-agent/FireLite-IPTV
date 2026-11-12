@@ -5,10 +5,41 @@ import dev.firetvlite.iptv.data.film.FilmReminders
 import dev.firetvlite.iptv.data.film.Films
 import dev.firetvlite.iptv.data.film.ReminderShowing
 import java.time.Instant
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.CancellationException
 import org.junit.Assert.*
 import org.junit.Test
 
 class FilmRemindersTest {
+    @Test fun candidateLoadingRunsOffCallerThreadAndReturnsOnlyWatchMatches() = runBlocking {
+        val caller = Thread.currentThread()
+        val film = showing()
+        assertEquals(listOf(film), FilmReminders.loadCandidates(now) {
+            assertNotSame(caller, Thread.currentThread())
+            listOf(film, showing(title = "Inny program"))
+        })
+        assertTrue(FilmReminders.loadCandidates(now) { emptyList() }.isEmpty())
+    }
+
+    @Test fun candidateLoadingPropagatesErrorsAndCancellation() = runBlocking {
+        for (error in listOf(IllegalStateException("database unavailable"), CancellationException("cancelled"))) {
+            try {
+                FilmReminders.loadCandidates(now) { throw error }
+                fail("Expected loader failure")
+            } catch (caught: Exception) { assertEquals(error.message, caught.message) }
+        }
+    }
+
+    @Test fun backgroundCandidateFilterKeepsOnlyWatchMatchesIncludingMidnightSoon() {
+        val late = time("2026-11-12T22:52:00Z")
+        val midnight = showing(time("2026-11-12T23:00:00Z"))
+        val rows = (1L..66000).map { showing(late, channel = it, title = "Inny program") } + midnight
+        assertEquals(listOf(midnight), FilmReminders.candidates(rows, late))
+        assertEquals(FilmReminderCard.Soon(midnight), FilmReminders.next(FilmReminders.candidates(rows, late), late, null, emptySet()))
+        assertTrue(FilmReminders.candidates(emptyList(), late).isEmpty())
+        assertTrue(FilmReminders.candidates(listOf(midnight.copy(stop = late)), late).isEmpty())
+    }
+
     private fun time(value: String) = Instant.parse(value).toEpochMilli()
     private val now = time("2026-11-12T12:00:00Z")
     private fun showing(start: Long = now + 3_600_000, channel: Long = 1, title: String = "Harry Potter i Kamień Filozoficzny") =

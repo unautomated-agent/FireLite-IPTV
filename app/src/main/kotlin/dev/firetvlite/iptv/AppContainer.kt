@@ -80,6 +80,7 @@ class FireLiteApplication : Application() {
                 Thread.getDefaultUncaughtExceptionHandler(),
             ),
         )
+        AppHealthMonitor(this, reports).start("${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
         container = AppContainer(this)
     }
 }

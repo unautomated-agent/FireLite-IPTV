@@ -16,6 +16,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DiagnosticsReportTest {
+    @Test fun boundedQrKeepsStallCrashAndProcessExitEvidence() {
+        val health = "Main-thread stall: 3500ms\nMain thread: java.util.regex.Pattern.compile\n" +
+            "Uncaught crash: java.lang.OutOfMemoryError\nThread: background-worker\nProcess exit: LOW_MEMORY\n" +
+            "frame\n".repeat(2000)
+        val text = DiagnosticsReport.text(null, null, SourceDiagnostics(), health)
+        val qr = DiagnosticsReport.payload(text)
+        assertTrue(qr.toByteArray().size <= DiagnosticsReport.QR_BYTES)
+        for (expected in listOf("Main-thread stall:", "Main thread:", "Uncaught crash:", "Process exit: LOW_MEMORY"))
+            assertTrue(qr, qr.contains(expected))
+    }
+
     @Test fun timestampsAreCompactAndAllSectionsAreFreeOfLongDigitRunsEvenAfterQrDecoding() {
         val source = SourceEntity(name = "Playlist 1794475151000", url = "https://provider.org/private-code", userAgent = "TV",
             epgRefreshedAt = 1794475180688, epgProgrammeCount = Int.MAX_VALUE, xtreamArchiveCount = Int.MAX_VALUE,

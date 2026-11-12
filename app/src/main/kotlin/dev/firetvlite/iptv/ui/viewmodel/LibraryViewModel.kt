@@ -16,6 +16,7 @@ import dev.firetvlite.iptv.data.library.LibraryRepository
 import dev.firetvlite.iptv.data.library.ListZapContext
 import dev.firetvlite.iptv.data.library.QueryZapContext
 import dev.firetvlite.iptv.data.library.SourceDiagnostics
+import dev.firetvlite.iptv.data.film.FilmReminders
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.flowOn
 import dev.firetvlite.iptv.data.library.ZapContext
@@ -49,8 +50,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     val films = container.films
     val reminderPreferences = container.reminderPreferences
 
-    suspend fun reminderShowings(sourceId: Long, now: Long) = container.database.epgDao()
-        .reminderWindow(sourceId, now, dev.firetvlite.iptv.data.film.FilmReminders.queryUntil(now))
+    suspend fun reminderShowings(sourceId: Long, now: Long) = FilmReminders.loadCandidates(now) {
+        container.database.epgDao().reminderWindow(sourceId, now, FilmReminders.queryUntil(now))
+    }
     private val channelDao = container.database.channelDao()
     private val userDao = container.database.userDao()
 

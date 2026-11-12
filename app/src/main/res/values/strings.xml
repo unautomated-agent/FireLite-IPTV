@@ -139,6 +139,7 @@
     <string name="player_position_of">%1$d z %2$d</string>
     <string name="player_connecting">Łączenie…</string>
     <string name="player_error">Ten kanał nie działa (%1$s).\nGóra/Dół – inny kanał, Wstecz – lista.</string>
+    <string name="player_http_error">Kanał niedostępny u dostawcy (HTTP %1$d)</string>
     <string name="player_ended">Transmisja się zakończyła.</string>
     <string name="player_hint">Góra/Dół lub CH±: kanał · Lewo/Prawo: ±10 s · ⏩: +30 s · Play/Pause: pauza\nMenu/⏪: historia · OK: kanały · Przytrzymaj OK: ulubione · Przytrzymaj Lewo: początek audycji</string>
     <string name="channel_timeline_title">Historia audycji · %1$s</string>

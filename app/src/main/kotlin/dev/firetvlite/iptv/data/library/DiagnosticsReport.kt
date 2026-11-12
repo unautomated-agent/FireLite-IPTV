@@ -98,6 +98,7 @@ object DiagnosticsReport {
     }
 
     private val essentialPrefixes = listOf(
+        "HTTP:", "Request:", "Redirect:", "Headers:", "Request ID:", "Screen:",
         "FireLite ·", "Ostatni błąd odtwarzania:", "Ostatnie poprawne odtwarzanie:", "Channel:",
         "Startup:", "STOPPING_PREVIOUS=", "CLOSE_GRACE=", "WAITING_PREVIOUS_CONNECTION=",
         "PREPARING_BUFFERING=", "RECOVERY_DELAY=", "WAITING_RECOVERY_CONNECTION=",

@@ -16,6 +16,17 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DiagnosticsReportTest {
+    @Test fun boundedQrKeepsHttpRequestRedirectAndDisplayedErrorEvidence() {
+        val playback = "Ostatni błąd odtwarzania:\nHTTP: HTTP=404; Content-Type=application/vnd.apple.mpegurl\n" +
+            "Request: media playlist; suffix=…/[redacted].m3u8\nRedirect: true; hosts=2; hops=2\n" +
+            "Headers: Referer,User-Agent\nRequest ID: abc -> def\n" +
+            "Screen: Kanał niedostępny u dostawcy (HTTP 404)\n" + "frame\n".repeat(2000)
+        val report = DiagnosticsReport.text(null, null, SourceDiagnostics(), "", playback = playback)
+        val qr = DiagnosticsReport.payload(report)
+        assertTrue(qr.toByteArray().size <= DiagnosticsReport.QR_BYTES)
+        for (expected in listOf("HTTP=404", "Request: media playlist", "hosts=2", "Headers: Referer,User-Agent", "Screen:"))
+            assertTrue(qr, qr.contains(expected))
+    }
     @Test fun boundedQrKeepsStallCrashAndProcessExitEvidence() {
         val health = "Main-thread stall: 3500ms\nMain thread: java.util.regex.Pattern.compile\n" +
             "Uncaught crash: java.lang.OutOfMemoryError\nThread: background-worker\nProcess exit: LOW_MEMORY\n" +

@@ -14,6 +14,7 @@ data class ParsedChannel(
     val catchupSource: String?,
     val catchupDays: Int,
     val tvgName: String? = null,
+    val headers: Map<String, String> = emptyMap(),
 )
 
 /**
@@ -21,7 +22,7 @@ data class ParsedChannel(
  *
  * Understood: `#EXTINF` with `group-title`, `tvg-id`, `tvg-name`, `tvg-logo` and the catch-up attributes
  * `catchup`, `catchup-source`, `catchup-days` (also `tvg-rec` and `timeshift`), `#EXTGRP`, and catch-up
- * defaults on the `#EXTM3U` header line. Everything else starting with `#` is ignored.
+ * defaults on the `#EXTM3U` header line, and per-channel VLC/Kodi/URL-suffix HTTP headers.
  */
 object M3uParser {
     data class Metadata(val catchupChannels: Int = 0, val deviceType: String = "")
@@ -41,6 +42,7 @@ object M3uParser {
         val catchupType: String? = null,
         val catchupSource: String? = null,
         val catchupDays: Int? = null,
+        val headers: MutableMap<String, String> = linkedMapOf(),
     )
 
     private class Defaults(
@@ -107,7 +109,23 @@ object M3uParser {
                                 catchupType = current.catchupType,
                                 catchupSource = current.catchupSource,
                                 catchupDays = current.catchupDays,
+                                headers = current.headers,
                             )
+                        }
+                    }
+                    line.startsWith("#EXTVLCOPT:", true) -> {
+                        val option = line.substringAfter(':')
+                        val name = option.substringBefore('=').removePrefix("http-")
+                        pending?.let { PlaylistHttpHeaders.put(it.headers, name, option.substringAfter('=', "")) }
+                    }
+                    line.startsWith("#KODIPROP:", true) -> {
+                        val option = line.substringAfter(':')
+                        val name = option.substringBefore('=')
+                        pending?.let {
+                            if (name in listOf("inputstream.adaptive.stream_headers", "inputstream.adaptive.manifest_headers",
+                                    "inputstream.adaptive.common_headers"))
+                                PlaylistHttpHeaders.parameters(option.substringAfter('=', ""), it.headers)
+                            else PlaylistHttpHeaders.put(it.headers, name.removePrefix("http-"), option.substringAfter('=', ""))
                         }
                     }
                 }
@@ -146,10 +164,18 @@ object M3uParser {
             catchupType = (attribute(attrs, "catchup") ?: attribute(attrs, "catchup-type"))?.takeIf { it.isNotEmpty() },
             catchupSource = attribute(attrs, "catchup-source")?.takeIf { it.isNotEmpty() },
             catchupDays = readCatchupDays(attrs),
+            headers = linkedMapOf<String, String>().apply {
+                listOf("User-Agent", "Referer", "Referrer", "Origin").forEach { name ->
+                    listOf(name, "http-$name", "tvg-$name").forEach { key ->
+                        attribute(attrs, key)?.let { PlaylistHttpHeaders.put(this, name, it) }
+                    }
+                }
+            },
         )
     }
 
     private fun toChannel(info: Pending, url: String, defaults: Defaults): ParsedChannel {
+        val (address, suffixHeaders) = PlaylistHttpHeaders.splitUrl(url)
         val source = info.catchupSource ?: defaults.catchupSource
         val declaredType = info.catchupType ?: defaults.catchupType
         val days = info.catchupDays ?: defaults.catchupDays
@@ -157,20 +183,21 @@ object M3uParser {
         val type = declaredType?.takeUnless { it.equals("true", true) || it == "1" }
             ?: when {
                 source != null -> "default"
-                days > 0 && XtreamAddress.stream(url) != null -> "xc"
+                days > 0 && XtreamAddress.stream(address) != null -> "xc"
                 days > 0 -> "shift"
                 else -> null
             }
         return ParsedChannel(
             name = info.name.ifEmpty { url },
             group = info.group,
-            url = url,
+            url = address,
             logoUrl = info.logoUrl,
             tvgId = info.tvgId,
             catchupType = type,
             catchupSource = source,
             catchupDays = days,
             tvgName = info.tvgName,
+            headers = info.headers + suffixHeaders,
         )
     }
 

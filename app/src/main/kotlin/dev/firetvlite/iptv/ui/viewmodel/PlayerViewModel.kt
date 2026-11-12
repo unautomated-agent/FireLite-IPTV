@@ -10,6 +10,7 @@ import dev.firetvlite.iptv.data.db.ProgrammeEntity
 import dev.firetvlite.iptv.data.db.FavoriteEntity
 import dev.firetvlite.iptv.data.db.RecentEntity
 import dev.firetvlite.iptv.data.library.LibraryRepository
+import dev.firetvlite.iptv.data.playlist.PlaylistHttpHeaders
 import dev.firetvlite.iptv.data.library.ZapContext
 import dev.firetvlite.iptv.data.library.GroupKey
 import dev.firetvlite.iptv.playback.CatchupUrlBuilder
@@ -530,7 +531,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
         archiveStartMs = start * 1000
         mutableLiveChannelId.value = null
-        val request = StreamRequest(url, userAgent, archive = true, channelName = channel.name)
+        val request = StreamRequest(url, userAgent, archive = true, channelName = channel.name,
+            headers = PlaylistHttpHeaders.decode(channel.requestHeaders))
         if (restartIfActive) playback.playArchiveFromStart(request) else playback.play(request)
         updateFrame()
     }
@@ -547,7 +549,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         archiveStartMs = null
         fallbackStartMs = System.currentTimeMillis()
         mutableLiveChannelId.value = channel.id
-        playback.play(StreamRequest(channel.streamUrl, userAgent, channelName = channel.name))
+        playback.play(StreamRequest(channel.streamUrl, userAgent, channelName = channel.name,
+            headers = PlaylistHttpHeaders.decode(channel.requestHeaders)))
         updateFrame()
     }
 

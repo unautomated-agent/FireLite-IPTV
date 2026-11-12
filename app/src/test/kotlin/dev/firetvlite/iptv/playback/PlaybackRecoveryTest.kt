@@ -5,6 +5,12 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class PlaybackRecoveryTest {
+    @Test fun providerHttpErrorsRetryTheOriginalHlsSourceWithoutProgressiveFallback() {
+        for (status in listOf(403, 404, 410)) {
+            assertEquals(RecoveryAction.Retry, PlaybackRecovery().action(
+                PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS, "https://provider/live.m3u8?token=fixture", httpFailure(status)))
+        }
+    }
     @Test fun behindLiveWindowAlwaysSeeksWithinTheCurrentSession() {
         assertEquals(RecoveryAction.LiveEdge, PlaybackRecovery().action(
             PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW, "https://provider/live.m3u8"))

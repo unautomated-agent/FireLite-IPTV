@@ -243,7 +243,9 @@ private fun StatusLayer(status: PlaybackStatus) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         when (status) {
             PlaybackStatus.Connecting, PlaybackStatus.Buffering -> Spinner()
-            is PlaybackStatus.Failed -> FLText(stringResource(R.string.player_error, status.code), style = FireLiteTheme.typography.headline)
+            is PlaybackStatus.Failed -> FLText(if (status.httpStatus != null)
+                stringResource(R.string.player_http_error, status.httpStatus)
+                else stringResource(R.string.player_error, status.code), style = FireLiteTheme.typography.headline)
             PlaybackStatus.Ended -> FLText(stringResource(R.string.player_ended), style = FireLiteTheme.typography.headline)
             else -> Unit
         }

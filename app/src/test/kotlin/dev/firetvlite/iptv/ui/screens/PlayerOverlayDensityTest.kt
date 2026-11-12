@@ -1,6 +1,8 @@
 package dev.firetvlite.iptv.ui.screens
 
 import dev.firetvlite.iptv.ui.components.CLOCK_BACKGROUND_ALPHA
+import dev.firetvlite.iptv.ui.components.CLOCK_HORIZONTAL_PADDING_DP
+import dev.firetvlite.iptv.ui.components.CLOCK_VERTICAL_PADDING_DP
 import dev.firetvlite.iptv.ui.components.CLOCK_CORNER_DP
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -16,5 +18,7 @@ class PlayerOverlayDensityTest {
     @Test fun clockHasSofterBackgroundAndSmallerCorners() {
         assertTrue(CLOCK_BACKGROUND_ALPHA in 0.35f..0.45f)
         assertTrue(CLOCK_CORNER_DP in 1..7)
+        assertTrue(CLOCK_HORIZONTAL_PADDING_DP in 1..6)
+        assertTrue(CLOCK_VERTICAL_PADDING_DP in 1..2)
     }
 }

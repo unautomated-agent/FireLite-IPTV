@@ -56,6 +56,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.paging.compose.collectAsLazyPagingItems
 import androidx.paging.compose.itemKey
 import androidx.paging.LoadState
@@ -98,6 +99,10 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import dev.firetvlite.iptv.playback.CategorySwitch
 import dev.firetvlite.iptv.playback.PlayerMode
 import dev.firetvlite.iptv.ui.components.remotePress
+
+internal const val CHANNEL_OVERLAY_ROW_DP = 48
+internal const val CHANNEL_OVERLAY_GAP_DP = 4
+internal const val CHANNEL_OVERLAY_LOGO_DP = 32
 
 /**
  * Live TV browser: groups on the left, the channels of the selected group in the middle (loaded page by page),
@@ -537,7 +542,7 @@ private fun ChannelBrowser(
                         } else false
                     },
                     contentPadding = PaddingValues(horizontal = 6.dp, vertical = 8.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(if (overlay) CHANNEL_OVERLAY_GAP_DP.dp else 8.dp),
                 ) {
                     items(count = pagingItems.itemCount, key = pagingItems.itemKey { it.channel.id }) { index ->
                         val row = pagingItems[index]
@@ -601,10 +606,11 @@ private fun ChannelBrowser(
             }
             if (overlay) {
                 detailGuide.next?.takeIf { pendingCategoryFocus == null }?.let {
-                    FLText(stringResource(R.string.channel_next_programme, clockTime(it.start), it.title),
-                        style = FireLiteTheme.typography.label, maxLines = 2,
-                        modifier = Modifier.padding(top = 8.dp))
-                    ImdbRating(it)
+                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        FLText(stringResource(R.string.channel_next_programme, clockTime(it.start), it.title),
+                            style = FireLiteTheme.typography.label, maxLines = 1, modifier = Modifier.weight(1f))
+                        ImdbRating(it)
+                    }
                 }
                 FLText(stringResource(R.string.channel_timeline_overlay_hint),
                     style = FireLiteTheme.typography.label, modifier = Modifier.padding(top = 8.dp))
@@ -671,22 +677,29 @@ internal fun ChannelRowItem(
         background = SolidColor(if (translucent) Color.Transparent else FireLiteTheme.colors.surface),
         modifier = modifier
             .fillMaxWidth()
-            .height(80.dp),
+            .height(if (translucent) CHANNEL_OVERLAY_ROW_DP.dp else 80.dp),
     ) {
         Row(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(horizontal = 12.dp),
+                .padding(horizontal = if (translucent) 8.dp else 12.dp),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(if (translucent) 8.dp else 12.dp),
         ) {
-            ChannelLogo(name = channel.name, logoUrl = channel.logoUrl)
-            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                FLText(text = channel.name, style = FireLiteTheme.typography.title, maxLines = 1)
+            ChannelLogo(name = channel.name, logoUrl = channel.logoUrl, size = if (translucent) CHANNEL_OVERLAY_LOGO_DP.dp else 40.dp)
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(if (translucent) 2.dp else 4.dp)) {
+                FLText(text = channel.name, style = if (translucent)
+                    FireLiteTheme.typography.title.copy(fontSize = 14.sp, lineHeight = 18.sp) else FireLiteTheme.typography.title, maxLines = 1)
                 if (programme != null) {
-                    FLText(text = programme.title, style = FireLiteTheme.typography.label,
-                        color = FireLiteTheme.colors.textSecondary, maxLines = 1)
-                    ImdbRating(programme)
+                    if (translucent) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        FLText(text = programme.title, style = FireLiteTheme.typography.label,
+                            color = FireLiteTheme.colors.textSecondary, maxLines = 1, modifier = Modifier.weight(1f))
+                        ImdbRating(programme)
+                    } else {
+                        FLText(text = programme.title, style = FireLiteTheme.typography.label,
+                            color = FireLiteTheme.colors.textSecondary, maxLines = 1)
+                        ImdbRating(programme)
+                    }
                     ProgressBar(PlaybackTime.progress(now, programme.start, programme.stop))
                 }
             }

@@ -16,6 +16,9 @@ import dev.firetvlite.iptv.FireLiteApplication
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 import kotlinx.coroutines.delay
 
+internal const val CLOCK_CORNER_DP = 4
+internal const val CLOCK_BACKGROUND_ALPHA = 0.4f
+
 @Composable
 internal fun minuteClock() = produceState(System.currentTimeMillis()) {
     while (true) {
@@ -33,7 +36,7 @@ internal fun WarsawClockBox(modifier: Modifier = Modifier) {
     val now by minuteClock()
     FLText(clockTime(now), style = FireLiteTheme.typography.title,
         color = FireLiteTheme.colors.textPrimary, maxLines = 1,
-        modifier = modifier.clip(RoundedCornerShape(8.dp))
-            .background(Color.Black.copy(alpha = 0.6f))
+        modifier = modifier.clip(RoundedCornerShape(CLOCK_CORNER_DP.dp))
+            .background(Color.Black.copy(alpha = CLOCK_BACKGROUND_ALPHA))
             .padding(horizontal = 12.dp, vertical = 6.dp))
 }

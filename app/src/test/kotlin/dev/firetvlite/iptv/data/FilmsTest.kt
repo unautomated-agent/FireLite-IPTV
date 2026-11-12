@@ -55,9 +55,48 @@ class FilmsTest {
         assertFalse(Films.candidate(film().copy(category = "wiadomości")))
         assertFalse(Films.candidate(film().copy(category = null)))
         assertFalse(Films.candidate(film().copy(stop = now + 59 * 60_000)))
-        assertTrue(Films.candidate(film().copy(stop = now + 60 * 60_000)))
+        assertFalse(Films.candidate(film().copy(stop = now + 60 * 60_000)))
+        assertFalse(Films.candidate(film().copy(stop = now + 80 * 60_000 - 1)))
+        assertTrue(Films.candidate(film().copy(stop = now + 80 * 60_000)))
         assertTrue(Films.candidate(film().copy(stop = now + 240 * 60_000)))
-        assertFalse(Films.candidate(film().copy(stop = now + 241 * 60_000)))
+        assertTrue(Films.candidate(film().copy(stop = now + 241 * 60_000)))
+        assertFalse(Films.candidate(film().copy(stop = now + 300 * 60_000, category = "wiadomości")))
+        assertFalse(Films.candidate(film().copy(stop = now + 300 * 60_000, episodeNum = "S1 E1")))
+        assertFalse(Films.candidate(film().copy(stop = now)))
+        assertFalse(Films.candidate(film().copy(stop = now - 1)))
+    }
+    @Test fun mixedUnratedAndMissingRatingsSortLongVotesAcrossAllTabs() {
+        for (tab in 0..2) {
+            val start = when (tab) { 0 -> now; 1 -> now + Films.DAY; else -> now - Films.DAY }
+            val missing = FilmShowing(channel().copy(catchupType = "shift", catchupDays = 2),
+                film().copy(start = start, stop = start + 7_200_000), null)
+            val unrated = missing.copy(programme = missing.programme.copy(start = start + 1),
+                rating = FilmRatingEntity("unrated", null, 123L, "tt123", now))
+            val noVotes = missing.copy(programme = missing.programme.copy(start = start + 2),
+                rating = FilmRatingEntity("no-votes", null, 0L, "tt456", now))
+            val rated = missing.copy(programme = missing.programme.copy(start = start + 3),
+                rating = FilmRatingEntity("rated", 8.0, 5L, "tt789", now))
+            val expected = listOf(rated, unrated, missing, noVotes)
+            for (input in listOf(expected.reversed(), listOf(missing, unrated, noVotes, rated))) {
+                assertEquals(expected, rankedFilms(input, now, tab))
+            }
+        }
+    }
+    @Test fun shortFilmsNeverReachRankingsOrSpendLookupRequests() = runBlocking {
+        val short = film("Short").copy(stop = now + 79 * 60_000)
+        val full = film("Full").copy(originalTitle = null, stop = now + 80 * 60_000)
+        val showings = listOf(short, full).map { FilmShowing(channel(), it, null) }
+        assertEquals(listOf(full), ratingCandidates(showings, now))
+        assertEquals(listOf(full), rankedFilms(showings, now, 0).map { it.programme })
+        var requests = 0
+        val lookup = FilmLookup(OmdbClient { _, _, _ -> requests++; OmdbResult.Missing }, object : FilmStore {
+            override suspend fun cached(key: String): FilmRatingEntity? = null
+            override suspend fun save(rating: FilmRatingEntity) = Unit
+            override suspend fun reserve(day: Long) = true
+        }, wait = {})
+        assertNull(lookup.lookup(short, "fixture", now))
+        lookup.lookup(full, "fixture", now)
+        assertEquals(1, requests)
     }
     @Test fun enrichmentIncludesAiringAndFutureFilmsButNotExpiredOrOutsideWindow() {
         val airing = film().copy(start = now - 60 * 60_000, stop = now + 60 * 60_000)

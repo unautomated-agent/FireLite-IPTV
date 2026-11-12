@@ -22,7 +22,7 @@ object Films {
     fun candidate(p: ProgrammeEntity): Boolean {
         val categories = (p.categories.ifBlank { p.category.orEmpty() })
             .split('\n').joinToString("\n") { it.substringBefore("\",]\"name\":\"").trim().lowercase(Locale.ROOT) }
-        return p.year in 1000..9999 && p.stop - p.start in 60 * 60_000L..240 * 60_000L &&
+        return p.year in 1000..9999 && p.stop - p.start >= 80 * 60_000L &&
             p.episodeNum == null && !series.containsMatchIn(p.title + "\n" + p.originalTitle.orEmpty() + "\n" + categories) &&
             genre.containsMatchIn(categories)
     }

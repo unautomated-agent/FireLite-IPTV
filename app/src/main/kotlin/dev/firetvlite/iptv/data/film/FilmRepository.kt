@@ -50,7 +50,7 @@ fun rankedFilms(films: List<FilmShowing>, now: Long, tab: Int): List<FilmShowing
         else Films.inWindow(it.programme, now, tab) }
     .distinctBy { it.identity }
     .sortedWith(compareByDescending<FilmShowing> { it.rating?.imdbRating ?: -1.0 }
-        .thenByDescending { it.rating?.imdbVotes ?: 0 }.thenBy { it.programme.start }.thenBy { it.channel.id })
+        .thenByDescending { it.rating?.imdbVotes ?: 0L }.thenBy { it.programme.start }.thenBy { it.channel.id })
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class FilmRepository(private val database: FireLiteDatabase, val preferences: OmdbPreferences,
@@ -91,6 +91,8 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
                 .collectLatest { (source, key) ->
                     if (source == null || key.isBlank()) return@collectLatest
                     while (true) {
+                        val quotaDelay = preferences.quotaDelay(System.currentTimeMillis())
+                        if (quotaDelay > 0) { delay(quotaDelay); continue }
                         var retry = false
                         mutableEnriching.value = true
                         try {
@@ -109,7 +111,8 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
                             preferences.error("INTERNAL", System.currentTimeMillis())
                             retry = true
                         } finally { mutableEnriching.value = false }
-                        delay(if (retry) 60_000L else 60 * 60_000L)
+                        delay(preferences.quotaDelay(System.currentTimeMillis()).takeIf { it > 0 }
+                            ?: if (retry) 60_000L else 60 * 60_000L)
                     }
                 }
         }

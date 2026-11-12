@@ -31,6 +31,7 @@
     <string name="omdb_issue_auth">OMDb odrzuciło klucz (%1$s). Wpisz krótki klucz z wiersza „Here is your key”, nie link. Otwórz raz link aktywacyjny z e-maila w przeglądarce, a następnie zapisz klucz ponownie.</string>
     <string name="omdb_key_activation_link">To jest link aktywacyjny, nie klucz API. Otwórz go raz w przeglądarce, a tutaj wpisz krótki klucz z wiersza „Here is your key” w wiadomości e-mail. Dotychczasowy klucz nie został zmieniony.</string>
     <string name="omdb_issue_limit">Osiągnięto limit zapytań OMDb (%1$s). Oceny z pamięci nadal są dostępne; nowe zostaną pobrane po odnowieniu limitu.</string>
+    <string name="omdb_issue_daily_limit">Dzienny limit OMDb wyczerpany, oceny uzupełnią się jutro</string>
     <string name="omdb_issue_error">Nie udało się pobrać ocen OMDb (%1$s). Szczegóły w diagnostyce.</string>
     <string name="omdb_key_save">Zapisz klucz OMDb</string>
     <string name="omdb_key_set">ustawiony</string>

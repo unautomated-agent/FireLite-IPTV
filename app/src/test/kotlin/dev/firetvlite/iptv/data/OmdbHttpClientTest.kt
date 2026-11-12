@@ -34,7 +34,7 @@ class OmdbHttpClientTest {
         assertEquals(OmdbResult.Failed("AUTH"), OmdbHttpClient.decode("""{"Response":"False","Error":"No API key provided."}"""))
         assertEquals(R.string.omdb_issue_auth, omdbIssueMessage("HTTP_401"))
         assertEquals(R.string.omdb_issue_auth, omdbIssueMessage("AUTH"))
-        assertEquals(R.string.omdb_issue_limit, omdbIssueMessage("REMOTE_LIMIT"))
+        assertEquals(R.string.omdb_issue_daily_limit, omdbIssueMessage("REMOTE_LIMIT"))
         assertEquals(R.string.omdb_issue_limit, omdbIssueMessage("LOCAL_BUDGET"))
         assertEquals(R.string.omdb_issue_error, omdbIssueMessage("NETWORK"))
         assertNull(omdbIssueMessage(null))
@@ -64,7 +64,7 @@ class OmdbHttpClientTest {
         val server = ServerSocket().apply { bind(InetSocketAddress("127.0.0.1", 0)) }
         val response = AtomicReference(200 to """{"Response":"False","Error":"Movie not found!"}""".toByteArray())
         val serving = FutureTask<Unit> {
-            repeat(5) {
+            repeat(10) {
                 server.accept().use { socket ->
                     socket.soTimeout = 5000
                     val reader = socket.getInputStream().bufferedReader()
@@ -89,6 +89,16 @@ class OmdbHttpClientTest {
             response.set(503 to byteArrayOf())
             assertEquals(OmdbResult.Failed("HTTP_503"), client.lookup("fixture", "Film", 2002))
             response.set(401 to """{"Response":"False","Error":"Invalid API key!"}""".toByteArray())
+            assertEquals(OmdbResult.Failed("AUTH"), client.lookup("fixture", "Film", 2002))
+            response.set(401 to """{"Response":"False","Error":"No API key provided."}""".toByteArray())
+            assertEquals(OmdbResult.Failed("AUTH"), client.lookup("fixture", "Film", 2002))
+            response.set(401 to """{"Response":"False","Error":"Request limit reached!"}""".toByteArray())
+            assertEquals(OmdbResult.Failed("REMOTE_LIMIT"), client.lookup("fixture", "Film", 2002))
+            response.set(401 to byteArrayOf())
+            assertEquals(OmdbResult.Failed("HTTP_401"), client.lookup("fixture", "Film", 2002))
+            response.set(401 to "not json".toByteArray())
+            assertEquals(OmdbResult.Failed("HTTP_401"), client.lookup("fixture", "Film", 2002))
+            response.set(401 to ByteArray(OmdbHttpClient.MAX_BODY_BYTES + 1) { 32 })
             assertEquals(OmdbResult.Failed("HTTP_401"), client.lookup("fixture", "Film", 2002))
             serving.get(10, TimeUnit.SECONDS)
         } finally { server.close() }

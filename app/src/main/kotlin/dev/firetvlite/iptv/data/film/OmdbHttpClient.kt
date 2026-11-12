@@ -21,7 +21,13 @@ class OmdbHttpClient(private val baseUrl: () -> String = { "https://www.omdbapi.
             connection.readTimeout = 10_000
             connection.instanceFollowRedirects = false
             try {
-                if (connection.responseCode != 200) OmdbResult.Failed("HTTP_${connection.responseCode}") else {
+                val status = connection.responseCode
+                if (status != 200) {
+                    val decoded = try { connection.errorStream?.use { decode(readBody(it)) } }
+                        catch (_: Exception) { null }
+                    if (decoded is OmdbResult.Failed && decoded.code in setOf("AUTH", "REMOTE_LIMIT")) decoded
+                    else OmdbResult.Failed("HTTP_$status")
+                } else {
                     val body = connection.inputStream.use { readBody(it) }
                     decode(body)
                 }
@@ -59,8 +65,8 @@ class OmdbHttpClient(private val baseUrl: () -> String = { "https://www.omdbapi.
                 val error = json.optString("Error")
                 when {
                     error.contains("not found", ignoreCase = true) -> OmdbResult.Missing
-                    error.contains("api key", ignoreCase = true) -> OmdbResult.Failed("AUTH")
                     error.contains("limit", ignoreCase = true) -> OmdbResult.Failed("REMOTE_LIMIT")
+                    error.contains("api key", ignoreCase = true) -> OmdbResult.Failed("AUTH")
                     else -> OmdbResult.Failed("RESPONSE")
                 }
             } else {

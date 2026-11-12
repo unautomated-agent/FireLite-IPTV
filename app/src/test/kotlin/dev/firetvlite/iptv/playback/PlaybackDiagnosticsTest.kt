@@ -169,6 +169,25 @@ class PlaybackDiagnosticsTest {
         }
     }
 
+    @Test fun hlsRequestTraceAndPlaylistSummariesSurviveTheBoundedQr() {
+        val store = PlaybackDiagnosticsStore(temporary.root)
+        val hls = listOf("HTTP: HTTP=404", "HLS master: variants=2; selected=1",
+            "HLS variant: 0 2000k 640x360 avc1+mp4a", "HLS variant: 1 500k 640x360 avc1+mp4a",
+            "HLS renditions: count=1", "HLS rendition: audio/pl/uri=true/default=true",
+            "HLS media: target=2000ms; segments=6; live=true; endlist=false",
+            "HLS media detail: encryption=NONE; map=false; ext=ts") +
+            List(12) { "HLS request: ${if (it == 0) "audio 404" else "segment 200"} ${it}ms ${if (it == 0) "m3u8" else "ts"}" }
+        store.write(true, PlaybackDiagnosticRecord.text("https://provider/secret/123456789.m3u8", "live", "START_TIMEOUT",
+            null, "video/avc", "audio/aac", null, Instant.EPOCH, StartupTiming { 0L }.detail().lines() + hls))
+        val report = DiagnosticsReport.text(null, null, SourceDiagnostics(), "Brak", store.summary())
+        val payload = DiagnosticsReport.payload(report)
+        assertEquals(12, payload.lines().count { it.startsWith("HLS request:") })
+        for (line in hls) assertTrue(payload, payload.contains(line))
+        assertTrue(payload.toByteArray().size <= DiagnosticsReport.QR_BYTES)
+        assertFalse(payload.contains("secret"))
+        assertFalse(Regex("\\d{7,}").containsMatchIn(payload))
+    }
+
     @Test fun maximumTimeoutAndCrashKeepEssentialLaterSectionsInDecodedQr() {
         val phases = StartupTiming { 0L }.detail().lines()
         val readiness = listOf("A ready=false in=2147483647 out=0", "V ready=true in=2147483647 out=2147483646")

@@ -7,8 +7,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 internal class HttpConnectionGate {
     private val lock = Object()
     private var generation = 0L
-    private var activeSession = 0L
     private var active = 0
+    private var activeSession = 0L
 
     fun nextSession(): Long = synchronized(lock) {
         (++generation).also { lock.notifyAll() }
@@ -23,8 +23,8 @@ internal class HttpConnectionGate {
                 throw InterruptedIOException("Stream connection cancelled").apply { initCause(error) }
             }
             if (session != generation) throw InterruptedIOException("Stream session superseded")
-            activeSession = session
             active++
+            activeSession = session
         }
         val released = AtomicBoolean()
         return Closeable {

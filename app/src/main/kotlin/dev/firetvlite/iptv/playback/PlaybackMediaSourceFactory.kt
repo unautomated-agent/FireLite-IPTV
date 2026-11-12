@@ -22,6 +22,13 @@ internal class PlaybackMediaSourceFactory(dataSource: DataSource.Factory) : Medi
     }).setExtractorFactory(hlsExtractors())
     private val other = DefaultMediaSourceFactory(dataSource, progressiveExtractors())
 
+    init {
+        if (dataSource is HlsSessionFactory) {
+            hls.setPlaylistParserFactory(HlsSessionParser(dataSource.hls))
+                .setLoadErrorHandlingPolicy(HlsFailover(dataSource.hls))
+        }
+    }
+
     override fun createMediaSource(mediaItem: MediaItem): MediaSource {
         val config = checkNotNull(mediaItem.localConfiguration)
         return if (Util.inferContentTypeForUriAndMimeType(config.uri, config.mimeType) == C.CONTENT_TYPE_HLS)

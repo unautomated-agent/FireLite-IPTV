@@ -99,6 +99,7 @@ object DiagnosticsReport {
 
     private val essentialPrefixes = listOf(
         "HTTP:", "Request:", "Redirect:", "Headers:", "Request ID:", "Screen:",
+        "HLS master:", "HLS renditions:", "HLS media:", "HLS media detail:", "HLS failover:",
         "FireLite ·", "Ostatni błąd odtwarzania:", "Ostatnie poprawne odtwarzanie:", "Channel:",
         "Startup:", "STOPPING_PREVIOUS=", "CLOSE_GRACE=", "WAITING_PREVIOUS_CONNECTION=",
         "PREPARING_BUFFERING=", "RECOVERY_DELAY=", "WAITING_RECOVERY_CONNECTION=",
@@ -113,6 +114,11 @@ object DiagnosticsReport {
         val required = essentialPrefixes.mapNotNull { prefix ->
             lines.indexOfFirst { it.startsWith(prefix) }.takeIf { it >= 0 }
         }.toMutableSet()
+        val failureEnd = lines.indexOfFirst { it == "Ostatnie poprawne odtwarzanie:" }.takeIf { it >= 0 } ?: lines.size
+        lines.take(failureEnd).forEachIndexed { index, line ->
+            if (line.startsWith("HLS request:") || line.startsWith("HLS variant:") || line.startsWith("HLS rendition:"))
+                required.add(index)
+        }
         lines.indexOfFirst { Regex(" · (START|SEEK|REBUFFER)_TIMEOUT$").containsMatchIn(it) }
             .takeIf { it >= 0 }?.let { required.add(it) }
         lines.indexOfFirst { it == "Ostatni raport błędu:" }.takeIf { it >= 0 }?.let { index ->

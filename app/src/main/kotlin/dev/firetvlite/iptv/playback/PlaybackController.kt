@@ -34,6 +34,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import java.util.concurrent.atomic.AtomicInteger
 import java.io.Closeable
+import java.io.IOException
 import java.util.Locale
 import java.net.URI
 
@@ -132,6 +133,9 @@ class PlaybackController internal constructor(
     @Volatile private var lastHttpFailure: Pair<Long, HttpRequestEvidence>? = null
     private var sourceType = "auto"
     private var startupError: PlaybackException? = null
+    private var hlsSession = HlsSession()
+    private var textDisabledBeforeFailover: Boolean? = null
+    private var startupTimedOut = false
     private var recovery = PlaybackRecovery()
     private var activeRequest: StreamRequest? = null
     private var suspendedRequest: StreamRequest? = null
@@ -140,7 +144,8 @@ class PlaybackController internal constructor(
     private var successfulSignature: String? = null
     private val connections = AtomicInteger()
     private val connectionGate = HttpConnectionGate()
-    private fun trackedFactory(session: Long) = object : ClassifiedHttpFactory {
+    private fun trackedFactory(session: Long) = object : HlsSessionFactory {
+        override val hls = hlsSession
         private val request = activeRequest
         private var headers = request?.headers.orEmpty()
         override fun setDefaultRequestProperties(properties: Map<String, String>): HttpDataSource.Factory {
@@ -149,8 +154,10 @@ class PlaybackController internal constructor(
         }
 
         override fun createDataSource(dataType: Int): HttpDataSource {
+            var requestId = 0L
             val calls = PlaybackHttp.calls(request?.url.orEmpty(), dataType) { evidence ->
                 if (session == activeSession) {
+                    hls.response(requestId, evidence.status)
                     lastHttp = session to evidence
                     if (evidence.status >= 400) lastHttpFailure = session to evidence
                 }
@@ -166,6 +173,7 @@ class PlaybackController internal constructor(
 
                 override fun open(dataSpec: DataSpec): Long {
                     connection = connectionGate.acquire(session)
+                    requestId = hls.begin(dataSpec.uri.toString(), dataType)
                     stream = dataSpec.uri.toString().hashCode()
                     connected = true
                     trace("HTTP_OPEN session=$session stream=$stream active=${connections.incrementAndGet()}")
@@ -183,6 +191,7 @@ class PlaybackController internal constructor(
                     } finally {
                         if (connected) {
                             connected = false
+                            hls.end(requestId)
                             trace("HTTP_CLOSE session=$session stream=$stream active=${connections.decrementAndGet()}")
                             connection?.close()
                             connection = null
@@ -208,12 +217,14 @@ class PlaybackController internal constructor(
 
         override fun onPlayerError(error: PlaybackException) = handleError(error)
 
-        override fun onIsPlayingChanged(isPlaying: Boolean) { if (isPlaying) recordSuccess() }
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (isPlaying) { renderingStarted(); recordSuccess() }
+        }
 
         override fun onTracksChanged(tracks: Tracks) { recordSuccess() }
 
         override fun onRenderedFirstFrame() {
-            if (exo?.playbackState == Player.STATE_READY || exo?.playbackState == Player.STATE_BUFFERING) renderingStarted()
+            if (exo?.playbackState == Player.STATE_READY) renderingStarted()
         }
     }
 
@@ -229,8 +240,59 @@ class PlaybackController internal constructor(
         }
         override fun onLoadCompleted(eventTime: AnalyticsListener.EventTime, loadEventInfo: LoadEventInfo,
             mediaLoadData: MediaLoadData) {
+            if (!hlsSession.owns(loadEventInfo.dataSpec.uri.toString())) return
+            if (activeRequest != null) hlsSession.loaded(loadEventInfo.uri.toString())
             if (activeRequest != null && mediaLoadData.dataType == C.DATA_TYPE_MANIFEST)
                 recovery.onManifestLoaded()
+        }
+
+        override fun onDownstreamFormatChanged(eventTime: AnalyticsListener.EventTime, mediaLoadData: MediaLoadData) {
+            if (mediaLoadData.trackType in setOf(C.TRACK_TYPE_VIDEO, C.TRACK_TYPE_DEFAULT, C.TRACK_TYPE_AUDIO))
+                mediaLoadData.trackFormat?.let { hlsSession.selected(it) }
+        }
+
+        override fun onLoadError(eventTime: AnalyticsListener.EventTime, loadEventInfo: LoadEventInfo,
+            mediaLoadData: MediaLoadData, error: IOException, wasCanceled: Boolean) {
+            val request = activeRequest ?: return
+            val status = PlaybackHttpError.status(error) ?: return
+            val failedUri = PlaybackHttpError.requestUri(error) ?: loadEventInfo.uri.toString()
+            if (!hlsSession.owns(failedUri)) return
+            hlsSession.failedRequest(failedUri, status)
+            val kind = hlsSession.kind(failedUri, mediaLoadData.dataType)
+            val player = exo ?: return
+            if (status in setOf(404, 410)) when {
+                kind == "subs" -> {
+                    if (textDisabledBeforeFailover == null)
+                        textDisabledBeforeFailover = C.TRACK_TYPE_TEXT in player.trackSelectionParameters.disabledTrackTypes
+                    player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                        .setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+                    hlsSession.fallback(failedUri)
+                }
+                kind == "audio" -> {
+                    val muxed = player.currentTracks.groups.firstOrNull {
+                        it.type == C.TRACK_TYPE_AUDIO && it.mediaTrackGroup.id == "main:audio" &&
+                            (0 until it.length).any(it::isTrackSupported)
+                    }
+                    muxed?.let { group ->
+                        val track = (0 until group.length).first(group::isTrackSupported)
+                        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                            .setOverrideForType(TrackSelectionOverride(group.mediaTrackGroup, track)).build()
+                        hlsSession.fallback(failedUri)
+                    }
+                }
+                !request.archive && kind == "segment" && player.isCurrentMediaItemLive &&
+                    mediaLoadData.mediaEndTimeMs != C.TIME_UNSET -> {
+                    val window = player.currentTimeline.getWindow(player.currentMediaItemIndex, Timeline.Window())
+                    val next = mediaLoadData.mediaEndTimeMs - window.positionInFirstPeriodMs + 1
+                    if (next > player.currentPosition && (window.durationMs == C.TIME_UNSET || next < window.durationMs) &&
+                        hlsSession.skip(failedUri)) player.seekTo(next)
+                }
+            }
+            if (!rendered || startupTimedOut) {
+                val failure = PlaybackException("HTTP load failed", error, PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS)
+                recordPlayback(true, diagnostic(failure, code = if (startupTimedOut) "START_TIMEOUT" else "HLS_LOAD_HTTP_$status",
+                    details = startupDetails()))
+            }
         }
 
         override fun onAudioDecoderInitialized(eventTime: AnalyticsListener.EventTime, decoderName: String,
@@ -269,12 +331,25 @@ class PlaybackController internal constructor(
     private fun diagnostic(error: PlaybackException? = null, code: String? = error?.errorCodeName, details: List<String> = emptyList()): String {
         val request = activeRequest ?: return ""
         val mode = (if (preview) "preview/" else "") + if (request.archive) "archive" else "live"
+        val evidence = httpEvidence()
+        val status = PlaybackHttpError.status(error) ?: evidence?.status
+        val http = if (status != null && status != evidence?.status) listOf("HTTP: HTTP=$status")
+            else evidence?.lines() ?: listOf("HTTP: not available")
         return PlaybackDiagnosticRecord.text(request.url, mode, code, error,
             selectedFormats(), availableFormats(), audioDecoder, details =
-                (httpEvidence()?.lines() ?: listOf("HTTP: not available")) + listOfNotNull(error?.let {
-                    "Screen: ${PlaybackHttpError.message(it.errorCodeName, it, httpEvidence()?.status)}; code=${it.errorCodeName}"
-                }) + details)
+                http +
+                    listOfNotNull(error?.let {
+                        "Screen: ${PlaybackHttpError.message(it.errorCodeName, it, httpEvidence()?.status)}; code=${it.errorCodeName}"
+                    }) + details + if (sourceType == "HLS" || hlsSession.hasPlaylist) hlsSession.lines() else emptyList())
     }
+
+    private fun startupDetails(): List<String> = startupTiming?.let { timing ->
+        val player = exo
+        listOf("Channel: ${activeRequest?.channelName.orEmpty()}", *timing.detail().lines().toTypedArray(),
+            *TimeoutEvidence.lines(player, rendererReadiness).toTypedArray(),
+            "Player: ${player?.playbackState}; pos=${player?.currentPosition}; buffered=${player?.bufferedPosition}; openHTTP=${connections.get()}",
+            "Source: $sourceType")
+    }.orEmpty()
 
     private fun httpEvidence(): HttpRequestEvidence? =
         lastHttpFailure?.takeIf { it.first == activeSession }?.second
@@ -286,6 +361,7 @@ class PlaybackController internal constructor(
     private fun renderingStarted() {
         if (activeRequest == null) return
         rendered = true
+        startupTimedOut = false
         lastHttpFailure = null
         startupError = null
         retries = 0
@@ -346,9 +422,15 @@ class PlaybackController internal constructor(
         clearStartupWatch()
         val timing = StartupTiming()
         startupTiming = timing
+        startupTimedOut = false
+        val since = System.nanoTime()
         startupJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            delay(startupTimeoutMs)
+            do {
+                val elapsed = (System.nanoTime() - since) / 1_000_000
+                delay((hlsSession.timeoutAt(startupTimeoutMs) - elapsed).coerceAtLeast(1))
+            } while ((System.nanoTime() - since) / 1_000_000 < hlsSession.timeoutAt(startupTimeoutMs))
             if (activeRequest !== request) return@launch
+            startupTimedOut = true
             val player = exo
             val state = when (player?.playbackState) {
                 Player.STATE_BUFFERING -> "BUFFERING"
@@ -428,11 +510,15 @@ class PlaybackController internal constructor(
         lastHttp = null
         lastHttpFailure = null
         startupError = null
+        hlsSession = HlsSession(request.archive)
         watchStartup(request)
 
         val player = prepareSafely { ensurePlayer() } ?: return
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-            .clearOverridesOfType(C.TRACK_TYPE_AUDIO).build()
+            .clearOverridesOfType(C.TRACK_TYPE_AUDIO).apply {
+                textDisabledBeforeFailover?.let { setTrackTypeDisabled(C.TRACK_TYPE_TEXT, it) }
+            }.build()
+        textDisabledBeforeFailover = null
         player.stop() // first close the old connection ...
         player.clearMediaItems()
         val session = connectionGate.nextSession()
@@ -472,7 +558,7 @@ class PlaybackController internal constructor(
         clearProgressWatch()
         clearStartupWatch()
         val error = preparationError(cause)
-        recordPlayback(true, diagnostic(error))
+        recordPlayback(true, diagnostic(error, details = startupDetails()))
         activeRequest = null
         gate.onStopped()
         mutableStatus.value = failed(error)
@@ -620,7 +706,7 @@ class PlaybackController internal constructor(
         if (activeRequest == null) return
         clearProgressWatch()
         startupError = error
-        recordPlayback(true, diagnostic(error))
+        recordPlayback(true, diagnostic(error, details = startupDetails()))
         if (retries < MAX_RETRIES) {
             retries++
             val request = activeRequest ?: return

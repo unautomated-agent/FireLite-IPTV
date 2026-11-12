@@ -47,11 +47,15 @@ class PlaybackControllerTest {
 
     @Test fun finalTypedHttpErrorPropagatesToScreenStateWithoutAdditionalStreamSources() = runBlocking {
         val fake = FakePlayer()
-        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY })
+        val records = mutableListOf<String>()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            recordPlayback = { failed, text -> if (failed) records += text })
         controller.play(request)
         delay(450)
         repeat(4) { fake.listener!!.onPlayerError(TestError(2004, httpFailure(410))) }
         assertEquals(PlaybackStatus.Failed("ERROR_CODE_IO_BAD_HTTP_STATUS", 410), controller.status.value)
+        assertEquals(true, records.last().contains("HTTP: HTTP=410"))
+        assertEquals(true, records.last().contains("Screen: Kanał niedostępny u dostawcy (HTTP 410)"))
         assertEquals(1, fake.calls.count { it == "prepare" })
         controller.stop()
     }
@@ -581,7 +585,7 @@ class PlaybackControllerTest {
         val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
             recordPlayback = { failed, text -> if (failed) records += text }, startupTimeoutMs = 150)
         controller.play(request)
-        fake.state = Player.STATE_BUFFERING
+        fake.state = Player.STATE_READY
         fake.listener!!.onRenderedFirstFrame()
         delay(180)
         assertEquals(emptyList<String>(), records)
@@ -600,6 +604,26 @@ class PlaybackControllerTest {
         assertEquals(true, records.single().contains("Channel: new"))
         controller.stop()
         assertEquals(false, controller.startupDelayed.value)
+    }
+
+    @Test fun bufferingFirstFrameCannotHideTheDeadlineAndLateHttpFailureReplacesTheSnapshot(): Unit = runBlocking {
+        val fake = FakePlayer()
+        val records = mutableListOf<String>()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            recordPlayback = { failed, text -> if (failed) records += text }, startupTimeoutMs = 60)
+        controller.play(request)
+        fake.state = Player.STATE_BUFFERING
+        fake.listener!!.onRenderedFirstFrame()
+        delay(100)
+        assertEquals(true, records.single().contains("START_TIMEOUT"))
+        assertEquals(true, records.single().contains("HTTP: not available"))
+        assertEquals(1, fake.calls.count { it == "stop" })
+        fake.listener!!.onPlayerError(TestError(2004, httpFailure(404)))
+        assertEquals(true, records.last().contains("HTTP: HTTP=404"))
+        assertEquals(true, records.last().contains("Screen: Kanał niedostępny u dostawcy (HTTP 404)"))
+        assertEquals(2, fake.calls.count { it == "stop" })
+        assertEquals(0, fake.calls.count { it == "prepare" })
+        controller.stop()
     }
 
     @Test fun readyWithoutRenderingCannotResetTheRecoveryBudgetForever(): Unit = runBlocking {

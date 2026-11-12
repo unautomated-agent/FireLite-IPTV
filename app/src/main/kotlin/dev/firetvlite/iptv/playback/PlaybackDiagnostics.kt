@@ -77,7 +77,8 @@ internal class PlaybackDiagnosticsStore(private val directory: File) {
             })
         }?.joinToString("\n") ?: "Brak"
         (if (failed) "Ostatni błąd odtwarzania:\n" else "Ostatnie poprawne odtwarzanie:\n") +
-            utf8Limit(compact, if (failed && record?.lineSequence()?.firstOrNull()?.contains("_TIMEOUT") == true) 1450
+            utf8Limit(compact, if (failed && record?.contains("HLS request:") == true) 4096
+                else if (failed && record?.lineSequence()?.firstOrNull()?.contains("_TIMEOUT") == true) 1450
                 else if (failed) 850 else 300)
     }
 

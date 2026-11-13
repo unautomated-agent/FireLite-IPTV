@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Default (and only) UI language: Polish. Resource names are English. -->
 <resources>
+    <string name="channel_dead">Kanał oznaczony jako niedziałający</string>
     <string name="health_title">Zdrowie kanałów</string>
     <string name="health_start">Sprawdź zdrowie kanałów</string>
     <string name="health_stop">Zatrzymaj</string>

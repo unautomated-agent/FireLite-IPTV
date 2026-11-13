@@ -82,19 +82,21 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
     val omdbStats by (context.applicationContext as FireLiteApplication).container.films.preferences.stats.collectAsState()
     val now by minuteClock()
     val today = omdbStats.today(now)
-    val report = remember(source, state, stats, crash, playback, omdbKey.isNotBlank(), today, channelHealth) {
+    val baseReport = remember(source, state, stats, crash, playback, omdbKey.isNotBlank(), today) {
         context.getString(R.string.omdb_key_diagnostics, context.getString(omdbKeyStatus(omdbKey.isNotBlank()))) +
             "\n" + context.getString(R.string.omdb_stats_diagnostics, today.requests, today.hits, today.misses,
                 if (omdbKey.isBlank()) "NO_KEY" else today.lastError) +
-            "\n" + today.missSummary() + "\n" + channelHealth.summary() + "\n" + DiagnosticsReport.text(source, state, stats, crash, playback)
+            "\n" + today.missSummary() + "\n" + DiagnosticsReport.text(source, state, stats, crash, playback)
     }
+    val report = remember(baseReport, channelHealth) { channelHealth.summary() + "\n" + baseReport }
+    val qrReport = remember(baseReport, channelHealth) { channelHealth.qrSummary() + "\n" + baseReport }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         FLText(stringResource(R.string.diagnostics_title), style = FireLiteTheme.typography.headline)
         PrimaryButton(stringResource(R.string.diagnostics_open), { opened = true })
-        FLText(DiagnosticsReport.payload(report).substringBefore("Ostatni raport błędu:"), style = FireLiteTheme.typography.label)
+        FLText(report.substringBefore("Ostatni raport błędu:"), style = FireLiteTheme.typography.label)
     }
     if (opened) {
-        val text = DiagnosticsReport.payload(report)
+        val text = DiagnosticsReport.payload(qrReport)
         val bitmap by produceState<Bitmap?>(null, text) {
             value = withContext(Dispatchers.Default) {
                 val matrix = DiagnosticsReport.qr(text)

@@ -7,9 +7,25 @@ import java.time.Instant
 import java.util.Locale
 import javax.xml.parsers.DocumentBuilderFactory
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class ChannelRowPresentationTest {
+    @Test fun deadBadgesUseObservableMembershipAndCachedKeysInGuideOverlayAndBanner() {
+        val icon = File("src/main/kotlin/dev/firetvlite/iptv/ui/components/DeadChannelIcon.kt").readText()
+        assertTrue(icon.contains("registry.state.collectAsState()"))
+        assertTrue(icon.contains("remember(streamUrl) { DeadChannels.key(streamUrl) }"))
+        assertTrue(icon.contains("if (key in state.keys)"))
+        assertTrue(icon.contains("size(16.dp)"))
+        assertTrue(icon.contains("contentDescription = description"))
+        assertFalse(icon.contains("channelDao"))
+        assertFalse(icon.contains("readText"))
+        for (file in listOf("LiveTvScreen", "ProgrammeGrid", "PlayerInfoBanner")) {
+            val source = File("src/main/kotlin/dev/firetvlite/iptv/ui/screens/$file.kt").readText()
+            assertTrue(file, source.contains("DeadChannelIcon("))
+        }
+    }
     @Test fun minuteClockWakeupAdvancesTheSharedGuideQueryKeyWithoutNavigation() {
         val firstFrame = Instant.parse("2026-11-12T20:15:23.456Z").toEpochMilli()
         val wakeup = firstFrame + millisUntilNextMinute(firstFrame)

@@ -101,6 +101,7 @@ object DiagnosticsReport {
         "HTTP:", "Request:", "Redirect:", "Headers:", "Request ID:", "Screen:",
         "HLS master:", "HLS renditions:", "HLS media:", "HLS media detail:", "HLS failover:",
         "Transport headers:", "Transport pool:", "Transport pending:",
+        "OMDb braki wg typu:",
         "FireLite ·", "Ostatni błąd odtwarzania:", "Ostatnie poprawne odtwarzanie:", "Channel:",
         "Startup:", "STOPPING_PREVIOUS=", "CLOSE_GRACE=", "WAITING_PREVIOUS_CONNECTION=",
         "PREPARING_BUFFERING=", "RECOVERY_DELAY=", "WAITING_RECOVERY_CONNECTION=",

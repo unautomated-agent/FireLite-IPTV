@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import dev.firetvlite.iptv.BuildConfig
 import dev.firetvlite.iptv.R
+import dev.firetvlite.iptv.data.db.ProgrammeEntity
 import java.time.Instant
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,7 +20,9 @@ class OmdbPreferences internal constructor(private val prefs: SharedPreferences,
     val currentError = mutableError.asStateFlow()
     private val mutableStats = MutableStateFlow(OmdbStats(prefs.getLong("stats_day", Long.MIN_VALUE),
         prefs.getInt("requests", 0), prefs.getInt("hits", 0), prefs.getInt("misses", 0),
-        prefs.getString("last_error", "—").orEmpty()).today(clock()))
+        prefs.getString("last_error", "—").orEmpty(), OmdbMissType.entries.associateWith {
+            prefs.getInt("miss_type_${it.name}", 0).coerceIn(0, 999_999)
+        }.filterValues { it > 0 }).today(clock()))
     val stats = mutableStats.asStateFlow()
 
     init { quotaDelay(clock()) }
@@ -28,10 +31,13 @@ class OmdbPreferences internal constructor(private val prefs: SharedPreferences,
     private fun updateStats(change: (OmdbStats) -> OmdbStats) {
         val value = change(mutableStats.value)
         prefs.edit().putLong("stats_day", value.day).putInt("requests", value.requests)
-            .putInt("hits", value.hits).putInt("misses", value.misses).putString("last_error", value.lastError).apply()
+            .putInt("hits", value.hits).putInt("misses", value.misses).putString("last_error", value.lastError).apply {
+                OmdbMissType.entries.forEach { putInt("miss_type_${it.name}", value.missTypes[it] ?: 0) }
+            }.apply()
         mutableStats.value = value
     }
     override fun requested(now: Long) = updateStats { it.requested(now) }
+    override fun missing(programme: ProgrammeEntity, now: Long) = updateStats { it.missing(programme, now) }
     override fun completed(result: OmdbResult, now: Long) {
         updateStats { it.completed(result, now) }
         if (result == OmdbResult.Failed("REMOTE_LIMIT")) pauseQuota(now)

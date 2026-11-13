@@ -10,7 +10,7 @@ import org.junit.Test
 class FilmProgressTest {
     private val now = 1_800_000_000_000L
     private val channel = ChannelEntity(id = 1, sourceId = 1, position = 0, name = "Test", groupName = "",
-        streamUrl = "unused", logoUrl = null, catchupType = "shift", catchupSource = null, catchupDays = 7)
+        streamUrl = "unused", logoUrl = null, tvgId = "c", catchupType = "shift", catchupSource = null, catchupDays = 7)
     private fun showing(title: String, start: Long, rating: Boolean? = null) : FilmShowing {
         val p = ProgrammeEntity(sourceId = 1, generation = "g", epgKey = "c", start = start,
             stop = start + 90 * 60_000, title = title, description = null, category = "dramat", year = 2001)

@@ -66,6 +66,7 @@ import kotlinx.coroutines.withContext
 internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnostics: Flow<SourceDiagnostics>) {
     val stats by diagnostics.collectAsState(SourceDiagnostics())
     val context = LocalContext.current
+    val channelHealth by (context.applicationContext as FireLiteApplication).container.deadChannels.state.collectAsState()
     val store = remember(context) { CrashReportStore(File(context.filesDir, "last-crash.txt")) }
     var crash by remember { mutableStateOf<String?>(null) }
     var playback by remember { mutableStateOf("") }
@@ -81,11 +82,11 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
     val omdbStats by (context.applicationContext as FireLiteApplication).container.films.preferences.stats.collectAsState()
     val now by minuteClock()
     val today = omdbStats.today(now)
-    val report = remember(source, state, stats, crash, playback, omdbKey.isNotBlank(), today) {
+    val report = remember(source, state, stats, crash, playback, omdbKey.isNotBlank(), today, channelHealth) {
         context.getString(R.string.omdb_key_diagnostics, context.getString(omdbKeyStatus(omdbKey.isNotBlank()))) +
             "\n" + context.getString(R.string.omdb_stats_diagnostics, today.requests, today.hits, today.misses,
                 if (omdbKey.isBlank()) "NO_KEY" else today.lastError) +
-            "\n" + today.missSummary() + "\n" + DiagnosticsReport.text(source, state, stats, crash, playback)
+            "\n" + today.missSummary() + "\n" + channelHealth.summary() + "\n" + DiagnosticsReport.text(source, state, stats, crash, playback)
     }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         FLText(stringResource(R.string.diagnostics_title), style = FireLiteTheme.typography.headline)

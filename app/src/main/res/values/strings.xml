@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Default (and only) UI language: Polish. Resource names are English. -->
 <resources>
+    <string name="health_title">Zdrowie kanałów</string>
+    <string name="health_start">Sprawdź zdrowie kanałów</string>
+    <string name="health_stop">Zatrzymaj</string>
+    <string name="health_all">Wszystkie</string>
+    <string name="health_ungrouped">Bez kategorii</string>
+    <string name="health_progress">Sprawdzono %1$d/%2$d · martwe %3$d · ok %4$d</string>
+    <string name="health_complete">Sprawdzanie ukończone</string>
+    <string name="health_stopped">Sprawdzanie zatrzymane</string>
+    <string name="health_error">Nie udało się dokończyć sprawdzania</string>
     <string name="player_provider_wait">Czekam na serwer dostawcy…</string>
     <string name="player_seek_target">Cel przewijania: %1$s</string>
     <string name="films_rating_progress">Oceny IMDb: sprawdzono %1$d/%2$d · ocenione %3$d · brak w OMDb %4$d · dziś %5$d/%6$d zapytań</string>

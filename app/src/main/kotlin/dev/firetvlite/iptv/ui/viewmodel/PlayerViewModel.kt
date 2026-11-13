@@ -22,6 +22,7 @@ import dev.firetvlite.iptv.playback.SeekPlan
 import dev.firetvlite.iptv.playback.SeekTarget
 import dev.firetvlite.iptv.data.epg.CurrentAndNext
 import dev.firetvlite.iptv.playback.StreamRequest
+import dev.firetvlite.iptv.playback.DeadChannels
 import dev.firetvlite.iptv.playback.ZapMath
 import dev.firetvlite.iptv.playback.ChannelTimeline
 import dev.firetvlite.iptv.playback.ProgrammePlayback
@@ -139,7 +140,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 if (startupPending && mutableMode.value == PlayerMode.Closed && sourceDao.active()?.id == sourceId) {
                     previous.seedRecent(recent)
                     watchedSourceId = sourceId
-                    open(allChannels(sourceId), index, GroupKey.All)
+                    cancelPreview()
+                    select(allChannels(sourceId), index, GroupKey.All, PlayerMode.Fullscreen, restoring = true)
                 }
             }
             startupPending = false
@@ -152,8 +154,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     catchupJob?.cancel()
                     pendingSeekMs = null
                     when (val plan = PlaybackTime.archiveContinuation(updateFrame(), start)) {
-                        is SeekPlan.Archive -> applyCatchup(channel, plan.timeMs)
-                        else -> startLive(channel)
+                        is SeekPlan.Archive -> applyCatchup(channel, plan.timeMs, userInitiated = false)
+                        else -> startLive(channel, userInitiated = false)
                     }
                 }
             }
@@ -210,7 +212,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         select(zap, startIndex, group, PlayerMode.Fullscreen, time)
     }
 
-    private fun select(zap: ZapContext, startIndex: Int, group: GroupKey, mode: PlayerMode, archiveTime: Long? = null) {
+    private fun select(zap: ZapContext, startIndex: Int, group: GroupKey, mode: PlayerMode, archiveTime: Long? = null,
+        restoring: Boolean = false) {
         seekDebouncer.cancel()
         openJob?.cancel()
         zapJob?.cancel()
@@ -228,7 +231,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             zapCount = count
             zapIndex = index
             playingGroup = group
-            val sameChannel = mutableMode.value != PlayerMode.Closed && mutableChannel.value?.streamUrl == first.streamUrl
+            val sameChannel = mutableMode.value != PlayerMode.Closed && mutableChannel.value?.streamUrl == first.streamUrl &&
+                status.value != PlaybackStatus.Idle
             setMode(mode)
             show(first, archive = archiveTime != null)
             if (sameChannel) {
@@ -239,7 +243,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 activeChannel = first
                 activeIndex = index
                 applyCatchup(first, archiveTime, restartIfActive = true)
-            } else if (!sameChannel || archiveStartMs != null || status.value is PlaybackStatus.Failed) startLive(first)
+            } else if (restoring) startLive(first, userInitiated = false)
+            else if (!sameChannel || archiveStartMs != null || status.value is PlaybackStatus.Failed) startLive(first)
             markWatched(first)
         }
     }
@@ -545,7 +550,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun applyCatchup(channel: ChannelEntity, time: Long, restartIfActive: Boolean = false) {
+    private fun applyCatchup(channel: ChannelEntity, time: Long, restartIfActive: Boolean = false, userInitiated: Boolean = true) {
         val now = System.currentTimeMillis() / 1000
         val start = time / 1000
         val url = CatchupUrlBuilder.build(
@@ -561,7 +566,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         archiveStartMs = start * 1000
         mutableLiveChannelId.value = null
         val request = StreamRequest(url, userAgent, archive = true, channelName = channel.name,
-            headers = PlaylistHttpHeaders.decode(channel.requestHeaders))
+            headers = PlaylistHttpHeaders.decode(channel.requestHeaders), channelKey = DeadChannels.key(channel.streamUrl),
+            userInitiated = userInitiated)
         if (restartIfActive) playback.playArchiveFromStart(request) else playback.play(request)
         updateFrame()
     }
@@ -572,14 +578,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         mutablePosition.value = ZapPosition(zapIndex + 1, zapCount)
     }
 
-    private fun startLive(channel: ChannelEntity) {
+    private fun startLive(channel: ChannelEntity, userInitiated: Boolean = true) {
         activeChannel = channel
         activeIndex = zapIndex
         archiveStartMs = null
         fallbackStartMs = System.currentTimeMillis()
         mutableLiveChannelId.value = channel.id
         playback.play(StreamRequest(channel.streamUrl, userAgent, channelName = channel.name,
-            headers = PlaylistHttpHeaders.decode(channel.requestHeaders)))
+            headers = PlaylistHttpHeaders.decode(channel.requestHeaders), userInitiated = userInitiated))
         updateFrame()
     }
 

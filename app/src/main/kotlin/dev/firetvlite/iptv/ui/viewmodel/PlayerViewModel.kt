@@ -19,6 +19,7 @@ import dev.firetvlite.iptv.playback.PlayerMode
 import dev.firetvlite.iptv.playback.PlaybackFrame
 import dev.firetvlite.iptv.playback.PlaybackTime
 import dev.firetvlite.iptv.playback.SeekPlan
+import dev.firetvlite.iptv.playback.SeekTarget
 import dev.firetvlite.iptv.data.epg.CurrentAndNext
 import dev.firetvlite.iptv.playback.StreamRequest
 import dev.firetvlite.iptv.playback.ZapMath
@@ -472,6 +473,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun finishSeek(deltaMs: Long) = seekDebouncer.release(deltaMs)
+
+    fun seekTarget(frame: PlaybackFrame, deltaMs: Long): Long? {
+        val channel = mutableChannel.value ?: return null
+        return SeekTarget.time(frame, deltaMs, archiveStartMs, fallbackStartMs, channel.catchupDays,
+            CatchupUrlBuilder.isSupported(channel), pendingSeekMs)
+    }
 
     fun cancelSeek() {
         seekDebouncer.cancel()

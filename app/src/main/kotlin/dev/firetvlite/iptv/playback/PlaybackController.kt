@@ -147,6 +147,7 @@ class PlaybackController internal constructor(
     val healthCheck: StateFlow<ChannelCheckProgress> = mutableHealthCheck.asStateFlow()
     private var rendered = false
     private var startupFailureMarked = false
+    private var startupUserInitiated = false
     private val rendererReadiness = mutableMapOf<Int, Boolean>()
     private var startupTiming: StartupTiming? = null
     private var retries = 0
@@ -531,7 +532,11 @@ class PlaybackController internal constructor(
 
     fun playArchiveFromStart(request: StreamRequest) {
         val player = exo
-        if (request.archive && request == activeRequest && player != null && startJob?.isActive != true) {
+        val current = activeRequest
+        val sameStream = request.archive && current?.archive == true && request.url == current.url &&
+            request.userAgent == current.userAgent && request.headers == current.headers
+        if (sameStream && request.userInitiated) startupUserInitiated = true
+        if (sameStream && player != null && startJob?.isActive != true) {
             player.seekTo(0L)
             watchProgress("SEEK_TIMEOUT")
         } else {
@@ -547,6 +552,7 @@ class PlaybackController internal constructor(
         clearProgressWatch()
         rendered = false
         startupFailureMarked = false
+        startupUserInitiated = request.userInitiated
         rendererReadiness.clear()
         activeRequest = request
         successfulSignature = null
@@ -877,9 +883,9 @@ class PlaybackController internal constructor(
 
     private fun markStartupFailure(reason: String) {
         val request = activeRequest ?: return
-        if (rendered || startupFailureMarked || !request.userInitiated) return
+        if (rendered || startupFailureMarked || !startupUserInitiated) return
         startupFailureMarked = true
-        channelResult(request, reason)
+        channelResult(request.copy(userInitiated = startupUserInitiated), reason)
     }
 
     private companion object {

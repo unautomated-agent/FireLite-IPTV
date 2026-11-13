@@ -295,6 +295,35 @@ class PlaybackControllerTest {
         controller.stop()
     }
 
+    @Test fun archiveReselectionAfterAutomaticResumeIgnoresMetadataAndRestoresUserIntent(): Unit = runBlocking {
+        for (preparing in listOf(false, true)) {
+            val fake = FakePlayer()
+            val results = mutableListOf<Pair<StreamRequest, String?>>()
+            val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+                channelResult = { stream, reason -> results += stream to reason })
+            val archive = request.copy(url = "https://example.org/archive/123", archive = true)
+            try {
+                controller.playArchiveFromStart(archive)
+                delay(450)
+                controller.suspendStream()
+                controller.resumeStream()
+                if (!preparing) delay(450)
+                fake.seekPosition = 75_000
+                controller.playArchiveFromStart(archive.copy(channelKey = DeadChannels.key("new metadata"), channelName = "Renamed"))
+                assertEquals(if (preparing) 0 else 1, fake.calls.count { it == "seekTo" })
+                if (!preparing) assertEquals(0L, fake.seekPosition)
+                if (preparing) delay(450)
+                assertEquals(2, fake.calls.count { it == "prepare" })
+                fake.listener!!.onPlayerError(TestError(2004, httpFailure(404)))
+                assertEquals("HTTP 404", results.single().second)
+                assertEquals(true, results.single().first.userInitiated)
+                assertEquals(archive.channelKey, results.single().first.channelKey)
+                fake.listener!!.onPlayerError(TestError(2004, httpFailure(404)))
+                assertEquals(1, results.size)
+            } finally { controller.stop() }
+        }
+    }
+
     @Test fun ordinaryDuplicateArchiveAndLiveRequestsRemainNoOps() = runBlocking {
         val fake = FakePlayer()
         val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY })

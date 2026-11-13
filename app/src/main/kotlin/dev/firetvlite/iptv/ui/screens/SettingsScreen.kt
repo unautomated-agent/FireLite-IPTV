@@ -111,6 +111,7 @@ fun SettingsScreen(
                 { preferences.setVisible(!visible) })
         }
         SettingsCard { OmdbSettings() }
+        SettingsCard { ChannelHealthSection(source) }
         SettingsCard { DiagnosticsSection(source, source?.id?.let { epgStates[it] }, diagnostics) }
         UpdateSection(
             installed = installed,

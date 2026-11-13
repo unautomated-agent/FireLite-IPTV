@@ -33,6 +33,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.atomic.AtomicInteger
@@ -48,6 +49,8 @@ data class StreamRequest(
     val archive: Boolean = false,
     val channelName: String = "",
     val headers: Map<String, String> = emptyMap(),
+    val channelKey: String = DeadChannels.key(url),
+    val userInitiated: Boolean = true,
 )
 
 sealed interface PlaybackStatus {
@@ -104,11 +107,17 @@ class PlaybackController internal constructor(
     },
     private val startupTimeoutMs: Long = 10_000L,
     private val evictConnections: () -> Unit = { PlaybackHttp.evictIdle() },
+    private val channelResult: (StreamRequest, String?) -> Unit = { _, _ -> },
+    private val healthResult: (StreamRequest, String?) -> Unit = { _, _ -> },
+    private val healthSummary: (String) -> Unit = {},
+    private val healthProbe: (StreamRequest, (okhttp3.Call?) -> Unit, () -> Unit) -> String? = { request, call, active ->
+        ChannelHealthProbe().check(request, call, active)
+    },
 ) {
     internal constructor(scope: CoroutineScope, createPlayer: (HttpDataSource.Factory) -> ExoPlayer) :
         this(scope, createPlayer, {})
 
-    constructor(context: Context, scope: CoroutineScope) : this(scope, { httpFactory ->
+    internal constructor(context: Context, scope: CoroutineScope, deadChannels: DeadChannels) : this(scope, { httpFactory ->
         val renderers = DefaultRenderersFactory(context)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
             .setEnableDecoderFallback(true)
@@ -121,7 +130,9 @@ class PlaybackController internal constructor(
             }
     }, { Log.d("FireLiteStream", it) }, setStream = { player, item, factory ->
         player.setMediaSource(PlaybackMediaSourceFactory(factory).createMediaSource(item))
-    }, recordPlayback = diagnosticRecorder(context, scope))
+    }, recordPlayback = diagnosticRecorder(context, scope), channelResult = { request, reason -> deadChannels.result(request, reason) },
+        healthResult = { request, reason -> deadChannels.result(request, reason, "health check") },
+        healthSummary = deadChannels::checkSummary)
 
     private val gate = StreamGate()
     private val evictionMutex = Mutex()
@@ -129,7 +140,14 @@ class PlaybackController internal constructor(
     private var startJob: Job? = null
     private var startupJob: Job? = null
     private var progressJob: Job? = null
+    private var healthJob: Job? = null
+    @Volatile private var healthCall: okhttp3.Call? = null
+    private var healthGeneration = 0L
+    private val mutableHealthCheck = MutableStateFlow(ChannelCheckProgress())
+    val healthCheck: StateFlow<ChannelCheckProgress> = mutableHealthCheck.asStateFlow()
     private var rendered = false
+    private var startupFailureMarked = false
+    private var startupUserInitiated = false
     private val rendererReadiness = mutableMapOf<Int, Boolean>()
     private var startupTiming: StartupTiming? = null
     private var retries = 0
@@ -143,6 +161,7 @@ class PlaybackController internal constructor(
     private var startupTimedOut = false
     private var recovery = PlaybackRecovery()
     private var activeRequest: StreamRequest? = null
+    internal val hasActiveStream: Boolean get() = activeRequest != null
     private var suspendedRequest: StreamRequest? = null
     private var preview = false
     private var audioDecoder: String? = null
@@ -271,10 +290,12 @@ class PlaybackController internal constructor(
 
         override fun onLoadError(eventTime: AnalyticsListener.EventTime, loadEventInfo: LoadEventInfo,
             mediaLoadData: MediaLoadData, error: IOException, wasCanceled: Boolean) {
+            if (wasCanceled) return
             val request = activeRequest ?: return
             val status = PlaybackHttpError.status(error) ?: return
             val failedUri = PlaybackHttpError.requestUri(error) ?: loadEventInfo.uri.toString()
             if (!hlsSession.owns(failedUri)) return
+            if (status in 400..599) markStartupFailure("HTTP $status")
             hlsSession.failedRequest(failedUri, status)
             val kind = hlsSession.kind(failedUri, mediaLoadData.dataType)
             val player = exo ?: return
@@ -379,6 +400,7 @@ class PlaybackController internal constructor(
 
     private fun renderingStarted() {
         if (activeRequest == null) return
+        if (!rendered) activeRequest?.let { channelResult(it, null) }
         rendered = true
         startupTimedOut = false
         lastHttpFailure = null
@@ -452,6 +474,8 @@ class PlaybackController internal constructor(
                 mutableProviderWaiting.value = hlsSession.waitingForProvider()
                 if (!reported && elapsed >= deadline) {
                     reported = true
+                    if (!timing.waitingForPrevious) markStartupFailure(
+                        if (hlsSession.providerTimeout() != null) "no response 45s" else "timeout")
                     startupTimedOut = true
                     val player = exo
                     val state = when (player?.playbackState) {
@@ -508,7 +532,11 @@ class PlaybackController internal constructor(
 
     fun playArchiveFromStart(request: StreamRequest) {
         val player = exo
-        if (request.archive && request == activeRequest && player != null && startJob?.isActive != true) {
+        val current = activeRequest
+        val sameStream = request.archive && current?.archive == true && request.url == current.url &&
+            request.userAgent == current.userAgent && request.headers == current.headers
+        if (sameStream && request.userInitiated) startupUserInitiated = true
+        if (sameStream && player != null && startJob?.isActive != true) {
             player.seekTo(0L)
             watchProgress("SEEK_TIMEOUT")
         } else {
@@ -519,8 +547,12 @@ class PlaybackController internal constructor(
     /** Plays [request]. A request for the stream that is already active does nothing. */
     fun play(request: StreamRequest) {
         if (gate.onRequest(request.url) == StreamGate.Action.Ignore) return
+        stopHealthCheck()
+        val previousCheck = healthJob
         clearProgressWatch()
         rendered = false
+        startupFailureMarked = false
+        startupUserInitiated = request.userInitiated
         rendererReadiness.clear()
         activeRequest = request
         successfulSignature = null
@@ -554,6 +586,7 @@ class PlaybackController internal constructor(
         startupTiming?.enter(StartupTiming.Phase.WAITING_PREVIOUS_CONNECTION)
 
         startJob = scope.launch {
+            previousCheck?.join()
             awaitConnectionClose()
             if (activeRequest !== request || activeSession != session) return@launch
             if (prepareSafely {
@@ -587,6 +620,7 @@ class PlaybackController internal constructor(
     }
 
     private fun failPreparation(cause: Throwable) {
+        markStartupFailure("ERROR_CODE_FAILED_RUNTIME_CHECK")
         clearProgressWatch()
         clearStartupWatch()
         val error = preparationError(cause)
@@ -599,6 +633,7 @@ class PlaybackController internal constructor(
 
     /** Closes the stream for good. */
     fun stop() {
+        stopHealthCheck()
         clearProgressWatch()
         rendered = false
         clearStartupWatch()
@@ -635,6 +670,69 @@ class PlaybackController internal constructor(
         while (connections.get() > 0) delay(25)
     }
 
+    fun startHealthCheck(scopeName: String, total: Int, load: suspend (Int) -> StreamRequest?) {
+        val previous = healthJob
+        stop()
+        val session = connectionGate.nextSession()
+        activeSession = session
+        val generation = ++healthGeneration
+        mutableHealthCheck.value = ChannelCheckProgress(running = true, scope = DeadChannels.safeName(scopeName), total = total)
+        publishHealthSummary("running")
+        healthJob = scope.launch(start = CoroutineStart.LAZY) {
+            try {
+                previous?.join()
+                for (index in 0 until total) {
+                    ensureActive()
+                    val channel = withContext(Dispatchers.IO) { load(index) } ?: throw IOException("Channel unavailable")
+                    mutableHealthCheck.value = mutableHealthCheck.value.copy(current = DeadChannels.safeName(channel.channelName, channel.url))
+                    awaitConnectionClose()
+                    withContext(Dispatchers.IO) { evictionMutex.withLock { evictConnections() } }
+                    delay(CLOSE_GRACE_MS)
+                    val reason = withContext(Dispatchers.IO) {
+                        connectionGate.acquire(session).use {
+                            connections.incrementAndGet()
+                            try { healthProbe(channel, { healthCall = it }, { ensureActive() }) }
+                            finally { connections.decrementAndGet() }
+                        }
+                    }
+                    ensureActive()
+                    healthResult(channel, reason)
+                    val current = mutableHealthCheck.value
+                    mutableHealthCheck.value = current.copy(checked = current.checked + 1,
+                        dead = current.dead + if (reason == null) 0 else 1,
+                        healthy = current.healthy + if (reason == null) 1 else 0)
+                    publishHealthSummary("running")
+                    if (index + 1 < total) delay(2_000)
+                }
+                mutableHealthCheck.value = mutableHealthCheck.value.copy(complete = true)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                mutableHealthCheck.value = mutableHealthCheck.value.copy(error = true)
+            } finally {
+                if (generation == healthGeneration) {
+                    mutableHealthCheck.value = mutableHealthCheck.value.copy(running = false, current = "")
+                    publishHealthSummary(if (mutableHealthCheck.value.complete) "complete" else "stopped")
+                }
+            }
+        }
+        healthJob?.start()
+    }
+
+    fun stopHealthCheck() {
+        healthJob?.cancel()
+        val call = healthCall
+        if (call != null) scope.launch(Dispatchers.IO) { call.cancel() }
+        mutableHealthCheck.value = mutableHealthCheck.value.copy(running = false)
+    }
+
+    private fun publishHealthSummary(outcome: String) {
+        val current = mutableHealthCheck.value
+        val time = java.time.format.DateTimeFormatter.ofPattern("MM-dd HH:mm")
+            .withZone(java.time.ZoneId.of("Europe/Warsaw")).format(java.time.Instant.now())
+        healthSummary("$time · ${utf8Limit(current.scope, 18)} · ${current.checked}/${current.total} · martwe ${current.dead} · $outcome")
+    }
+
     /** Called when the app goes to the background: closes the stream but remembers it. */
     fun suspendStream() {
         val request = activeRequest ?: suspendedRequest
@@ -646,7 +744,7 @@ class PlaybackController internal constructor(
     fun resumeStream() {
         val request = suspendedRequest ?: return
         suspendedRequest = null
-        play(request)
+        play(request.copy(userInitiated = false))
     }
 
     /** Frees the decoder. The player is created again when needed. */
@@ -736,6 +834,7 @@ class PlaybackController internal constructor(
 
     private fun handleError(error: PlaybackException) {
         if (activeRequest == null) return
+        markStartupFailure(PlaybackHttpError.status(error)?.let { "HTTP $it" } ?: error.errorCodeName)
         clearProgressWatch()
         startupError = error
         recordPlayback(true, diagnostic(error, details = startupDetails()))
@@ -780,6 +879,13 @@ class PlaybackController internal constructor(
             gate.onStopped() // lets the user try the same channel again
             exo?.stop()
         }
+    }
+
+    private fun markStartupFailure(reason: String) {
+        val request = activeRequest ?: return
+        if (rendered || startupFailureMarked || !startupUserInitiated) return
+        startupFailureMarked = true
+        channelResult(request.copy(userInitiated = startupUserInitiated), reason)
     }
 
     private companion object {

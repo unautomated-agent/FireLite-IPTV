@@ -18,14 +18,221 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PlaybackControllerTest {
     private val request = StreamRequest("https://example.org/live", "FireLite")
+
+    @Test fun selectedPlaybackCanRestartAfterRunningOrCompletedHealthChecks(): Unit = runBlocking {
+        for (complete in listOf(false, true)) {
+            val fake = FakePlayer()
+            val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+                evictConnections = {}, healthProbe = { _, _, _ -> error("Cancelled before probing") })
+            try {
+                assertEquals(false, controller.hasActiveStream)
+                controller.play(request)
+                delay(450)
+                assertEquals(true, controller.hasActiveStream)
+                controller.startHealthCheck("Wszystkie", if (complete) 0 else 1) { request }
+                if (complete) withTimeout(1000) { while (controller.healthCheck.value.running) delay(10) }
+                assertEquals(false, controller.hasActiveStream)
+                if (!controller.hasActiveStream) controller.play(request)
+                delay(450)
+                assertEquals(true, controller.hasActiveStream)
+                assertEquals(false, controller.healthCheck.value.running)
+                assertEquals(2, fake.calls.count { it == "prepare" })
+                if (!controller.hasActiveStream) controller.play(request)
+                assertEquals(2, fake.calls.count { it == "prepare" })
+            } finally { controller.stop() }
+        }
+    }
+
+    @Test fun deadRegistryCountsOnlyStartupFailuresOnceAndClearsAtFirstRendering(): Unit = runBlocking {
+        val fake = FakePlayer()
+        val results = mutableListOf<Pair<StreamRequest, String?>>()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            channelResult = { channel, reason -> results += channel to reason }, startupTimeoutMs = 550)
+        controller.play(request)
+        delay(650)
+        assertEquals(listOf("timeout"), results.map { it.second })
+        fake.listener!!.onPlayerError(TestError(2001))
+        assertEquals(1, results.size)
+        fake.state = Player.STATE_READY
+        fake.listener!!.onRenderedFirstFrame()
+        assertNull(results.last().second)
+        val count = results.size
+        fake.state = Player.STATE_BUFFERING
+        fake.listener!!.onPlaybackStateChanged(fake.state)
+        delay(100)
+        fake.listener!!.onPlayerError(TestError(2001))
+        assertEquals(count, results.size)
+        controller.stop()
+        controller.play(request.copy(archive = true))
+        fake.state = Player.STATE_READY
+        fake.listener!!.onRenderedFirstFrame()
+        assertEquals(request.channelKey, results.last().first.channelKey)
+        assertNull(results.last().second)
+        controller.stop()
+    }
+
+    @Test fun stoppedSwitchedAndAutomaticStartsNeverCountAsDead(): Unit = runBlocking {
+        val fake = FakePlayer()
+        val results = mutableListOf<String?>()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            channelResult = { _, reason -> results += reason }, startupTimeoutMs = 100)
+        controller.play(request)
+        controller.stop()
+        fake.listener!!.onPlayerError(TestError(2001))
+        controller.play(request)
+        controller.play(StreamRequest("https://example.org/second", "TV"))
+        controller.stop()
+        delay(150)
+        controller.play(StreamRequest("https://example.org/other", "TV", userInitiated = false))
+        delay(150)
+        fake.listener!!.onPlayerError(TestError(2001))
+        controller.stop()
+        assertEquals(emptyList<String?>(), results)
+    }
+
+    @Test fun preparationAndHttpStartupErrorsReportTheirReasons(): Unit = runBlocking {
+        val fake = FakePlayer()
+        val reasons = mutableListOf<String?>()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            channelResult = { _, reason -> reasons += reason },
+            preparationError = { TestError(PlaybackException.ERROR_CODE_FAILED_RUNTIME_CHECK, it) })
+        controller.play(request)
+        fake.listener!!.onPlayerError(TestError(2004, httpFailure(404)))
+        assertEquals(listOf("HTTP 404"), reasons)
+        controller.stop()
+        fake.prepareFailure = IllegalStateException("fixture")
+        controller.play(request)
+        delay(450)
+        assertEquals("ERROR_CODE_FAILED_RUNTIME_CHECK", reasons.last())
+        controller.stop()
+    }
+
+    @Test fun cancelledProbeMustFinishBeforePlaybackCanPrepare(): Unit = runBlocking {
+        val fake = FakePlayer()
+        val entered = CompletableDeferred<Unit>()
+        val release = CountDownLatch(1)
+        val results = mutableListOf<String?>()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            evictConnections = {}, healthResult = { _, reason -> results += reason }, healthProbe = { _, _, _ ->
+                entered.complete(Unit)
+                release.await(3, TimeUnit.SECONDS)
+                null
+            })
+        try {
+            controller.startHealthCheck("Filmy", 2) { request }
+            withTimeout(3000) { entered.await() }
+            controller.play(request)
+            delay(450)
+            assertEquals(0, fake.calls.count { it == "prepare" })
+            release.countDown()
+            withTimeout(3000) { while (fake.calls.none { it == "prepare" }) delay(10) }
+            assertTrue(results.isEmpty())
+            assertEquals(false, controller.healthCheck.value.running)
+        } finally { release.countDown(); controller.stop() }
+    }
+
+    @Test fun playbackCancelsProbeSocketBeforeOpeningItsOwnConnection(): Unit = runBlocking {
+        HealthConnectionFixture().use { fixture ->
+            val fake = FakePlayer()
+            val results = mutableListOf<String?>()
+            val client = OkHttpClient()
+            val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+                setStream = { _, _, _ -> client.newCall(Request.Builder().url("${fixture.base}/good")
+                    .header("Connection", "close").build()).execute().use { it.body!!.bytes() }; Unit },
+                evictConnections = {}, healthResult = { _, reason -> results += reason })
+            try {
+                controller.startHealthCheck("Wszystkie", 1) { StreamRequest("${fixture.base}/slow", "TV") }
+                withTimeout(3000) { while ("/slow" !in fixture.paths) delay(10) }
+                controller.play(request)
+                withTimeout(3000) { while (fake.calls.none { it == "prepare" }) delay(10) }
+                assertEquals(listOf("/slow", "/good"), fixture.paths.toList())
+                assertEquals(1, fixture.peak.get())
+                assertTrue(results.isEmpty())
+                assertEquals(0, controller.healthCheck.value.checked)
+            } finally { controller.stop(); client.connectionPool.evictAll() }
+        }
+    }
+
+    @Test fun healthStopsPlaybackAndSequentialResultsKeepScopeCountsAndPartialResultsOnBackground(): Unit = runBlocking {
+        HealthConnectionFixture().use { fixture ->
+            val fake = FakePlayer()
+            val summaries = mutableListOf<String>()
+            val results = mutableListOf<Pair<StreamRequest, String?>>()
+            val client = OkHttpClient()
+            var liveCall: okhttp3.Call? = null
+            var liveResponse: okhttp3.Response? = null
+            lateinit var connections: AtomicInteger
+            val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+                setStream = { _, _, _ ->
+                    liveCall = client.newCall(Request.Builder().url("${fixture.base}/hold").build())
+                    liveResponse = liveCall!!.execute()
+                    connections.incrementAndGet()
+                }, evictConnections = {}, healthResult = { channel, reason -> results += channel to reason },
+                healthSummary = { summaries += it })
+            connections = PlaybackController::class.java.getDeclaredField("connections").let {
+                it.isAccessible = true; it.get(controller) as AtomicInteger
+            }
+            fake.onStop = {
+                val call = liveCall
+                liveCall = null
+                if (call != null) launch(Dispatchers.IO) {
+                    call.cancel()
+                    liveResponse?.close()
+                    connections.decrementAndGet()
+                }
+            }
+            try {
+                controller.play(request)
+                withTimeout(3000) { while (connections.get() == 0) delay(10) }
+                val indexes = mutableListOf<Int>()
+                controller.startHealthCheck("Filmy", 3) { index ->
+                    indexes += index
+                    StreamRequest("${fixture.base}/${if (index == 0) "bad" else "good"}", "TV", channelName = "Kanał $index")
+                }
+                withTimeout(5000) { while (controller.healthCheck.value.checked < 2) delay(10) }
+                controller.suspendStream()
+                withTimeout(3000) { while (!summaries.last().endsWith("stopped")) delay(10) }
+                assertEquals(listOf(0, 1), indexes)
+                assertEquals(listOf("HTTP 404", null), results.map { it.second })
+                assertEquals(3, controller.healthCheck.value.total)
+                assertEquals(2, controller.healthCheck.value.checked)
+                assertEquals(1, controller.healthCheck.value.dead)
+                assertEquals(1, controller.healthCheck.value.healthy)
+                assertTrue(summaries.last().contains("Filmy · 2/3 · martwe 1 · stopped"))
+                assertEquals(listOf("/hold", "/bad", "/good"), fixture.paths.toList())
+                assertEquals(1, fixture.peak.get())
+                assertEquals(1, fake.calls.count { it == "prepare" })
+            } finally { controller.stop(); client.connectionPool.evictAll() }
+        }
+    }
+
+    @Test fun emptyAndMissingChannelChecksCompleteOrFailWithoutOpeningConnections(): Unit = runBlocking {
+        val summaries = mutableListOf<String>()
+        val controller = PlaybackController(this, { error("No playback") }, {}, { MediaItem.EMPTY },
+            healthProbe = { _, _, _ -> error("No probe") }, healthSummary = { summaries += it })
+        controller.startHealthCheck("Wszystkie", 0) { error("No load") }
+        withTimeout(1000) { while (controller.healthCheck.value.running) delay(10) }
+        assertEquals(true, controller.healthCheck.value.complete)
+        assertTrue(summaries.last().contains("0/0 · martwe 0 · complete"))
+        controller.startHealthCheck("Usunięta grupa", 1) { null }
+        withTimeout(1000) { while (controller.healthCheck.value.running) delay(10) }
+        assertEquals(true, controller.healthCheck.value.error)
+        assertEquals(false, controller.healthCheck.value.complete)
+        controller.stop()
+    }
 
     @Test fun finalNetworkErrorUsesRecordedHttpFailureAndNewChannelClearsIt() = runBlocking {
         val fake = FakePlayer()
@@ -86,6 +293,35 @@ class PlaybackControllerTest {
         assertEquals(1, creations)
         assertEquals(1, trace.count { it.startsWith("PREPARE") })
         controller.stop()
+    }
+
+    @Test fun archiveReselectionAfterAutomaticResumeIgnoresMetadataAndRestoresUserIntent(): Unit = runBlocking {
+        for (preparing in listOf(false, true)) {
+            val fake = FakePlayer()
+            val results = mutableListOf<Pair<StreamRequest, String?>>()
+            val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+                channelResult = { stream, reason -> results += stream to reason })
+            val archive = request.copy(url = "https://example.org/archive/123", archive = true)
+            try {
+                controller.playArchiveFromStart(archive)
+                delay(450)
+                controller.suspendStream()
+                controller.resumeStream()
+                if (!preparing) delay(450)
+                fake.seekPosition = 75_000
+                controller.playArchiveFromStart(archive.copy(channelKey = DeadChannels.key("new metadata"), channelName = "Renamed"))
+                assertEquals(if (preparing) 0 else 1, fake.calls.count { it == "seekTo" })
+                if (!preparing) assertEquals(0L, fake.seekPosition)
+                if (preparing) delay(450)
+                assertEquals(2, fake.calls.count { it == "prepare" })
+                fake.listener!!.onPlayerError(TestError(2004, httpFailure(404)))
+                assertEquals("HTTP 404", results.single().second)
+                assertEquals(true, results.single().first.userInitiated)
+                assertEquals(archive.channelKey, results.single().first.channelKey)
+                fake.listener!!.onPlayerError(TestError(2004, httpFailure(404)))
+                assertEquals(1, results.size)
+            } finally { controller.stop() }
+        }
     }
 
     @Test fun ordinaryDuplicateArchiveAndLiveRequestsRemainNoOps() = runBlocking {
@@ -882,6 +1118,7 @@ class PlaybackControllerTest {
     }
 
     private class FakePlayer {
+        var onStop: () -> Unit = {}
         val calls = mutableListOf<String>()
         var parameters = TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT
         var listener: Player.Listener? = null
@@ -914,6 +1151,7 @@ class PlaybackControllerTest {
                 "isCurrentMediaItemSeekable" -> true
                 "seekTo" -> { seekPosition = args!![0] as Long; calls += method.name; null }
                 "prepare" -> { calls += method.name; prepareFailure?.let { throw it }; null }
+                "stop" -> { calls += method.name; onStop(); null }
                 else -> {
                     calls += method.name
                     when (method.returnType) {

@@ -15,6 +15,7 @@ import dev.firetvlite.iptv.data.film.ReminderPreferences
 import dev.firetvlite.iptv.data.library.LibraryRepository
 import dev.firetvlite.iptv.data.playlist.PlaylistImporter
 import dev.firetvlite.iptv.playback.PlaybackController
+import dev.firetvlite.iptv.playback.DeadChannels
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -40,8 +41,9 @@ class AppContainer(application: Application) {
         epg = epg,
     )
 
+    internal val deadChannels = DeadChannels(File(application.filesDir, "dead-channels.json"), applicationScope)
     /** The one object that may open a stream. */
-    val playback = PlaybackController(application, applicationScope)
+    val playback = PlaybackController(application, applicationScope, deadChannels)
 
     private val foregroundEpg = ForegroundRefresh(applicationScope) {
         database.sourceDao().active()?.let { epg.refresh(it.id) }
@@ -56,7 +58,10 @@ class AppContainer(application: Application) {
             }
 
             override fun onActivityStopped(activity: Activity) {
-                if (--started == 0) foregroundEpg.setForeground(false)
+                if (--started == 0) {
+                    foregroundEpg.setForeground(false)
+                    playback.stopHealthCheck()
+                }
             }
 
             override fun onActivityCreated(activity: Activity, state: Bundle?) = Unit

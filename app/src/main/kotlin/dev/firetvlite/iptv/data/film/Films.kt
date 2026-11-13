@@ -30,7 +30,8 @@ object Films {
     private val titleSeparators = Regex("[^\\p{L}\\p{N}]+")
     fun normalized(title: String): String = title.lowercase(Locale.ROOT)
         .replace(titleSeparators, " ").trim()
-    fun candidate(p: ProgrammeEntity): Boolean {
+    fun candidate(p: ProgrammeEntity): Boolean = candidateMetadata(p) && OmdbMissAnalysis.skipReason(p) == null
+    internal fun candidateMetadata(p: ProgrammeEntity): Boolean {
         val categories = (p.categories.ifBlank { p.category.orEmpty() })
             .split('\n').joinToString("\n") { it.substringBefore("\",]\"name\":\"").trim().lowercase(Locale.ROOT) }
         return p.year in 1000..9999 && p.stop - p.start >= 80 * 60_000L &&
@@ -121,7 +122,9 @@ class FilmLookup(private val client: OmdbClient, private val store: FilmStore,
             if (!store.reserve(Films.day(clock()))) { fail("LOCAL_BUDGET"); return null }
             observer.requested(clock())
             val result = client.lookup(key, title, year)
-            observer.completed(result, clock())
+            val completedAt = clock()
+            observer.completed(result, completedAt)
+            if (result == OmdbResult.Missing) observer.missing(p, completedAt)
             when (result) {
                 is OmdbResult.Failed -> { lastError = result.code; return null }
                 OmdbResult.Missing -> Unit

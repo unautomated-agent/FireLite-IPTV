@@ -275,7 +275,8 @@ private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSet
         AnimatedVisibility(bannerVisible, modifier = Modifier.align(Alignment.BottomCenter),
             enter = fadeIn(tween(180)) + slideInVertically { it / 4 },
             exit = fadeOut(tween(180)) + slideOutVertically { it / 4 }) {
-            PlayerInfoBanner(channel, frame, guide, controls.banner == BannerState.Expanded, scroll, viewModel.isArchive(), seekPreview)
+            PlayerInfoBanner(channel, frame, guide, controls.banner == BannerState.Expanded, scroll, viewModel.isArchive(), seekPreview,
+                seekPreview?.let { viewModel.seekTarget(frame, it.offsetMs) })
         }
     }
     AnimatedVisibility(quickMenu,

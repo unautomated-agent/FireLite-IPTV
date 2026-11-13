@@ -18,6 +18,8 @@ data class FilmBudgetEntity(@PrimaryKey val day: Long, val used: Int = 0)
 
 @Dao
 interface FilmDao {
+    @Query("SELECT used FROM film_budget WHERE day=:day")
+    fun observeBudget(day: Long): Flow<Int?>
     @Query("SELECT * FROM film_rating WHERE cacheKey=:key")
     suspend fun cached(key: String): FilmRatingEntity?
     @Query("SELECT * FROM film_rating")

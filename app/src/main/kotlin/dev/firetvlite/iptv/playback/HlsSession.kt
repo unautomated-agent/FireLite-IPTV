@@ -13,7 +13,7 @@ internal interface HlsSessionFactory : ClassifiedHttpFactory {
 
 internal class HlsSession(val archive: Boolean = false, private val clock: () -> Long = { System.nanoTime() / 1_000_000 }) {
     private data class Request(val id: Long, val uri: String, val kind: String, val extension: String, val started: Long,
-        var status: Int? = null, var duration: Long? = null)
+        var status: Int? = null, var duration: Long? = null, var transport: TransportSnapshot? = null)
     private val started = clock()
     private val resources = linkedMapOf<String, String>()
     private val requests = ArrayDeque<Request>()
@@ -27,6 +27,7 @@ internal class HlsSession(val archive: Boolean = false, private val clock: () ->
     private var selected = -1
     private var failover = false
     private var progressMs = 0L
+    private var poolEvicted = false
     @get:Synchronized val hasMuxedAudio: Boolean get() = master?.muxedAudioFormat != null
     @get:Synchronized val hasPlaylist: Boolean get() = master != null || media != "HLS media: pending"
 
@@ -49,6 +50,12 @@ internal class HlsSession(val archive: Boolean = false, private val clock: () ->
     @Synchronized fun response(id: Long, status: Int) {
         requests.firstOrNull { it.id == id }?.status = status
     }
+
+    @Synchronized fun transport(id: Long, snapshot: TransportSnapshot) {
+        requests.firstOrNull { it.id == id }?.transport = snapshot
+    }
+
+    @Synchronized fun evicted() { poolEvicted = true }
 
     @Synchronized fun end(id: Long) {
         requests.firstOrNull { it.id == id }?.let { it.duration = clock() - it.started }
@@ -139,9 +146,17 @@ internal class HlsSession(val archive: Boolean = false, private val clock: () ->
             listOf(parts.first()) + parts.getOrNull(1)?.let { listOf("HLS media detail: encryption=$it") }.orEmpty()
         })
         add("HLS failover: active=$failover; failures=${failed.size}; skipped=${skipped.size}")
+        if (poolEvicted) add("Transport pool: idle evicted before close grace")
+        requests.firstNotNullOfOrNull { it.transport }?.let { add(it.headersLine()) }
+        requests.lastOrNull { it.status == null && it.duration == null && it.transport != null }?.transport?.let {
+            add("Transport ${it.pending(clock())}")
+        }
         requests.forEach {
-            add("HLS request: ${it.kind} ${it.status ?: if (it.duration == null) "pending" else "IO"} " +
-                "${(it.duration ?: (clock() - it.started)).coerceIn(0, 999_999)}ms ${it.extension}")
+            val state = if (it.status == null && it.duration == null && it.transport != null)
+                it.transport!!.pending(clock()) else
+                "${it.status ?: if (it.duration == null) "pending" else "IO"} ${(it.duration ?: (clock() - it.started)).coerceIn(0, 999_999)}ms"
+            add("HLS request: ${it.kind} $state ${it.extension}")
+            it.transport?.let { snapshot -> add(snapshot.line(it.id)) }
         }
     }
 

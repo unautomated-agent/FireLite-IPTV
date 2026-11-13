@@ -540,8 +540,60 @@ class PlaybackControllerTest {
         assertEquals(1, fake.calls.count { it == "stop" })
         connections.decrementAndGet()
         delay(100)
+        assertEquals(0, fake.calls.count { it == "prepare" })
+        delay(400)
         assertEquals(1, fake.calls.count { it == "prepare" })
         assertEquals(1, records.size)
+        controller.stop()
+    }
+
+    @Test fun sessionEvictsOnlyAfterAllOldSourcesCloseThenWaitsTheFullGraceBeforePrepare() = runBlocking {
+        val fake = FakePlayer()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            evictConnections = { fake.calls += "evict" })
+        val connections = PlaybackController::class.java.getDeclaredField("connections").let {
+            it.isAccessible = true
+            it.get(controller) as AtomicInteger
+        }
+        connections.set(2)
+        controller.play(request.copy(archive = true))
+        delay(50)
+        assertEquals(0, fake.calls.count { it == "evict" || it == "prepare" })
+        connections.decrementAndGet()
+        delay(50)
+        assertEquals(0, fake.calls.count { it == "evict" || it == "prepare" })
+        connections.decrementAndGet()
+        delay(100)
+        assertEquals(1, fake.calls.count { it == "evict" })
+        assertEquals(0, fake.calls.count { it == "prepare" })
+        delay(400)
+        assertEquals(1, fake.calls.count { it == "prepare" })
+        assertEquals(true, fake.calls.indexOf("stop") < fake.calls.indexOf("evict"))
+        assertEquals(true, fake.calls.indexOf("evict") < fake.calls.indexOf("prepare"))
+        val before = fake.calls.toList()
+        controller.play(request.copy(archive = true))
+        assertEquals(before, fake.calls)
+        controller.stop()
+    }
+
+    @Test fun cancelledSessionCannotEvictAndEvictionFailureIsRecordedWithoutPreparing() = runBlocking {
+        val fake = FakePlayer()
+        var evictions = 0
+        val records = mutableListOf<String>()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            recordPlayback = { failed, record -> if (failed) records += record },
+            preparationError = { TestError(PlaybackException.ERROR_CODE_FAILED_RUNTIME_CHECK, it) },
+            evictConnections = { evictions++; throw IllegalStateException("fixture eviction failed") })
+        controller.play(request)
+        controller.stop()
+        delay(50)
+        assertEquals(0, evictions)
+        controller.play(request)
+        delay(100)
+        assertEquals(1, evictions)
+        assertEquals(0, fake.calls.count { it == "prepare" })
+        assertEquals(1, records.size)
+        assertEquals(true, records.single().contains("fixture eviction failed"))
         controller.stop()
     }
 

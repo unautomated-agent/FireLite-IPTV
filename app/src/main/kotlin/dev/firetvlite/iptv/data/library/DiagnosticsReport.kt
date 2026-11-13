@@ -100,6 +100,8 @@ object DiagnosticsReport {
     private val essentialPrefixes = listOf(
         "HTTP:", "Request:", "Redirect:", "Headers:", "Request ID:", "Screen:",
         "HLS master:", "HLS renditions:", "HLS media:", "HLS media detail:", "HLS failover:",
+        "Transport headers:", "Transport pool:", "Transport pending:",
+        "OMDb braki wg typu:",
         "FireLite ·", "Ostatni błąd odtwarzania:", "Ostatnie poprawne odtwarzanie:", "Channel:",
         "Startup:", "STOPPING_PREVIOUS=", "CLOSE_GRACE=", "WAITING_PREVIOUS_CONNECTION=",
         "PREPARING_BUFFERING=", "RECOVERY_DELAY=", "WAITING_RECOVERY_CONNECTION=",
@@ -119,14 +121,20 @@ object DiagnosticsReport {
             if (line.startsWith("HLS request:") || line.startsWith("HLS variant:") || line.startsWith("HLS rendition:"))
                 required.add(index)
         }
+        val transports = lines.indices.filter { it < failureEnd && lines[it].startsWith("Transport:") }
+        transports.firstOrNull()?.let { required.add(it) }
+        transports.takeLast(2).forEach { required.add(it) }
         lines.indexOfFirst { Regex(" · (START|SEEK|REBUFFER)_TIMEOUT$").containsMatchIn(it) }
             .takeIf { it >= 0 }?.let { required.add(it) }
         lines.indexOfFirst { it == "Ostatni raport błędu:" }.takeIf { it >= 0 }?.let { index ->
             if (!lines.getOrNull(index + 1).isNullOrBlank()) required.add(index + 1)
         }
         if (required.isEmpty()) return utf8Limit(text, bytes)
-        val lineBytes = minOf(100, (bytes - required.size + 1) / required.size)
-        val selected = required.associateWith { utf8Limit(lines[it], lineBytes) }.toMutableMap()
+        val priority = required.filter { lines[it].startsWith("Transport pending:") ||
+            lines[it].startsWith("Transport headers:") || it == transports.firstOrNull() || it == transports.lastOrNull() }.toSet()
+        val reserved = priority.sumOf { utf8Limit(lines[it], 100).toByteArray(Charsets.UTF_8).size }
+        val lineBytes = minOf(100, (bytes - reserved - required.size + 1) / (required.size - priority.size).coerceAtLeast(1))
+        val selected = required.associateWith { utf8Limit(lines[it], if (it in priority) 100 else lineBytes) }.toMutableMap()
         var used = selected.values.sumOf { it.toByteArray(Charsets.UTF_8).size } + selected.size - 1
         lines.forEachIndexed { index, line ->
             if (index !in selected) {

@@ -100,6 +100,7 @@ class PlaybackController internal constructor(
         PlaybackException("Nie udało się przygotować odtwarzania", it, PlaybackException.ERROR_CODE_FAILED_RUNTIME_CHECK)
     },
     private val startupTimeoutMs: Long = 10_000L,
+    private val evictConnections: () -> Unit = { PlaybackHttp.evictIdle() },
 ) {
     internal constructor(scope: CoroutineScope, createPlayer: (HttpDataSource.Factory) -> ExoPlayer) :
         this(scope, createPlayer, {})
@@ -155,7 +156,9 @@ class PlaybackController internal constructor(
 
         override fun createDataSource(dataType: Int): HttpDataSource {
             var requestId = 0L
-            val calls = PlaybackHttp.calls(request?.url.orEmpty(), dataType) { evidence ->
+            val calls = PlaybackHttp.calls(request?.url.orEmpty(), dataType,
+                channelHeaders = request?.headers.orEmpty(), userAgent = PlaybackHttp.userAgent(headers, request?.userAgent),
+                onTransport = { snapshot -> if (session == activeSession) hls.transport(requestId, snapshot) }) { evidence ->
                 if (session == activeSession) {
                     hls.response(requestId, evidence.status)
                     lastHttp = session to evidence
@@ -163,8 +166,8 @@ class PlaybackController internal constructor(
                 }
             }
             val delegate = OkHttpDataSource.Factory(calls)
-                .setUserAgent(headers["User-Agent"] ?: request?.userAgent)
-                .setDefaultRequestProperties(headers)
+                .setUserAgent(PlaybackHttp.userAgent(headers, request?.userAgent))
+                .setDefaultRequestProperties(headers.filterKeys { !it.equals("User-Agent", true) })
                 .createDataSource()
             return object : HttpDataSource by delegate {
                 private var connected = false
@@ -526,12 +529,15 @@ class PlaybackController internal constructor(
         trace("STOP before switch")
         mutableStatus.value = PlaybackStatus.Connecting
 
-        startupTiming?.enter(StartupTiming.Phase.CLOSE_GRACE)
+        startupTiming?.enter(StartupTiming.Phase.WAITING_PREVIOUS_CONNECTION)
 
         startJob = scope.launch {
-            delay(CLOSE_GRACE_MS) // ... and give the server time to notice, only then open the new one
-            startupTiming?.enter(StartupTiming.Phase.WAITING_PREVIOUS_CONNECTION)
             awaitConnectionClose()
+            if (activeRequest !== request || activeSession != session) return@launch
+            if (prepareSafely { evictConnections(); true } != true) return@launch
+            hlsSession.evicted()
+            startupTiming?.enter(StartupTiming.Phase.CLOSE_GRACE)
+            delay(CLOSE_GRACE_MS)
             startupTiming?.enter(StartupTiming.Phase.PREPARING_BUFFERING)
             trace("PREPARE session=$session player=${System.identityHashCode(player)} stream=${request.url.hashCode()}")
             prepareSafely {

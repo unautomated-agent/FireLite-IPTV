@@ -17,6 +17,19 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class OmdbPreferencesTest {
+    @Test fun missTypesPersistAcrossRestartAndResetWithTheWarsawDayWithoutStoringTitles() {
+        val backend = Backend()
+        val now = 1_800_000_000_000L
+        val p = ProgrammeEntity(sourceId = 1, generation = "g", epgKey = "c", start = now,
+            stop = now + 7_200_000, title = "Sensitive title", description = null, category = "dramat", year = 2002)
+        val preferences = OmdbPreferences(backend.preferences) { now }
+        preferences.missing(p, now)
+        val reopened = OmdbPreferences(backend.preferences) { now }
+        assertEquals(preferences.stats.value, reopened.stats.value)
+        assertFalse(reopened.stats.value.missSummary().contains(p.title))
+        assertTrue(OmdbPreferences(backend.preferences) { now + Films.DAY }.stats.value.missTypes.isEmpty())
+    }
+
     @Test fun expiredQuotaStatusClearsEvenWhenEveryRemainingFilmIsCached() = runBlocking {
         val backend = Backend()
         val now = Instant.parse("2026-03-28T23:30:00Z").toEpochMilli()

@@ -85,6 +85,8 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
     private val mutableEnriching = MutableStateFlow(false)
     val enriching = mutableEnriching.asStateFlow()
     private val clock = flow { while (true) { emit(System.currentTimeMillis()); delay(60_000) } }
+    val budgetUsed = clock.map(Films::day).distinctUntilChanged().flatMapLatest { dao.observeBudget(it) }
+        .map { it ?: 0 }.stateIn(scope, SharingStarted.WhileSubscribed(5_000), 0)
     val ratings = observeFilmRatings(dao.observeRatings(), preferences.key, clock)
         .stateIn(scope, SharingStarted.Eagerly, emptyMap())
 
@@ -99,7 +101,7 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
                 val films = programmes.mapNotNull { p ->
                     byId[p.channelId]?.let { FilmShowing(it, p.programme, scores[Films.key(p.programme)]) }
                 }
-                FilmCatalogue(source.id, loaded = true, hasEpg = matched > 0, films = films)
+                FilmCatalogue(source.id, loaded = true, hasEpg = matched > 0, films = films, progress = filmProgress(films, now))
             }
         }).onStart { emit(FilmCatalogue(sourceId = source?.id)) }
     }.flowOn(Dispatchers.Default).stateIn(scope, SharingStarted.WhileSubscribed(5_000), FilmCatalogue())

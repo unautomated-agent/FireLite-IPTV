@@ -1,7 +1,8 @@
 package dev.firetvlite.iptv.data.film
 
 data class FilmCatalogue(val sourceId: Long? = null, val loaded: Boolean = false,
-    val hasEpg: Boolean = false, val films: List<FilmShowing> = emptyList())
+    val hasEpg: Boolean = false, val films: List<FilmShowing> = emptyList(),
+    val progress: List<FilmProgress> = List(Films.TAB_COUNT) { FilmProgress() })
 
 enum class RankingStatus { Loading, MissingEpg, Empty, Ready }
 

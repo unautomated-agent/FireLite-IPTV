@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.film.Films
+import dev.firetvlite.iptv.data.film.FilmProgress
 import dev.firetvlite.iptv.data.film.rankedFilms
 import dev.firetvlite.iptv.data.film.rankingStatus
 import dev.firetvlite.iptv.data.film.omdbIssueMessage
@@ -61,6 +62,7 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
     val catalogue by library.films.catalogue.collectAsState()
     val enriching by library.films.enriching.collectAsState()
     val omdbError by library.films.preferences.currentError.collectAsState()
+    val budgetUsed by library.films.budgetUsed.collectAsState()
     val epgStates by library.epgStates.collectAsState()
     val source by library.source.collectAsState()
     val films = if (catalogue.sourceId == source?.id) catalogue.films else emptyList()
@@ -107,7 +109,11 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
                         })
                 }
             }
-            omdbIssueMessage(omdbError)?.let { message ->
+            val progress = if (catalogue.sourceId == source?.id) catalogue.progress[tab] else FilmProgress()
+            FLText(stringResource(R.string.films_rating_progress, progress.checked, progress.total, progress.rated,
+                progress.missing, budgetUsed, Films.DAILY_BUDGET), style = FireLiteTheme.typography.label)
+            ProgressBar(progress.fraction)
+            omdbIssueMessage(omdbError ?: "LOCAL_BUDGET".takeIf { budgetUsed >= Films.DAILY_BUDGET })?.let { message ->
                 FLText(stringResource(message, omdbError.orEmpty()), style = FireLiteTheme.typography.label)
             }
             when (status) {

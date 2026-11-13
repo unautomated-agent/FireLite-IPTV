@@ -12,6 +12,41 @@ import java.net.InetSocketAddress
 import java.net.Proxy
 
 class TransportTraceTest {
+    @Test fun late404RecordsFinalHopAndTimeSinceSentWithoutRedirectTokenValues() {
+        var time = 0L
+        val snapshots = mutableListOf<TransportSnapshot>()
+        val trace = TransportTrace(emptySet(), { snapshots += it }, { time })
+        val origin = Request.Builder().url("https://origin.example/private").build()
+        val middle = Request.Builder().url("https://middle.example/private?channel=secret").build()
+        val final = Request.Builder().url("https://final.example/private?token=hidden&expires=123456789").build()
+        trace.connectEnd(call, address, Proxy.NO_PROXY, Protocol.HTTP_1_1)
+        trace.requestHeadersEnd(call, origin)
+        time = 100
+        trace.responseHeadersEnd(call, Response.Builder().request(origin).protocol(Protocol.HTTP_1_1)
+            .code(302).message("redirect").header("Location", middle.url.toString()).build())
+        trace.requestHeadersEnd(call, middle)
+        time = 500
+        trace.responseHeadersEnd(call, Response.Builder().request(middle).protocol(Protocol.HTTP_1_1)
+            .code(302).message("redirect").header("Location", final.url.toString()).build())
+        time = 600
+        trace.requestHeadersEnd(call, final)
+        assertTrue(snapshots.last().waitingResponse)
+        assertEquals(null, snapshots.last().headersMs)
+        time = 12_600
+        trace.responseHeadersEnd(call, Response.Builder().request(final).protocol(Protocol.HTTP_1_1)
+            .code(404).message("expired private reason").build())
+        val result = snapshots.last()
+        assertEquals(404, result.status)
+        assertEquals(12_600L, result.headersMs)
+        assertEquals(12_000L, result.afterSentMs)
+        assertEquals(3, result.hop)
+        assertEquals(3, result.hostIndex)
+        assertEquals(listOf(RedirectHint(2, 2, true, false), RedirectHint(3, 3, true, true)), result.redirectHints)
+        val text = result.line(1) + result.responseLine(1) + result.redirectsLine()
+        for (secret in listOf("https://", "origin", "middle", "final.example", "private", "secret", "hidden", "expires", "123456789"))
+            assertFalse(text, text.contains(secret))
+    }
+
     private val request = Request.Builder().url("https://private.example/123456789?token=hidden").build()
     private val call = OkHttpClient().newCall(request)
     private val address = InetSocketAddress.createUnresolved("private.example", 443)
@@ -63,6 +98,8 @@ class TransportTraceTest {
         repeat(9) { trace.responseHeadersEnd(call, Response.Builder().request(request).protocol(Protocol.HTTP_1_1)
             .code(302).header("Location", "https://secret.example/123456789").message("private").build()) }
         assertEquals(listOf(302, 302, 302, 302), snapshots.last().redirects)
+        assertEquals(4, snapshots.last().redirectHints.size)
+        assertTrue(snapshots.last().redirectHints.all { !it.query && !it.tokenLike })
         time = 9_999_999
         trace.connectFailed(call, address, Proxy.NO_PROXY, null, IOException("secret password=private"))
         trace.callFailed(call, IOException("https://secret.example/123456789"))

@@ -28,6 +28,10 @@ internal class HlsSession(val archive: Boolean = false, private val clock: () ->
     private var failover = false
     private var progressMs = 0L
     private var poolEvicted = false
+    private var providerExtended = false
+    private var providerOutcome: TransportSnapshot? = null
+    @get:Synchronized var hasManifestRequest = false
+        private set
     @get:Synchronized val hasMuxedAudio: Boolean get() = master?.muxedAudioFormat != null
     @get:Synchronized val hasPlaylist: Boolean get() = master != null || media != "HLS media: pending"
 
@@ -41,6 +45,7 @@ internal class HlsSession(val archive: Boolean = false, private val clock: () ->
     }
 
     @Synchronized fun begin(uri: String, dataType: Int): Long {
+        if (dataType == C.DATA_TYPE_MANIFEST) hasManifestRequest = true
         val request = Request(++sequence, uri, kind(uri, dataType), extension(uri), clock())
         requests.addLast(request)
         if (requests.size > 12) requests.removeFirst()
@@ -51,8 +56,15 @@ internal class HlsSession(val archive: Boolean = false, private val clock: () ->
         requests.firstOrNull { it.id == id }?.status = status
     }
 
-    @Synchronized fun transport(id: Long, snapshot: TransportSnapshot) {
+    @Synchronized fun transport(id: Long, snapshot: TransportSnapshot): Boolean {
         requests.firstOrNull { it.id == id }?.transport = snapshot
+        if (id == 1L && providerExtended && providerOutcome == null &&
+            snapshot.phase in setOf(TransportPhase.Body, TransportPhase.Failed)) {
+            providerOutcome = if (snapshot.phase == TransportPhase.Failed)
+                snapshot.copy(status = null, headersMs = null, afterSentMs = null) else snapshot
+            return true
+        }
+        return false
     }
 
     @Synchronized fun evicted() { poolEvicted = true }
@@ -89,7 +101,26 @@ internal class HlsSession(val archive: Boolean = false, private val clock: () ->
         return true
     }
 
-    @Synchronized fun timeoutAt(baseMs: Long): Long = HlsStartupBudget.timeoutAt(baseMs, progressMs.takeIf { failover })
+    private fun providerRequest(): Request? = requests.firstOrNull {
+        !archive && it.id == 1L && it.kind == "master" && it.status == null && it.duration == null &&
+            it.transport?.waitingResponse == true
+    }
+
+    @Synchronized fun waitingForProvider(): Boolean = providerRequest()?.transport?.let {
+        clock() - it.phaseSince >= 5_000
+    } == true
+
+    @Synchronized fun timeoutAt(baseMs: Long): Long {
+        if (providerRequest() != null) {
+            providerExtended = true
+            return PROVIDER_WAIT_MS
+        }
+        return HlsStartupBudget.timeoutAt(baseMs, progressMs.takeIf { failover })
+    }
+
+    @Synchronized fun providerTimeout(): String? = providerRequest()?.let {
+        "Provider wait: provider no response after ${((clock() - started) / 1000).coerceIn(0, 999)}s"
+    }
 
     @Synchronized fun parsed(playlist: HlsMultivariantPlaylist): HlsMultivariantPlaylist {
         master = playlist
@@ -146,6 +177,18 @@ internal class HlsSession(val archive: Boolean = false, private val clock: () ->
             listOf(parts.first()) + parts.getOrNull(1)?.let { listOf("HLS media detail: encryption=$it") }.orEmpty()
         })
         add("HLS failover: active=$failover; failures=${failed.size}; skipped=${skipped.size}")
+        if (providerExtended) {
+            val outcome = providerOutcome
+            add("Provider wait: extended=45s outcome=" + when {
+                outcome?.status != null -> "HTTP${outcome.status} headers=${outcome.headersMs}ms"
+                outcome?.phase == TransportPhase.Failed -> "IO failure"
+                else -> "pending"
+            })
+            outcome?.let {
+                add(it.responseLine(1))
+                if (it.redirectHints.isNotEmpty()) add(it.redirectsLine())
+            }
+        }
         if (poolEvicted) add("Transport pool: idle evicted before close grace")
         requests.firstNotNullOfOrNull { it.transport }?.let { add(it.headersLine()) }
         requests.lastOrNull { it.status == null && it.duration == null && it.transport != null }?.transport?.let {
@@ -157,6 +200,11 @@ internal class HlsSession(val archive: Boolean = false, private val clock: () ->
                 "${it.status ?: if (it.duration == null) "pending" else "IO"} ${(it.duration ?: (clock() - it.started)).coerceIn(0, 999_999)}ms"
             add("HLS request: ${it.kind} $state ${it.extension}")
             it.transport?.let { snapshot -> add(snapshot.line(it.id)) }
+            if ((it.id == 1L && providerOutcome == null) || (it.id != 1L && (it.transport?.status ?: 0) >= 400)) {
+                it.transport?.takeIf { snapshot -> snapshot.status != null && snapshot.phase != TransportPhase.Redirect }
+                    ?.let { snapshot -> add(snapshot.responseLine(it.id)) }
+                it.transport?.takeIf { snapshot -> snapshot.redirectHints.isNotEmpty() }?.let { snapshot -> add(snapshot.redirectsLine()) }
+            }
         }
     }
 
@@ -166,6 +214,7 @@ internal class HlsSession(val archive: Boolean = false, private val clock: () ->
     }
 
     companion object {
+        const val PROVIDER_WAIT_MS = 45_000L
         fun extension(uri: String): String = runCatching { URI(uri).path.substringAfterLast('.', "").lowercase() }
             .getOrNull()?.takeIf { it in setOf("m3u8", "ts", "m4s", "mp4", "aac", "vtt", "webvtt", "key") } ?: "-"
         private fun language(value: String?): String = value?.substringBefore('-')?.lowercase()

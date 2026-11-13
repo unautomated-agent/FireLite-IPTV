@@ -498,6 +498,61 @@ class PlaybackControllerTest {
 
     private class TestError(code: Int, cause: Throwable? = null) : PlaybackException("fixture", cause, code, Bundle.EMPTY, 0)
 
+    @Test fun connectedProviderWaitDoesNotRestartAtTheNormalDeadlineAndChannelSwitchCancelsIt(): Unit = runBlocking {
+        val fake = FakePlayer()
+        val records = mutableListOf<String>()
+        val trace = mutableListOf<String>()
+        val controller = PlaybackController(this, { fake.player }, { trace += it }, { MediaItem.EMPTY },
+            recordPlayback = { failed, text -> if (failed) records += text }, startupTimeoutMs = 650)
+        var time = 0L
+        val oldSession = HlsSession(clock = { time })
+        val id = oldSession.begin("https://provider/start.m3u8", androidx.media3.common.C.DATA_TYPE_MANIFEST)
+        oldSession.transport(id, TransportSnapshot(TransportPhase.Waiting, 0, sentMs = 0, protocol = "http/1.1"))
+        controller.play(request)
+        PlaybackController::class.java.getDeclaredField("hlsSession").apply { isAccessible = true }.set(controller, oldSession)
+        time = 6_000
+        delay(900)
+        assertEquals(true, controller.providerWaiting.value)
+        assertEquals(false, controller.startupDelayed.value)
+        assertEquals(emptyList<String>(), records)
+        assertEquals(1, fake.calls.count { it == "stop" })
+        assertEquals(1, fake.calls.count { it == "prepare" })
+        assertEquals(0, trace.count { it.startsWith("RECOVER") })
+
+        controller.play(request.copy(url = "https://provider/new.m3u8"))
+        assertEquals(false, controller.providerWaiting.value)
+        assertEquals(false, controller.startupDelayed.value)
+        oldSession.transport(id, TransportSnapshot(TransportPhase.Body, time, status = 404, headersMs = time))
+        delay(450)
+        assertEquals(2, fake.calls.count { it == "prepare" })
+        assertEquals(emptyList<String>(), records)
+        assertEquals(false, controller.providerWaiting.value)
+        controller.stop()
+        delay(300)
+        assertEquals(emptyList<String>(), records)
+    }
+
+    @Test fun providerResponseAndFailureClearTheWaitingMessage(): Unit = runBlocking {
+        for (phase in listOf(TransportPhase.Body, TransportPhase.Failed)) {
+            val fake = FakePlayer()
+            val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY }, startupTimeoutMs = 5_000)
+            var time = 0L
+            val session = HlsSession(clock = { time })
+            val id = session.begin("https://provider/start.m3u8", androidx.media3.common.C.DATA_TYPE_MANIFEST)
+            session.transport(id, TransportSnapshot(TransportPhase.Waiting, 0, sentMs = 0, protocol = "http/1.1"))
+            controller.play(request)
+            PlaybackController::class.java.getDeclaredField("hlsSession").apply { isAccessible = true }.set(controller, session)
+            time = 5_000
+            delay(300)
+            assertEquals(true, controller.providerWaiting.value)
+            session.transport(id, TransportSnapshot(phase, time))
+            delay(300)
+            assertEquals(false, controller.providerWaiting.value)
+            controller.stop()
+            assertEquals(false, controller.providerWaiting.value)
+        }
+    }
+
     @Test fun startupDeadlineRecordsIdleOnceWithoutStoppingOrReopeningTheStream(): Unit = runBlocking {
         val fake = FakePlayer()
         val records = mutableListOf<String>()

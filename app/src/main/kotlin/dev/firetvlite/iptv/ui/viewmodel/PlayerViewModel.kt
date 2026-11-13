@@ -84,6 +84,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     val player: StateFlow<ExoPlayer?> = playback.player
     val status: StateFlow<PlaybackStatus> = playback.status
     val startupDelayed: StateFlow<Boolean> = playback.startupDelayed
+    val providerWaiting: StateFlow<Boolean> = playback.providerWaiting
 
     private val mutableMode = MutableStateFlow(PlayerMode.Closed)
     val mode = mutableMode.asStateFlow()

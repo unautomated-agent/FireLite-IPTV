@@ -86,6 +86,7 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
     val player by viewModel.player.collectAsState()
     val status by viewModel.status.collectAsState()
     val startupDelayed by viewModel.startupDelayed.collectAsState()
+    val providerWaiting by viewModel.providerWaiting.collectAsState()
     val timeline by viewModel.timeline.collectAsState()
     val liveChannelId by viewModel.liveChannelId.collectAsState()
     var quickMenu by remember { mutableStateOf(false) }
@@ -141,7 +142,8 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
             quickMenu = true
         }
         timeline?.let { ChannelHistoryList(it, viewModel, library) }
-        if (startupDelayed && mode != PlayerMode.Closed) FLText(stringResource(R.string.player_start_delayed),
+        if ((providerWaiting || startupDelayed) && mode != PlayerMode.Closed) FLText(
+            stringResource(if (providerWaiting) R.string.player_provider_wait else R.string.player_start_delayed),
             style = FireLiteTheme.typography.label, color = FireLiteTheme.colors.textPrimary,
             modifier = Modifier.align(Alignment.BottomCenter).padding(16.dp)
                 .background(Color.Black.copy(alpha = 0.7f)).padding(12.dp))

@@ -11,11 +11,17 @@ import androidx.media3.common.Timeline
 import android.os.Bundle
 import java.lang.reflect.Proxy
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicReference
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
+import org.junit.Assert.assertNotSame
 import org.junit.Test
 
 class PlaybackControllerTest {
@@ -574,6 +580,71 @@ class PlaybackControllerTest {
         controller.play(request.copy(archive = true))
         assertEquals(before, fake.calls)
         controller.stop()
+    }
+
+    @Test fun evictionRunsOffControllerThreadAndPrepareWaitsForCompletionAndGrace(): Unit = runBlocking {
+        val fake = FakePlayer()
+        val mainThread = Thread.currentThread()
+        val evictionThread = AtomicReference<Thread>()
+        val started = CompletableDeferred<Unit>()
+        val release = CountDownLatch(1)
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            setStream = { _, _, _ -> assertSame(mainThread, Thread.currentThread()) },
+            evictConnections = {
+                evictionThread.set(Thread.currentThread())
+                started.complete(Unit)
+                check(release.await(5, TimeUnit.SECONDS))
+            })
+        try {
+            controller.play(request)
+            withTimeout(2000) { started.await() }
+            assertNotSame(mainThread, evictionThread.get())
+            assertEquals(1, fake.calls.count { it == "stop" })
+            delay(450)
+            assertEquals(0, fake.calls.count { it == "prepare" })
+            release.countDown()
+            delay(100)
+            assertEquals(0, fake.calls.count { it == "prepare" })
+            delay(400)
+            assertEquals(1, fake.calls.count { it == "prepare" })
+        } finally {
+            release.countDown()
+            controller.stop()
+        }
+    }
+
+    @Test fun rapidSwitchWaitsForCancelledEvictionBeforePreparingOnlyTheLatestSession(): Unit = runBlocking {
+        val fake = FakePlayer()
+        val firstStarted = CompletableDeferred<Unit>()
+        val release = CountDownLatch(1)
+        val evictions = AtomicInteger()
+        val prepared = mutableListOf<MediaItem>()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            setStream = { _, item, _ -> prepared += item },
+            evictConnections = {
+                if (evictions.incrementAndGet() == 1) {
+                    firstStarted.complete(Unit)
+                    check(release.await(5, TimeUnit.SECONDS))
+                }
+            })
+        try {
+            controller.play(request)
+            withTimeout(2000) { firstStarted.await() }
+            controller.play(request.copy(url = "https://example.org/latest"))
+            delay(450)
+            assertEquals(1, evictions.get())
+            assertEquals(0, fake.calls.count { it == "prepare" })
+            release.countDown()
+            delay(100)
+            assertEquals(2, evictions.get())
+            assertEquals(0, fake.calls.count { it == "prepare" })
+            delay(400)
+            assertEquals(1, fake.calls.count { it == "prepare" })
+            assertEquals(1, prepared.size)
+        } finally {
+            release.countDown()
+            controller.stop()
+        }
     }
 
     @Test fun cancelledSessionCannotEvictAndEvictionFailureIsRecordedWithoutPreparing() = runBlocking {

@@ -3,6 +3,7 @@ package dev.firetvlite.iptv
 import android.app.Application
 import android.app.Activity
 import android.os.Bundle
+import android.os.StrictMode
 import java.io.File
 import dev.firetvlite.iptv.data.ClockPreferences
 import dev.firetvlite.iptv.data.db.FireLiteDatabase
@@ -73,6 +74,9 @@ class FireLiteApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        if (BuildConfig.DEBUG) {
+            StrictMode.setThreadPolicy(StrictMode.ThreadPolicy.Builder().detectNetwork().penaltyDeath().build())
+        }
         val reports = CrashReportStore(File(filesDir, "last-crash.txt"))
         Thread.setDefaultUncaughtExceptionHandler(
             reports.handler(

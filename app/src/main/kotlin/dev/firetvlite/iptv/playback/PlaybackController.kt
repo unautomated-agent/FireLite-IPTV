@@ -32,6 +32,9 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.atomic.AtomicInteger
 import java.io.Closeable
 import java.io.IOException
@@ -121,6 +124,7 @@ class PlaybackController internal constructor(
     }, recordPlayback = diagnosticRecorder(context, scope))
 
     private val gate = StreamGate()
+    private val evictionMutex = Mutex()
     private var exo: ExoPlayer? = null
     private var startJob: Job? = null
     private var startupJob: Job? = null
@@ -534,7 +538,11 @@ class PlaybackController internal constructor(
         startJob = scope.launch {
             awaitConnectionClose()
             if (activeRequest !== request || activeSession != session) return@launch
-            if (prepareSafely { evictConnections(); true } != true) return@launch
+            if (prepareSafely {
+                withContext(Dispatchers.IO) { evictionMutex.withLock { evictConnections() } }
+                true
+            } != true) return@launch
+            if (activeRequest !== request || activeSession != session) return@launch
             hlsSession.evicted()
             startupTiming?.enter(StartupTiming.Phase.CLOSE_GRACE)
             delay(CLOSE_GRACE_MS)

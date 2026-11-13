@@ -27,6 +27,8 @@ import dev.firetvlite.iptv.data.epg.CurrentAndNext
 import dev.firetvlite.iptv.playback.PlaybackFrame
 import dev.firetvlite.iptv.playback.PlaybackTime
 import dev.firetvlite.iptv.playback.SeekPreview
+import dev.firetvlite.iptv.playback.SeekTarget
+import dev.firetvlite.iptv.playback.CatchupUrlBuilder
 import dev.firetvlite.iptv.ui.components.ChannelLogo
 import dev.firetvlite.iptv.ui.components.ArchiveIcon
 import dev.firetvlite.iptv.ui.components.FLText
@@ -80,7 +82,12 @@ internal fun PlayerInfoBanner(channel: ChannelEntity?, frame: PlaybackFrame, gui
                     FLText("jeszcze ${((current.stop - frame.watchedMs).coerceAtLeast(0) + 59_999) / 60_000} min",
                         style = type.label, color = colors.textSecondary)
                 }
-                ProgressBar(PlaybackTime.progress(frame.watchedMs, current.start, current.stop))
+                val target = seekPreview?.let { SeekTarget.time(frame, current.start, current.stop, it.offsetMs,
+                    channel?.catchupDays ?: 0, channel?.let(CatchupUrlBuilder::isSupported) == true) }
+                ProgressBar(PlaybackTime.progress(frame.watchedMs, current.start, current.stop),
+                    liveProgress = target?.let { PlaybackTime.progress(it, current.start, current.stop) })
+                target?.let { FLText(stringResource(R.string.player_seek_target, clockTime(it)),
+                    style = type.label, color = colors.accent) }
             }
             guide.next?.let { FLText(stringResource(R.string.channel_next_programme, clockTime(it.start), it.title),
                 style = type.body, maxLines = 1, color = colors.accent) }

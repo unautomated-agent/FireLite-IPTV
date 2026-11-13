@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Default (and only) UI language: Polish. Resource names are English. -->
 <resources>
+    <string name="player_seek_target">Cel przewijania: %1$s</string>
     <string name="reminder_today">Dziś w TV</string>
     <string name="reminder_soon">Za 10 min:</string>
     <string name="reminder_daily_row">%1$s · %2$s · %3$s</string>

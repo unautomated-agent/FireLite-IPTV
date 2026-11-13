@@ -142,6 +142,19 @@ object DiagnosticsReport {
         val lineBytes = minOf(100, (bytes - reserved - required.size + 1) / (required.size - priority.size).coerceAtLeast(1))
         val selected = required.associateWith { utf8Limit(lines[it], if (it in priority) 100 else lineBytes) }.toMutableMap()
         var used = selected.values.sumOf { it.toByteArray(Charsets.UTF_8).size } + selected.size - 1
+        if (used > bytes) {
+            selected.clear()
+            used = 0
+            val ordered = priority.sortedBy { if (lines[it].startsWith("Zdrowie kanałów:")) 0 else 1 } + (required - priority)
+            ordered.forEach { index ->
+                val remaining = bytes - used - if (selected.isEmpty()) 0 else 1
+                if (remaining >= 4) {
+                    val value = utf8Limit(lines[index], minOf(100, remaining))
+                    used += value.toByteArray(Charsets.UTF_8).size + if (selected.isEmpty()) 0 else 1
+                    selected[index] = value
+                }
+            }
+        }
         lines.forEachIndexed { index, line ->
             if (index !in selected) {
                 val value = utf8Limit(line, 100)
@@ -215,7 +228,11 @@ object DiagnosticsReport {
         val masked = shareable(text)
         if (masked.toByteArray(Charsets.UTF_8).size <= QR_BYTES) return masked
         val suffix = "\n[…raport skrócony]"
-        return compact(masked, QR_BYTES - suffix.toByteArray(Charsets.UTF_8).size) + suffix
+        val dead = masked.lines().firstOrNull { it.startsWith("Martwe (") }
+        val remaining = if (dead == null) masked else masked.lines().filterNot { it == dead }.joinToString("\n")
+        val prefix = dead?.let { "${utf8Limit(it, QR_BYTES - 150)}\n" }.orEmpty()
+        return prefix + compact(remaining, QR_BYTES - prefix.toByteArray(Charsets.UTF_8).size -
+            suffix.toByteArray(Charsets.UTF_8).size) + suffix
     }
 
     fun qr(text: String): BitMatrix = QRCodeWriter().encode(payload(text), BarcodeFormat.QR_CODE, 600, 600,

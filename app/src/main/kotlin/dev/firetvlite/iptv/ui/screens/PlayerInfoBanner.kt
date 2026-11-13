@@ -29,6 +29,7 @@ import dev.firetvlite.iptv.playback.PlaybackTime
 import dev.firetvlite.iptv.playback.SeekPreview
 import dev.firetvlite.iptv.ui.components.ChannelLogo
 import dev.firetvlite.iptv.ui.components.ArchiveIcon
+import dev.firetvlite.iptv.ui.components.DeadChannelIcon
 import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.ImdbRating
 import dev.firetvlite.iptv.ui.components.ProgressBar
@@ -57,6 +58,7 @@ internal fun PlayerInfoBanner(channel: ChannelEntity?, frame: PlaybackFrame, gui
                         FLText(channel?.name.orEmpty(), style = type.title, maxLines = 1,
                             modifier = Modifier.weight(1f, fill = false))
                         if (archive) ArchiveIcon(description = stringResource(R.string.player_archive_mode))
+                        channel?.let { DeadChannelIcon(it.streamUrl) }
                     }
                     FLText(channel?.groupName.orEmpty(), style = type.label, color = colors.textSecondary, maxLines = 1)
                 }

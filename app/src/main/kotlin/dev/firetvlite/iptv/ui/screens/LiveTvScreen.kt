@@ -66,6 +66,7 @@ import androidx.paging.cachedIn
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.FireLiteApplication
 import dev.firetvlite.iptv.ui.components.ArchiveIcon
+import dev.firetvlite.iptv.ui.components.DeadChannelIcon
 import dev.firetvlite.iptv.data.db.ChannelRow
 import dev.firetvlite.iptv.data.db.ProgrammeEntity
 import dev.firetvlite.iptv.data.epg.CurrentAndNext
@@ -715,6 +716,7 @@ internal fun ChannelRowItem(
                         FireLiteTheme.typography.title.copy(fontSize = 14.sp, lineHeight = 18.sp) else FireLiteTheme.typography.title,
                         maxLines = 1, modifier = Modifier.weight(1f, fill = false))
                     if (CatchupUrlBuilder.isSupported(channel)) ArchiveIcon()
+                    DeadChannelIcon(channel.streamUrl)
                 }
                 if (programme != null) {
                     if (translucent) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {

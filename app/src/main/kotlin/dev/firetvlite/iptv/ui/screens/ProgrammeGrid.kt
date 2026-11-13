@@ -39,6 +39,7 @@ import dev.firetvlite.iptv.data.db.ChannelRow
 import dev.firetvlite.iptv.data.db.ProgrammeEntity
 import dev.firetvlite.iptv.playback.CatchupUrlBuilder
 import dev.firetvlite.iptv.ui.components.ChannelLogo
+import dev.firetvlite.iptv.ui.components.DeadChannelIcon
 import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.clockTime
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
@@ -125,6 +126,7 @@ internal fun ProgrammeGridRow(
             ChannelLogo(row.channel.name, row.channel.logoUrl, size = 28.dp)
             FLText((if (row.isFavorite) "♥ " else "") + row.channel.name,
                 style = FireLiteTheme.typography.label, maxLines = 2, modifier = Modifier.weight(1f))
+            DeadChannelIcon(row.channel.streamUrl)
         }
         BoxWithConstraints(Modifier.weight(1f).fillMaxHeight().clipToBounds()) {
             cells.forEachIndexed { cellIndex, cell ->

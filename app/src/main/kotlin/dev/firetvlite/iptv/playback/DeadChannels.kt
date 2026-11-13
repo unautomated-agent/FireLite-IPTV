@@ -20,16 +20,49 @@ internal data class DeadChannel(val key: String, val name: String, val first: Lo
     val count: Int, val reason: String, val source: String)
 
 internal data class ChannelHealthState(val entries: List<DeadChannel> = emptyList(), val check: String = "") {
+    val keys: Set<String> = entries.mapTo(HashSet()) { it.key }
+
     fun summary(): String = buildList {
         add("Martwe kanały: ${entries.size}")
-        entries.take(3).forEach {
+        entries.forEach {
             val time = DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.of("Europe/Warsaw"))
                 .format(Instant.ofEpochMilli(it.last))
-            add("Martwe: ${utf8Limit(it.name, 26)} · ${utf8Limit(it.reason, 24)} · ×${it.count} · last $time")
+            add("Martwe: ${it.name} · ${it.reason} · ×${it.count} · last $time · ${it.source}")
         }
-        if (entries.size > 3) add("Martwe: +${entries.size - 3} więcej")
         if (check.isNotBlank()) add("Zdrowie kanałów: $check")
     }.joinToString("\n")
+
+    fun qrSummary(bytes: Int = 1650): String {
+        fun reason(value: String): String = Regex("HTTP (\\d{3})").find(value)?.groupValues?.get(1) ?: when {
+            value.contains("no response", true) -> "brak"
+            value.contains("timeout", true) -> "czas"
+            value.contains("network", true) -> "sieć"
+            value.contains("playlist", true) -> "HLS"
+            value.contains("empty", true) -> "pusty"
+            else -> "błąd"
+        }
+        val items = entries.map { DeadChannels.safeName(it.name).replace(".", "[.]").replace(';', ',') to reason(it.reason) }
+        fun pack(nameBytes: Int, count: Int = items.size): String = "Martwe (${entries.size}): " +
+            items.take(count).joinToString("; ") { (name, code) -> "${utf8Limit(name, nameBytes)} $code" } +
+            if (count < items.size) "; +${items.size - count} więcej" else ""
+        var low = 7
+        var high = 360
+        var result = pack(low)
+        if (result.toByteArray(Charsets.UTF_8).size <= bytes) {
+            while (low <= high) {
+                val middle = (low + high) / 2
+                val candidate = pack(middle)
+                if (candidate.toByteArray(Charsets.UTF_8).size <= bytes) {
+                    result = candidate
+                    low = middle + 1
+                } else high = middle - 1
+            }
+        } else {
+            var count = items.size
+            do { result = pack(7, --count) } while (count > 0 && result.toByteArray(Charsets.UTF_8).size > bytes)
+        }
+        return result + if (check.isNotBlank()) "\nZdrowie kanałów: $check" else ""
+    }
 }
 
 internal class DeadChannels(private val file: File, scope: CoroutineScope,

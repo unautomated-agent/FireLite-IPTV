@@ -213,6 +213,31 @@ class PlaybackDiagnosticsTest {
         assertFalse(Regex("\\d{7,}").containsMatchIn(payload))
     }
 
+    @Test fun lateProvider404AndRedirectHintsSurviveBoundedQrCompaction() {
+        var time = 0L
+        val session = HlsSession(clock = { time })
+        val id = session.begin("https://provider/private/123456789.m3u8?token=secret-token-value", androidx.media3.common.C.DATA_TYPE_MANIFEST)
+        session.transport(id, TransportSnapshot(TransportPhase.Waiting, 0, sentMs = 600, protocol = "http/1.1"))
+        session.timeoutAt(10_000)
+        time = 12_600
+        session.transport(id, TransportSnapshot(TransportPhase.Body, time, sentMs = 600, protocol = "http/1.1",
+            status = 404, headersMs = time, afterSentMs = 12_000, hop = 3, hostIndex = 3,
+            redirectHints = listOf(RedirectHint(2, 2, true, false), RedirectHint(3, 3, true, true))))
+        session.response(id, 404)
+        session.end(id)
+        val store = PlaybackDiagnosticsStore(temporary.root)
+        store.write(true, PlaybackDiagnosticRecord.text("https://provider/private/123456789.m3u8", "live", "START_TIMEOUT",
+            null, "none", "none", null, Instant.EPOCH, session.lines()))
+        val report = DiagnosticsReport.text(null, null, SourceDiagnostics(), "Brak", store.summary())
+        val payload = DiagnosticsReport.payload(report + "\n" + "unrelated detail ".repeat(1000))
+        for (evidence in listOf("extended=45s outcome=HTTP404 headers=12600ms", "HTTP=404 req=1 hop=3 host=3 sent+=12000ms",
+                "2/host2 query=yes token-like=no", "3/host3 query=yes token-like=yes"))
+            assertTrue(payload, payload.contains(evidence))
+        assertTrue(payload.toByteArray().size <= DiagnosticsReport.QR_BYTES)
+        for (secret in listOf("https://", "private", "123456789", "secret-token-value")) assertFalse(secret, payload.contains(secret))
+        assertFalse(Regex("\\d{7,}").containsMatchIn(payload))
+    }
+
     @Test fun maximumTimeoutAndCrashKeepEssentialLaterSectionsInDecodedQr() {
         val phases = StartupTiming { 0L }.detail().lines()
         val readiness = listOf("A ready=false in=2147483647 out=0", "V ready=true in=2147483647 out=2147483646")

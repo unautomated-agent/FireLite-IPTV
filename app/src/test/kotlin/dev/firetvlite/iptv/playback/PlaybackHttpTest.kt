@@ -21,6 +21,49 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 
 class PlaybackHttpTest {
+    @Test fun onlyPlaylistReadsHaveTheProviderWaitTimeoutAndConnectTimeoutIsUnchanged() {
+        Fixture().use { fixture ->
+            fixture.handler = { reply(it, 200) }
+            val reads = mutableListOf<Int>()
+            val connects = mutableListOf<Int>()
+            val client = PlaybackHttp.client.newBuilder().addNetworkInterceptor { chain ->
+                reads += chain.readTimeoutMillis()
+                connects += chain.connectTimeoutMillis()
+                chain.proceed(chain.request())
+            }.build()
+            for (type in listOf(C.DATA_TYPE_MANIFEST, C.DATA_TYPE_MEDIA, C.DATA_TYPE_DRM)) {
+                PlaybackHttp.calls(fixture.base, type, client) {}.newCall(Request.Builder().url(fixture.base).build())
+                    .execute().use { it.body!!.string() }
+            }
+            assertEquals(listOf(50_000, 20_000, 20_000), reads)
+            assertEquals(listOf(15_000, 15_000, 15_000), connects)
+            assertEquals(3, fixture.wire.size)
+        }
+    }
+
+    @Test fun redirectedPlaylistCanReturnLate404OnTheSameCallWithSafeHopEvidence() {
+        Fixture().use { fixture ->
+            fixture.handler = { req -> when (req.path?.substringBefore('?')) {
+                "/start" -> reply(req, 302).setHeader("Location", "/middle?channel=private")
+                "/middle" -> reply(req, 302).setHeader("Location", "/final?token=secret&expires=123456789")
+                else -> reply(req, 404).setHeadersDelay(150, TimeUnit.MILLISECONDS)
+            } }
+            val snapshots = mutableListOf<TransportSnapshot>()
+            val root = "${fixture.base}/start"
+            PlaybackHttp.calls(root, C.DATA_TYPE_MANIFEST, onTransport = { snapshots += it }) {}
+                .newCall(Request.Builder().url(root).build()).execute().use { assertEquals(404, it.code) }
+            val result = snapshots.last()
+            assertEquals(404, result.status)
+            assertTrue(result.afterSentMs!! >= 100)
+            assertEquals(3, result.hop)
+            assertEquals(1, result.hostIndex)
+            assertEquals(listOf(RedirectHint(2, 1, true, false), RedirectHint(3, 1, true, true)), result.redirectHints)
+            assertEquals(3, fixture.wire.size)
+            val text = result.responseLine(1) + result.redirectsLine()
+            for (secret in listOf("private", "secret", "123456789", fixture.base)) assertFalse(text.contains(secret))
+        }
+    }
+
     private class Fixture(tls: HandshakeCertificates? = null) : AutoCloseable {
         val requests = CopyOnWriteArrayList<String>()
         val wire = CopyOnWriteArrayList<RecordedRequest>()
@@ -252,7 +295,9 @@ class PlaybackHttpTest {
     @Test fun aResponseHeaderStallRecordsWaitingThenFailureWithoutIssuingAnotherRequest() {
         Fixture().use { fixture ->
             fixture.handler = { reply(it, 200).setHeadersDelay(500, TimeUnit.MILLISECONDS) }
-            val client = PlaybackHttp.client.newBuilder().readTimeout(100, TimeUnit.MILLISECONDS).build()
+            val client = PlaybackHttp.client.newBuilder().addInterceptor { chain ->
+                chain.withReadTimeout(100, TimeUnit.MILLISECONDS).proceed(chain.request())
+            }.build()
             val root = "${fixture.base}/master.m3u8?token=private"
             val snapshots = CopyOnWriteArrayList<TransportSnapshot>()
             assertThrows(IOException::class.java) {

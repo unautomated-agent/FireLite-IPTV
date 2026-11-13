@@ -73,7 +73,10 @@ internal object PlaybackHttp {
         .readTimeout(20, TimeUnit.SECONDS)
         .eventListenerFactory { call -> call.request().tag(Context::class.java)?.trace ?: EventListener.NONE }
         .addInterceptor { chain ->
-            val response = chain.proceed(chain.request())
+            val context = chain.request().tag(Context::class.java)
+            val requestChain = if (context?.type == C.DATA_TYPE_MANIFEST)
+                chain.withReadTimeout(50, TimeUnit.SECONDS) else chain
+            val response = requestChain.proceed(chain.request())
             chain.request().tag(Context::class.java)?.let { context ->
                 context.report(HttpRequestEvidence.from(response, context.root, context.type))
             }

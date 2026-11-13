@@ -101,6 +101,7 @@ object DiagnosticsReport {
         "HTTP:", "Request:", "Redirect:", "Headers:", "Request ID:", "Screen:",
         "HLS master:", "HLS renditions:", "HLS media:", "HLS media detail:", "HLS failover:",
         "Transport headers:", "Transport pool:", "Transport pending:",
+        "Provider wait:", "Provider response:", "Transport redirects:",
         "OMDb braki wg typu:",
         "FireLite ·", "Ostatni błąd odtwarzania:", "Ostatnie poprawne odtwarzanie:", "Channel:",
         "Startup:", "STOPPING_PREVIOUS=", "CLOSE_GRACE=", "WAITING_PREVIOUS_CONNECTION=",
@@ -131,6 +132,8 @@ object DiagnosticsReport {
         }
         if (required.isEmpty()) return utf8Limit(text, bytes)
         val priority = required.filter { lines[it].startsWith("Transport pending:") ||
+            lines[it].startsWith("Provider wait:") || lines[it].startsWith("Provider response:") ||
+            lines[it].startsWith("Transport redirects:") ||
             lines[it].startsWith("Transport headers:") || it == transports.firstOrNull() || it == transports.lastOrNull() }.toSet()
         val reserved = priority.sumOf { utf8Limit(lines[it], 100).toByteArray(Charsets.UTF_8).size }
         val lineBytes = minOf(100, (bytes - reserved - required.size + 1) / (required.size - priority.size).coerceAtLeast(1))

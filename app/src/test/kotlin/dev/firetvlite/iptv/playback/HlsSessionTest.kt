@@ -7,6 +7,75 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class HlsSessionTest {
+    private val waiting = TransportSnapshot(TransportPhase.Waiting, 0, sentMs = 0, protocol = "http/1.1")
+
+    @Test fun onlyConnectedSentFirstLivePlaylistWaitingForHeadersGetsTheProviderBudget() {
+        for (phase in TransportPhase.entries) {
+            val session = HlsSession(clock = { 0 })
+            val id = session.begin("https://provider/start.m3u8", C.DATA_TYPE_MANIFEST)
+            session.transport(id, waiting.copy(phase = phase))
+            assertEquals(phase.name, if (phase == TransportPhase.Waiting) 45_000L else 10_000L, session.timeoutAt(10_000))
+        }
+        for (snapshot in listOf(waiting.copy(sentMs = null), waiting.copy(protocol = "-"),
+                waiting.copy(headersMs = 1), waiting.copy(status = 200))) {
+            val session = HlsSession(clock = { 0 })
+            session.transport(session.begin("https://provider/start.m3u8", C.DATA_TYPE_MANIFEST), snapshot)
+            assertEquals(10_000L, session.timeoutAt(10_000))
+        }
+        for ((archive, type) in listOf(true to C.DATA_TYPE_MANIFEST, false to C.DATA_TYPE_MEDIA,
+                false to C.DATA_TYPE_DRM, false to C.DATA_TYPE_MEDIA_INITIALIZATION)) {
+            val session = HlsSession(archive, clock = { 0 })
+            session.transport(session.begin("https://provider/resource", type), waiting)
+            assertEquals(10_000L, session.timeoutAt(10_000))
+            assertFalse(session.waitingForProvider())
+        }
+        val later = HlsSession(clock = { 0 })
+        val first = later.begin("https://provider/start.m3u8", C.DATA_TYPE_MANIFEST)
+        later.response(first, 200)
+        later.end(first)
+        later.transport(later.begin("https://provider/media.m3u8", C.DATA_TYPE_MANIFEST), waiting)
+        assertEquals(10_000L, later.timeoutAt(10_000))
+    }
+
+    @Test fun providerDeadlineIsAbsoluteAndDoesNotSlidePastFortyFiveSeconds() {
+        var time = 0L
+        val session = HlsSession(clock = { time })
+        session.transport(session.begin("https://provider/start.m3u8", C.DATA_TYPE_MANIFEST), waiting)
+        for (elapsed in listOf(10_000L, 44_999L, 45_000L, 90_000L)) {
+            time = elapsed
+            assertEquals(45_000L, session.timeoutAt(10_000))
+        }
+        time = 45_000
+        assertEquals("Provider wait: provider no response after 45s", session.providerTimeout())
+        assertTrue(session.lines().contains("Provider wait: extended=45s outcome=pending"))
+    }
+
+    @Test fun providerMessageStartsAtFiveSecondsAndResponseOrFailureClearsItAndRecordsOutcome() {
+        for (status in listOf(200, 404, null)) {
+            var time = 0L
+            val session = HlsSession(clock = { time })
+            val id = session.begin("https://provider/start.m3u8", C.DATA_TYPE_MANIFEST)
+            session.transport(id, waiting)
+            session.timeoutAt(10_000)
+            time = 4_999
+            assertFalse(session.waitingForProvider())
+            time = 5_000
+            assertTrue(session.waitingForProvider())
+            time = 12_000
+            val result = waiting.copy(phase = if (status == null) TransportPhase.Failed else TransportPhase.Body,
+                phaseSince = time, status = status, headersMs = time.takeIf { status != null }, afterSentMs = time)
+            assertTrue(session.transport(id, result))
+            assertFalse(session.transport(id, result))
+            assertFalse(session.waitingForProvider())
+            assertEquals(10_000L, session.timeoutAt(10_000))
+            assertEquals(null, session.providerTimeout())
+            val outcome = if (status == null) "IO failure" else "HTTP$status headers=12000ms"
+            assertTrue(session.lines().contains("Provider wait: extended=45s outcome=$outcome"))
+            repeat(12) { session.begin("https://provider/$it.ts", C.DATA_TYPE_MEDIA) }
+            assertTrue(session.lines().contains("Provider wait: extended=45s outcome=$outcome"))
+        }
+    }
+
     @Test fun pendingTraceDistinguishesConnectionFromResponseAndDropsLateUpdatesOutsideTheBound() {
         var time = 0L
         val session = HlsSession(clock = { time })

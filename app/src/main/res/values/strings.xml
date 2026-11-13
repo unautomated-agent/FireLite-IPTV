@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Default (and only) UI language: Polish. Resource names are English. -->
 <resources>
+    <string name="player_provider_wait">Czekam na serwer dostawcy…</string>
     <string name="player_seek_target">Cel przewijania: %1$s</string>
     <string name="films_rating_progress">Oceny IMDb: sprawdzono %1$d/%2$d · ocenione %3$d · brak w OMDb %4$d · dziś %5$d/%6$d zapytań</string>
     <string name="reminder_today">Dziś w TV</string>

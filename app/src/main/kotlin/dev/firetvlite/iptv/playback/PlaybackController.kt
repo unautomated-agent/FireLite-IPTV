@@ -162,7 +162,16 @@ class PlaybackController internal constructor(
             var requestId = 0L
             val calls = PlaybackHttp.calls(request?.url.orEmpty(), dataType,
                 channelHeaders = request?.headers.orEmpty(), userAgent = PlaybackHttp.userAgent(headers, request?.userAgent),
-                onTransport = { snapshot -> if (session == activeSession) hls.transport(requestId, snapshot) }) { evidence ->
+                onTransport = { snapshot ->
+                    if (session == activeSession && hls.transport(requestId, snapshot) &&
+                        (snapshot.status?.let { it >= 400 } == true || snapshot.phase == TransportPhase.Failed)) {
+                        scope.launch {
+                            if (session == activeSession && activeRequest === request)
+                                recordPlayback(true, diagnostic(code = if (startupTimedOut) "START_TIMEOUT" else "PROVIDER_RESPONSE",
+                                    details = startupDetails()))
+                        }
+                    }
+                }) { evidence ->
                 if (session == activeSession) {
                     hls.response(requestId, evidence.status)
                     lastHttp = session to evidence
@@ -216,6 +225,8 @@ class PlaybackController internal constructor(
     val status: StateFlow<PlaybackStatus> = mutableStatus.asStateFlow()
     private val mutableStartupDelayed = MutableStateFlow(false)
     val startupDelayed: StateFlow<Boolean> = mutableStartupDelayed.asStateFlow()
+    private val mutableProviderWaiting = MutableStateFlow(false)
+    val providerWaiting: StateFlow<Boolean> = mutableProviderWaiting.asStateFlow()
 
     private val listener = object : Player.Listener {
         override fun onPlaybackStateChanged(playbackState: Int) = refreshStatus()
@@ -347,7 +358,8 @@ class PlaybackController internal constructor(
                 http +
                     listOfNotNull(error?.let {
                         "Screen: ${PlaybackHttpError.message(it.errorCodeName, it, httpEvidence()?.status)}; code=${it.errorCodeName}"
-                    }) + details + if (sourceType == "HLS" || hlsSession.hasPlaylist) hlsSession.lines() else emptyList())
+                    }) + details + if (sourceType == "HLS" || hlsSession.hasPlaylist || hlsSession.hasManifestRequest)
+                        hlsSession.lines() else emptyList())
     }
 
     private fun startupDetails(): List<String> = startupTiming?.let { timing ->
@@ -423,6 +435,7 @@ class PlaybackController internal constructor(
         startupJob = null
         startupTiming = null
         mutableStartupDelayed.value = false
+        mutableProviderWaiting.value = false
     }
 
     private fun watchStartup(request: StreamRequest) {
@@ -432,30 +445,35 @@ class PlaybackController internal constructor(
         startupTimedOut = false
         val since = System.nanoTime()
         startupJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
-            do {
+            var reported = false
+            while (activeRequest === request) {
                 val elapsed = (System.nanoTime() - since) / 1_000_000
-                delay((hlsSession.timeoutAt(startupTimeoutMs) - elapsed).coerceAtLeast(1))
-            } while ((System.nanoTime() - since) / 1_000_000 < hlsSession.timeoutAt(startupTimeoutMs))
-            if (activeRequest !== request) return@launch
-            startupTimedOut = true
-            val player = exo
-            val state = when (player?.playbackState) {
-                Player.STATE_BUFFERING -> "BUFFERING"
-                Player.STATE_READY -> "READY"
-                Player.STATE_ENDED -> "ENDED"
-                else -> "IDLE"
+                val deadline = hlsSession.timeoutAt(startupTimeoutMs)
+                mutableProviderWaiting.value = hlsSession.waitingForProvider()
+                if (!reported && elapsed >= deadline) {
+                    reported = true
+                    startupTimedOut = true
+                    val player = exo
+                    val state = when (player?.playbackState) {
+                        Player.STATE_BUFFERING -> "BUFFERING"
+                        Player.STATE_READY -> "READY"
+                        Player.STATE_ENDED -> "ENDED"
+                        else -> "IDLE"
+                    }
+                    recordPlayback(true, diagnostic(startupError, code = "START_TIMEOUT", details = listOf(
+                        "Channel: ${request.channelName.ifBlank { "unknown" }}",
+                        *TimeoutEvidence.lines(player, rendererReadiness).toTypedArray(),
+                        *timing.detail().lines().toTypedArray(),
+                        if (timing.waitingForPrevious)
+                            "Ownership: previous session connections/player/tracks; requested stream not prepared"
+                        else "Ownership: requested stream session",
+                        "Player: $state; pos=${player?.currentPosition}; buffered=${player?.bufferedPosition}; openHTTP=${connections.get()}",
+                        "Source: $sourceType",
+                    ) + listOfNotNull(hlsSession.providerTimeout())))
+                    mutableStartupDelayed.value = true
+                }
+                delay(if (reported) 250 else minOf(250, (deadline - elapsed).coerceAtLeast(1)))
             }
-            recordPlayback(true, diagnostic(startupError, code = "START_TIMEOUT", details = listOf(
-                "Channel: ${request.channelName.ifBlank { "unknown" }}",
-                *TimeoutEvidence.lines(player, rendererReadiness).toTypedArray(),
-                *timing.detail().lines().toTypedArray(),
-                if (timing.waitingForPrevious)
-                    "Ownership: previous session connections/player/tracks; requested stream not prepared"
-                else "Ownership: requested stream session",
-                "Player: $state; pos=${player?.currentPosition}; buffered=${player?.bufferedPosition}; openHTTP=${connections.get()}",
-                "Source: $sourceType",
-            )))
-            mutableStartupDelayed.value = true
         }
     }
 

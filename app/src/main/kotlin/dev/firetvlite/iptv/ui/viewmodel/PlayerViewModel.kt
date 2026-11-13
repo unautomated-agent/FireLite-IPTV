@@ -266,6 +266,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun returnToFullscreen() {
         cancelPreview()
         closeTimeline()
+        val channel = activeChannel
+        if (channel != null && !playback.hasActiveStream) {
+            val start = archiveStartMs
+            if (start == null) startLive(channel) else applyCatchup(channel, start)
+        }
         setMode(mutableMode.value.afterScreen(activeChannel != null))
     }
 

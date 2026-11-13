@@ -32,6 +32,30 @@ import org.junit.Test
 class PlaybackControllerTest {
     private val request = StreamRequest("https://example.org/live", "FireLite")
 
+    @Test fun selectedPlaybackCanRestartAfterRunningOrCompletedHealthChecks(): Unit = runBlocking {
+        for (complete in listOf(false, true)) {
+            val fake = FakePlayer()
+            val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+                evictConnections = {}, healthProbe = { _, _, _ -> error("Cancelled before probing") })
+            try {
+                assertEquals(false, controller.hasActiveStream)
+                controller.play(request)
+                delay(450)
+                assertEquals(true, controller.hasActiveStream)
+                controller.startHealthCheck("Wszystkie", if (complete) 0 else 1) { request }
+                if (complete) withTimeout(1000) { while (controller.healthCheck.value.running) delay(10) }
+                assertEquals(false, controller.hasActiveStream)
+                if (!controller.hasActiveStream) controller.play(request)
+                delay(450)
+                assertEquals(true, controller.hasActiveStream)
+                assertEquals(false, controller.healthCheck.value.running)
+                assertEquals(2, fake.calls.count { it == "prepare" })
+                if (!controller.hasActiveStream) controller.play(request)
+                assertEquals(2, fake.calls.count { it == "prepare" })
+            } finally { controller.stop() }
+        }
+    }
+
     @Test fun deadRegistryCountsOnlyStartupFailuresOnceAndClearsAtFirstRendering(): Unit = runBlocking {
         val fake = FakePlayer()
         val results = mutableListOf<Pair<StreamRequest, String?>>()

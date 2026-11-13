@@ -160,6 +160,7 @@ class PlaybackController internal constructor(
     private var startupTimedOut = false
     private var recovery = PlaybackRecovery()
     private var activeRequest: StreamRequest? = null
+    internal val hasActiveStream: Boolean get() = activeRequest != null
     private var suspendedRequest: StreamRequest? = null
     private var preview = false
     private var audioDecoder: String? = null

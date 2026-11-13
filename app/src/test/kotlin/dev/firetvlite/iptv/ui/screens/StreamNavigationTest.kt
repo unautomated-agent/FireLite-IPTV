@@ -142,7 +142,7 @@ class StreamNavigationTest {
 
     @Test fun screenTransitionsDoNotRequestOrStopStreamsAndFavoritesRemainInCategories() {
         val viewModel = File("src/main/kotlin/dev/firetvlite/iptv/ui/viewmodel/PlayerViewModel.kt").readText()
-        for (method in listOf("showPanel", "openGuide", "returnToFullscreen")) {
+        for (method in listOf("showPanel", "openGuide")) {
             val body = viewModel.substringAfter("fun $method(").substringBefore("\n    }")
             assertFalse(body.contains("startLive("))
             assertFalse(body.contains("playback.stop("))
@@ -153,6 +153,18 @@ class StreamNavigationTest {
         assertTrue(library.contains("GroupKey.Favorites -> channelDao.pagingFavorites(id)"))
         assertFalse(File("src/main/kotlin/dev/firetvlite/iptv/ui/screens/HomeScreen.kt").exists())
         assertFalse(File("src/main/kotlin/dev/firetvlite/iptv/ui/navigation/AppNavigationRail.kt").exists())
+    }
+
+    @Test fun fullscreenReturnRestartsTheSelectedChannelOnlyWhenItsStreamIsAbsent() {
+        val model = File("src/main/kotlin/dev/firetvlite/iptv/ui/viewmodel/PlayerViewModel.kt").readText()
+        val body = model.substringAfter("fun returnToFullscreen()").substringBefore("fun openGuide(")
+        assertTrue(body.contains("val channel = activeChannel"))
+        assertTrue(body.contains("if (channel != null && !playback.hasActiveStream) {"))
+        assertTrue(body.contains("if (start == null) startLive(channel) else applyCatchup(channel, start)"))
+        assertTrue(body.indexOf("!playback.hasActiveStream") < body.indexOf("startLive(channel)"))
+        assertTrue(body.indexOf("startLive(channel)") < body.indexOf("setMode("))
+        assertFalse(body.contains("playback.stop("))
+        assertFalse(body.contains("prepare("))
     }
 
     @Test fun guideLabelAndQuickMenuCopyArePolishResourcesWithNoMainMenu() {

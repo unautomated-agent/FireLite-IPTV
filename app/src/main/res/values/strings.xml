@@ -42,6 +42,14 @@
     <string name="settings_appearance">Wygląd</string>
     <string name="settings_clock_on">Zegar w lewym górnym rogu: włączony</string>
     <string name="settings_clock_off">Zegar w lewym górnym rogu: wyłączony</string>
+    <string name="settings_loudness_on">Wyrównanie głośności: włączone</string>
+    <string name="settings_loudness_off">Wyrównanie głośności: wyłączone</string>
+    <string name="settings_loudness_disabled">Wyrównanie wyłączone</string>
+    <string name="settings_loudness_waiting">Wyrównanie: oczekiwanie na dźwięk</string>
+    <string name="settings_loudness_active">Wyrównanie aktywne · kompresor i limiter</string>
+    <string name="settings_loudness_unavailable">Wyrównanie niedostępne na tym urządzeniu · dźwięk bez zmian</string>
+    <string name="settings_loudness_unsupported">Wyrównanie niedostępne dla tego wyjścia (passthrough/offload) · dźwięk bez zmian</string>
+    <string name="settings_loudness_help">Łagodzi głośne kanały i reklamy, bez podbijania cichego dźwięku. Nie zmienia głośności telewizora. Działa dla dekodowanego dźwięku PCM, także z dekodera FFmpeg.</string>
     <string name="nav_films">Najlepsze filmy</string>
     <string name="films_setup_hint">Ustaw klucz OMDb w Ustawieniach, aby zobaczyć oceny IMDb i ranking filmów.</string>
     <string name="films_first_window">Najbliższe 24 h</string>

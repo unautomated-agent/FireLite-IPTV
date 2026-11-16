@@ -56,6 +56,7 @@ import androidx.compose.ui.unit.Density
 import androidx.compose.ui.window.Dialog
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.FireLiteApplication
+import dev.firetvlite.iptv.playback.LoudnessStatus
 import dev.firetvlite.iptv.data.db.SourceEntity
 import dev.firetvlite.iptv.data.db.SavedSource
 import dev.firetvlite.iptv.data.epg.EpgState
@@ -169,10 +170,23 @@ fun SettingsScreen(
                             SettingsSection.Sources -> SourceSection(
                                 source, sources, importState, epgStates, onSaveSource, onRefreshSource, onActivateSource, onDeleteSource)
                             SettingsSection.Appearance -> SettingsCard {
-                                val preferences = (LocalContext.current.applicationContext as FireLiteApplication).container.clockPreferences
+                                val container = (LocalContext.current.applicationContext as FireLiteApplication).container
+                                val preferences = container.clockPreferences
                                 val visible by preferences.visible.collectAsState()
                                 PrimaryButton(stringResource(if (visible) R.string.settings_clock_on else R.string.settings_clock_off),
                                     { preferences.setVisible(!visible) }, Modifier.settingsControl("clock"))
+                                val levelled by container.loudnessPreferences.enabled.collectAsState()
+                                val loudnessStatus by container.loudness.status.collectAsState()
+                                PrimaryButton(stringResource(if (levelled) R.string.settings_loudness_on else R.string.settings_loudness_off),
+                                    { container.loudnessPreferences.setEnabled(!levelled) }, Modifier.settingsControl("loudness"))
+                                FLText(stringResource(when (loudnessStatus) {
+                                    LoudnessStatus.Off -> R.string.settings_loudness_disabled
+                                    LoudnessStatus.Waiting -> R.string.settings_loudness_waiting
+                                    LoudnessStatus.Active -> R.string.settings_loudness_active
+                                    LoudnessStatus.Unavailable -> R.string.settings_loudness_unavailable
+                                    LoudnessStatus.UnsupportedOutput -> R.string.settings_loudness_unsupported
+                                }), style = FireLiteTheme.typography.body)
+                                FLText(stringResource(R.string.settings_loudness_help), style = FireLiteTheme.typography.body)
                             }
                             SettingsSection.Omdb -> SettingsCard { OmdbSettings() }
                             SettingsSection.Health -> SettingsCard { ChannelHealthSection(source) }

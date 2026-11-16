@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Default (and only) UI language: Polish. Resource names are English. -->
 <resources>
+    <string name="search">Szukaj</string>
+    <string name="search_input">Kanał lub tytuł audycji</string>
+    <string name="search_hint">Wpisz tekst lub użyj mikrofonu w klawiaturze. ↓ Wyniki · ↑ Pole · Wstecz Zamknij</string>
+    <string name="search_empty_query">Szukaj w zapisanych kanałach i lokalnym programie TV.</string>
+    <string name="search_no_results">Brak wyników</string>
+    <string name="search_loading">Wyszukiwanie…</string>
+    <string name="search_failed">Nie udało się odczytać wyników. Spróbuj ponownie.</string>
+    <string name="search_channels">Kanały (%1$d)</string>
+    <string name="search_programmes">Audycje (%1$d)</string>
+    <string name="search_live">Na żywo</string>
+    <string name="search_upcoming">Nadchodząca — odtwórz kanał na żywo</string>
+    <string name="search_archive">Archiwum — od początku audycji</string>
     <string name="reports_automatic">Automatyczne wysyłanie błędów: %1$s</string>
     <string name="reports_on">włączone</string>
     <string name="reports_off">wyłączone</string>

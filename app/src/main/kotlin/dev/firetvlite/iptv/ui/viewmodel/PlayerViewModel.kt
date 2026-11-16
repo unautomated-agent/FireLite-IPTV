@@ -89,6 +89,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private val mutableMode = MutableStateFlow(PlayerMode.Closed)
     val mode = mutableMode.asStateFlow()
+    private val mutableSearchVisible = MutableStateFlow(false)
+    val searchVisible = mutableSearchVisible.asStateFlow()
     private val mutableBrowserTarget = MutableStateFlow<BrowserTarget?>(null)
     val browserTarget = mutableBrowserTarget.asStateFlow()
     private val mutableTimeline = MutableStateFlow<ChannelTimelineTarget?>(null)
@@ -332,6 +334,39 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun closeTimeline() { mutableTimeline.value = null }
+
+    fun openSearch() {
+        cancelStartupResume()
+        cancelPreview()
+        settlePendingZap()
+        closeTimeline()
+        mutableSearchVisible.value = true
+    }
+
+    fun closeSearch() { mutableSearchVisible.value = false }
+
+    fun playSearchResult(channel: ChannelEntity, archiveStart: Long? = null) {
+        closeSearch()
+        settlePendingZap()
+        openJob = viewModelScope.launch {
+            if (sourceDao.active()?.id != channel.sourceId) return@launch
+            val channels = container.database.channelDao()
+            val index = channels.allIndexById(channel.sourceId, channel.id) ?: return@launch
+            val fresh = channels.allAt(channel.sourceId, index) ?: return@launch
+            if (fresh.id != channel.id) return@launch
+            val zap = allChannels(channel.sourceId)
+            if (archiveStart == null) open(zap, index, GroupKey.All)
+            else {
+                val now = System.currentTimeMillis()
+                if (!CatchupUrlBuilder.isSupported(fresh) || archiveStart >= now ||
+                    archiveStart < now - fresh.catchupDays.toLong() * ChannelTimeline.DAY) {
+                    notify(PlayerMessage.CatchupUnsupported)
+                    return@launch
+                }
+                openArchive(zap, index, GroupKey.All, archiveStart)
+            }
+        }
+    }
 
     fun dismissTimeline() {
         val target = mutableTimeline.value ?: return

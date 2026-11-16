@@ -136,8 +136,9 @@ class StreamNavigationTest {
         assertFalse(canChooseChannel(true, 0))
         assertTrue(canChooseChannel(true, 20))
         val settings = File("src/main/kotlin/dev/firetvlite/iptv/ui/screens/SettingsScreen.kt").readText()
-        assertTrue(settings.indexOf("        SourceSection(") < settings.indexOf("R.string.settings_appearance"))
-        assertTrue(settings.contains("if (canWatch) PrimaryButton(stringResource(R.string.settings_watch_live), onWatch)"))
+        assertTrue(settings.contains("SettingsSection.Sources -> SourceSection("))
+        assertTrue(settings.contains("if (canWatch) FocusSurface(onClick = onWatch)"))
+        assertTrue(settings.contains("stringResource(R.string.settings_watch_live)"))
     }
 
     @Test fun screenTransitionsDoNotRequestOrStopStreamsAndFavoritesRemainInCategories() {

@@ -1,6 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Default (and only) UI language: Polish. Resource names are English. -->
 <resources>
+    <string name="settings_sources">Źródła kanałów</string>
+    <string name="settings_omdb">IMDb/OMDb</string>
+    <string name="settings_updates">Aktualizacje</string>
+    <string name="settings_last_error">Ostatni błąd: %1$s</string>
+    <string name="settings_dead_count">Martwe kanały: %1$d</string>
+    <string name="settings_stall_count">Zawieszenia w raporcie: %1$d</string>
+    <string name="settings_health_summary">Zdrowie kanałów: %1$s</string>
+    <string name="settings_no_report">Brak</string>
     <string name="channel_dead">Kanał oznaczony jako niedziałający</string>
     <string name="health_title">Zdrowie kanałów</string>
     <string name="health_start">Sprawdź zdrowie kanałów</string>

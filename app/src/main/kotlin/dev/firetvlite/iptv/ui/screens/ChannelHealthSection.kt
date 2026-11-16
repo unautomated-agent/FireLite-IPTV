@@ -13,6 +13,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
@@ -39,7 +40,7 @@ internal fun ChannelHealthSection(source: SourceEntity?) {
     val playback = container.playback
     val progress by playback.healthCheck.collectAsState()
     val dao = container.database.channelDao()
-    var group by remember(source?.id) { mutableStateOf<String?>(null) }
+    var group by rememberSaveable(source?.id) { mutableStateOf<String?>(null) }
     var choosing by remember { mutableStateOf(false) }
     val all = stringResource(R.string.health_all)
     val groups by remember(source?.id) { source?.let { dao.observeGroups(it.id) } ?: flowOf(emptyList()) }.collectAsState(emptyList())
@@ -50,16 +51,18 @@ internal fun ChannelHealthSection(source: SourceEntity?) {
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         FLText(stringResource(R.string.health_title), style = FireLiteTheme.typography.title)
         if (source != null && !progress.running) {
-            SecondaryButton("$selectedName ($selectedCount)", { choosing = true })
+            SecondaryButton("$selectedName ($selectedCount)", { choosing = true }, Modifier.settingsControl("health-scope"))
             if (choosing) Dialog(onDismissRequest = { choosing = false }) {
                 val focus = remember { FocusRequester() }
                 LaunchedEffect(Unit) { focus.requestFocusWhenReady() }
                 Column(Modifier.background(FireLiteTheme.colors.surfaceHigh).verticalScroll(rememberScrollState()).padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PrimaryButton("$all ($count)", { group = null; choosing = false }, Modifier.focusRequester(focus))
+                    PrimaryButton("$all ($count)", { group = null; choosing = false },
+                        if (selected == null) Modifier.focusRequester(focus) else Modifier)
                     groups.forEach { item ->
                         SecondaryButton("${item.groupName.ifBlank { stringResource(R.string.health_ungrouped) }} (${item.channelCount})",
-                            { group = item.groupName; choosing = false })
+                            { group = item.groupName; choosing = false },
+                            if (selected == item.groupName) Modifier.focusRequester(focus) else Modifier)
                     }
                 }
             }
@@ -72,18 +75,18 @@ internal fun ChannelHealthSection(source: SourceEntity?) {
                     channel?.let { StreamRequest(it.streamUrl, source.userAgent, channelName = it.name,
                         headers = PlaylistHttpHeaders.decode(it.requestHeaders), userInitiated = false) }
                 }
-            })
+            }, Modifier.settingsControl("health-run"))
         if (progress.running || progress.total > 0) {
-            FLText(progress.scope, style = FireLiteTheme.typography.label)
+            FLText(progress.scope, style = FireLiteTheme.typography.body)
             FLText(stringResource(R.string.health_progress, progress.checked, progress.total, progress.dead, progress.healthy),
-                style = FireLiteTheme.typography.label)
+                style = FireLiteTheme.typography.body)
             ProgressBar(if (progress.total > 0) progress.checked.toFloat() / progress.total else 0f)
-            if (progress.current.isNotBlank()) FLText(progress.current, style = FireLiteTheme.typography.label)
+            if (progress.current.isNotBlank()) FLText(progress.current, style = FireLiteTheme.typography.body)
             if (!progress.running) FLText(stringResource(when {
                 progress.error -> R.string.health_error
                 progress.complete -> R.string.health_complete
                 else -> R.string.health_stopped
-            }), style = FireLiteTheme.typography.label)
+            }), style = FireLiteTheme.typography.body)
         }
     }
 }

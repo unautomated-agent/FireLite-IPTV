@@ -12,6 +12,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -59,6 +60,7 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
     val channel by playerViewModel.channel.collectAsState()
     val browserTarget by playerViewModel.browserTarget.collectAsState()
     var current by rememberSaveable { mutableStateOf(StreamPanel.Settings) }
+    val settingsState = rememberSaveableStateHolder()
 
     fun navigate(panel: StreamPanel) {
         playerViewModel.cancelStartupResume()
@@ -76,7 +78,7 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
                 when (panel) {
                     StreamPanel.Films -> FilmRankingsScreen(libraryViewModel, playerViewModel, active = true,
                         onSettings = { navigate(StreamPanel.Settings) })
-                    StreamPanel.Settings -> SettingsScreen(
+                    StreamPanel.Settings -> settingsState.SaveableStateProvider("settings") { SettingsScreen(
                         installed = updateViewModel.installed,
                         updateState = updateState,
                         onCheckForUpdate = updateViewModel::checkForUpdate,
@@ -90,7 +92,7 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
                         diagnostics = libraryViewModel.diagnostics,
                         canWatch = canChooseChannel(source != null, channelCount),
                         onWatch = { playerViewModel.cancelStartupResume(); playerViewModel.openGuide() },
-                    )
+                    ) }
                 }
             }
         }

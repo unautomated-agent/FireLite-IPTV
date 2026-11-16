@@ -79,6 +79,7 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
     var playback by remember { mutableStateOf("") }
     var opened by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+    val startup by (context.applicationContext as FireLiteApplication).container.startup.latest.collectAsState()
     LaunchedEffect(store) {
         withContext(Dispatchers.IO) { store.read() to PlaybackDiagnosticsStore(context.filesDir).summary() }.let {
             crash = it.first
@@ -103,6 +104,8 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
             stalls.joinToString("\n") { it.line(compact = true) } + "\n" + baseReport
     }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        FLText(stringResource(R.string.startup_diagnostics, startup.total?.toString() ?: "—", startup.detail()),
+            style = FireLiteTheme.typography.body)
         val lastError = settingsLastError(report)
         FLText(stringResource(R.string.settings_last_error, lastError ?: stringResource(R.string.settings_no_report)),
             style = FireLiteTheme.typography.body, maxLines = 1)

@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Default (and only) UI language: Polish. Resource names are English. -->
 <resources>
+    <string name="startup_diagnostics">Start aplikacji: total %1$s ms; %2$s</string>
+    <string name="startup_loading">Uruchamianie…</string>
     <string name="search">Szukaj</string>
     <string name="search_input">Kanał lub tytuł audycji</string>
     <string name="search_hint">Wpisz tekst lub użyj mikrofonu w klawiaturze. ↓ Wyniki · ↑ Pole · Wstecz Zamknij</string>

@@ -1,6 +1,7 @@
 package dev.firetvlite.iptv.playback
 
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -30,9 +31,71 @@ import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import dev.firetvlite.iptv.reporting.ReportSink
+import dev.firetvlite.iptv.LaunchPhase
 
 class PlaybackControllerTest {
     private val request = StreamRequest("https://example.org/live", "FireLite")
+
+    @Test fun audioOnlyColdLaunchCompletesOnceWhenAudioAdvancesAndKeepsLoudnessSessionHooks() = runBlocking {
+        val event = AnalyticsListener.EventTime(0, Timeline.EMPTY, 0, null, 0, Timeline.EMPTY, 0, null, 0, 0)
+        for (coldStart in listOf(false, true)) {
+            val fake = FakePlayer()
+            val phases = mutableListOf<LaunchPhase>()
+            val sessions = mutableListOf<Int>()
+            val loudness = LoudnessLeveller { session ->
+                sessions += session
+                object : LoudnessEffect {
+                    override fun enable() = Unit
+                    override fun release() = Unit
+                }
+            }
+            loudness.outputChanged(true)
+            val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+                evictConnections = {}, launchEvent = { phases += it }, loudness = loudness)
+            try {
+                controller.play(request.copy(coldStart = coldStart))
+                delay(450)
+                fake.analytics!!.onAudioSessionIdChanged(event, 42)
+                assertEquals(listOf(42), sessions)
+                assertEquals(LoudnessStatus.Active, loudness.status.value)
+                fake.state = Player.STATE_READY
+                fake.analytics!!.onAudioPositionAdvancing(event, 0)
+                assertEquals(0, phases.count { it == LaunchPhase.FirstFrame })
+                fake.audioFormat = Format.Builder().setSampleMimeType("audio/mp4a-latm").build()
+                fake.state = Player.STATE_BUFFERING
+                fake.analytics!!.onAudioPositionAdvancing(event, 0)
+                assertEquals(0, phases.count { it == LaunchPhase.FirstFrame })
+                fake.state = Player.STATE_READY
+                fake.analytics!!.onAudioPositionAdvancing(event, 0)
+                fake.analytics!!.onAudioPositionAdvancing(event, 0)
+                assertEquals(if (coldStart) 1 else 0, phases.count { it == LaunchPhase.FirstFrame })
+                assertTrue(controller.firstFrame.value)
+            } finally { controller.releasePlayer() }
+            assertEquals(LoudnessStatus.Waiting, loudness.status.value)
+        }
+    }
+
+    @Test fun coldLaunchMarkersFollowTheNormalGraceAndNeverCountManualPlayback() = runBlocking {
+        val fake = FakePlayer()
+        val phases = mutableListOf<LaunchPhase>()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            evictConnections = {}, launchEvent = { phases += it })
+        try {
+            controller.play(request.copy(coldStart = true))
+            assertEquals(listOf(LaunchPhase.Resume), phases)
+            delay(200)
+            assertEquals(listOf(LaunchPhase.Resume), phases)
+            delay(250)
+            assertEquals(listOf(LaunchPhase.Resume, LaunchPhase.Prepare), phases)
+            fake.listener!!.onRenderedFirstFrame()
+            assertEquals(LaunchPhase.FirstFrame, phases.last())
+            val captured = phases.toList()
+            controller.play(request.copy(url = "https://example.org/manual"))
+            delay(450)
+            fake.listener!!.onRenderedFirstFrame()
+            assertEquals(captured, phases)
+        } finally { controller.stop() }
+    }
 
     private class ReconnectFixture(scope: CoroutineScope, startupTimeout: Long = 10_000) {
         val fake = FakePlayer()
@@ -1465,10 +1528,12 @@ class PlaybackControllerTest {
         val calls = mutableListOf<String>()
         var parameters = TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT
         var listener: Player.Listener? = null
+        var analytics: AnalyticsListener? = null
         var state = Player.STATE_IDLE
         var prepareFailure: Throwable? = null
         var tracks: Tracks = Tracks.EMPTY
         var videoFormat: Format? = null
+        var audioFormat: Format? = null
         var position = 0L
         var seekPosition = 0L
         var playing = true
@@ -1483,9 +1548,11 @@ class PlaybackControllerTest {
                 "getTrackSelectionParameters" -> parameters
                 "setTrackSelectionParameters" -> { parameters = args!![0] as TrackSelectionParameters; null }
                 "addListener" -> { listener = args!![0] as Player.Listener; null }
+                "addAnalyticsListener" -> { analytics = args!![0] as AnalyticsListener; null }
                 "getPlaybackState" -> state
                 "getCurrentTracks" -> tracks
                 "getVideoFormat" -> videoFormat
+                "getAudioFormat" -> audioFormat
                 "getBufferedPosition" -> 2500L
                 "getCurrentPosition" -> position
                 "getCurrentTimeline" -> Timeline.EMPTY

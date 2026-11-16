@@ -1,5 +1,7 @@
 package dev.firetvlite.iptv.playback
 
+import dev.firetvlite.iptv.LaunchPhase
+
 import dev.firetvlite.iptv.reporting.ReportSink
 import dev.firetvlite.iptv.reporting.ReportText
 import dev.firetvlite.iptv.data.library.DiagnosticRedactor
@@ -60,6 +62,7 @@ data class StreamRequest(
     val headers: Map<String, String> = emptyMap(),
     val channelKey: String = DeadChannels.key(url),
     val userInitiated: Boolean = true,
+    val coldStart: Boolean = false,
 )
 
 sealed interface PlaybackStatus {
@@ -125,6 +128,7 @@ class PlaybackController internal constructor(
         ChannelHealthProbe().check(request, call, active)
     },
     private val reports: ReportSink = ReportSink.None,
+    private val launchEvent: (LaunchPhase) -> Unit = {},
     private val reconnectDelayMs: Long = 2_000L,
     private val monotonicMs: () -> Long = { System.nanoTime() / 1_000_000 },
     private val loudness: LoudnessLeveller? = null,
@@ -133,7 +137,8 @@ class PlaybackController internal constructor(
         this(scope, createPlayer, {})
 
     internal constructor(context: Context, scope: CoroutineScope, deadChannels: DeadChannels, stalls: StallHistory,
-        reports: ReportSink = ReportSink.None, loudness: LoudnessLeveller? = null) : this(scope, { httpFactory ->
+        reports: ReportSink = ReportSink.None, loudness: LoudnessLeveller? = null,
+        launchEvent: (LaunchPhase) -> Unit = {}) : this(scope, { httpFactory ->
         val renderers = DefaultRenderersFactory(context)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
             .setEnableDecoderFallback(true)
@@ -148,7 +153,8 @@ class PlaybackController internal constructor(
         player.setMediaSource(PlaybackMediaSourceFactory(factory).createMediaSource(item))
     }, recordPlayback = diagnosticRecorder(context, scope), channelResult = { request, reason -> deadChannels.result(request, reason) },
         healthResult = { request, reason -> deadChannels.result(request, reason, "health check") },
-        healthSummary = deadChannels::checkSummary, recordStall = stalls::record, reports = reports, loudness = loudness)
+        healthSummary = deadChannels::checkSummary, recordStall = stalls::record, reports = reports,
+        loudness = loudness, launchEvent = launchEvent)
 
     private val gate = StreamGate()
     private val evictionMutex = Mutex()
@@ -312,6 +318,7 @@ class PlaybackController internal constructor(
         override fun onTracksChanged(tracks: Tracks) { recordSuccess() }
 
         override fun onRenderedFirstFrame() {
+            if (activeRequest?.coldStart == true) launchEvent(LaunchPhase.FirstFrame)
             mutableFirstFrame.value = true
             sessionFirstFrame = true
             if (exo?.playbackState == Player.STATE_READY) renderingStarted()
@@ -348,6 +355,7 @@ class PlaybackController internal constructor(
             val player = exo ?: return
             if (player.playbackState == Player.STATE_READY && player.audioFormat != null &&
                 player.currentTracks.groups.none { it.type == C.TRACK_TYPE_VIDEO }) {
+                if (!sessionFirstFrame && activeRequest?.coldStart == true) launchEvent(LaunchPhase.FirstFrame)
                 sessionFirstFrame = true
                 mutableFirstFrame.value = true
                 renderingStarted()
@@ -708,6 +716,7 @@ class PlaybackController internal constructor(
 
     private fun playInternal(request: StreamRequest, automatic: Boolean = false) {
         if (gate.onRequest(request.url) == StreamGate.Action.Ignore) return
+        if (request.coldStart) launchEvent(LaunchPhase.Resume)
         if (!automatic) reconnectUsed = false
         reachedReady = false
         preparedCurrent = false
@@ -781,6 +790,7 @@ class PlaybackController internal constructor(
             prepareSafely {
                 setStream(player, mediaItem(request.url), trackedFactory(session))
                 player.playWhenReady = true
+                if (request.coldStart) launchEvent(LaunchPhase.Prepare)
                 preparedCurrent = true
                 player.prepare()
             }

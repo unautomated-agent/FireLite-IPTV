@@ -11,7 +11,8 @@ import android.os.Looper
 import android.os.SystemClock
 import dev.firetvlite.iptv.playback.PlaybackJank
 
-internal class AppHealthMonitor(private val application: Application, private val reports: CrashReportStore) {
+internal class AppHealthMonitor(private val application: Application, private val reports: CrashReportStore,
+    private val exitReasonsReady: () -> Boolean = { true }) {
     @Volatile private var foreground = false
 
     fun start(version: String) {
@@ -37,14 +38,18 @@ internal class AppHealthMonitor(private val application: Application, private va
             override fun onActivityDestroyed(activity: Activity) = Unit
         })
         Thread({
-            if (Build.VERSION.SDK_INT >= 30) runCatching {
-                val manager = application.getSystemService(ActivityManager::class.java)
-                reports.processExits(manager.getHistoricalProcessExitReasons(application.packageName, 0, 4).map { exit ->
-                    ProcessExitRecord(exit.timestamp, reason(exit.reason), exit.status,
-                        exit.description.orEmpty(), exit.pss, exit.rss)
-                })
-            }
+            var exitsRead = false
             while (!Thread.currentThread().isInterrupted) {
+                if (!exitsRead && exitReasonsReady()) {
+                    exitsRead = true
+                    if (Build.VERSION.SDK_INT >= 30) runCatching {
+                        val manager = application.getSystemService(ActivityManager::class.java)
+                        reports.processExits(manager.getHistoricalProcessExitReasons(application.packageName, 0, 4).map { exit ->
+                            ProcessExitRecord(exit.timestamp, reason(exit.reason), exit.status,
+                                exit.description.orEmpty(), exit.pss, exit.rss)
+                        })
+                    }
+                }
                 runCatching { watchdog.tick(SystemClock.uptimeMillis(), foreground) }
                 try { Thread.sleep(500) } catch (_: InterruptedException) { Thread.currentThread().interrupt() }
             }

@@ -54,13 +54,16 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         // No stream may stay connected while the app is in the background.
         val container = (application as FireLiteApplication).container
+        container.startup.mark(LaunchPhase.Activity)
         lifecycle.addObserver(PlaybackLifecycle(container.playback))
+
+        val player = playerViewModel
 
         setContent {
             FireLiteApp(
                 updateViewModel = updateViewModel,
                 libraryViewModel = libraryViewModel,
-                playerViewModel = playerViewModel,
+                playerViewModel = player,
             )
         }
     }

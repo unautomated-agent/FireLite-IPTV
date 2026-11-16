@@ -10,6 +10,7 @@ import dev.firetvlite.iptv.data.playlist.EmptyPlaylistException
 import dev.firetvlite.iptv.data.playlist.PlaylistImporter
 import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -45,6 +46,7 @@ class LibraryRepository(
     private val context: Context,
     private val scope: CoroutineScope,
     private val epg: EpgRepository,
+    private val awaitStartup: suspend () -> Unit = {},
 ) {
     private val sourceDao = database.sourceDao()
     private val operations = Mutex()
@@ -56,7 +58,8 @@ class LibraryRepository(
     val importState: StateFlow<ImportState> = mutableImportState.asStateFlow()
 
     init {
-        scope.launch {
+        scope.launch(Dispatchers.IO) {
+            awaitStartup()
             operations.withLock {
                 adoptLegacySettings()
                 loadActive()

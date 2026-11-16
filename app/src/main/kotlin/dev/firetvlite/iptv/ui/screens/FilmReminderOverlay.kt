@@ -48,6 +48,8 @@ import kotlinx.coroutines.delay
 
 @Composable
 internal fun FilmReminderOverlay(library: LibraryViewModel, eligible: Boolean, watchingLiveChannelId: Long?) {
+    val startupReady by library.startupReady.collectAsState()
+    if (!startupReady) return
     val source by library.source.collectAsState()
     val sourceId = source?.id
     val preferences = library.reminderPreferences

@@ -4,6 +4,7 @@ import android.app.Application
 import android.app.Activity
 import android.os.Bundle
 import android.os.StrictMode
+import android.os.SystemClock
 import java.io.File
 import dev.firetvlite.iptv.data.ClockPreferences
 import dev.firetvlite.iptv.data.LoudnessPreferences
@@ -27,22 +28,26 @@ import dev.firetvlite.iptv.update.ReleaseParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 /**
  * Creates and holds the app-wide objects (manual dependency injection, no code generation).
  * Everything here lives as long as the process.
  */
-class AppContainer(application: Application) {
+class AppContainer(application: Application, startedAt: Long = SystemClock.elapsedRealtime()) {
     val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    internal val startup = StartupRecorder(File(application.filesDir, "startup-history.json"), applicationScope,
+        startedAt, SystemClock::elapsedRealtime) { errorReports }
 
     val database: FireLiteDatabase = FireLiteDatabase.create(application)
     val epg = EpgRepository(database, applicationScope)
-    val films = FilmRepository(database, OmdbPreferences(application), applicationScope, epg)
-    val clockPreferences = ClockPreferences(application)
+    val films by lazy { FilmRepository(database, OmdbPreferences(application), applicationScope, epg) }
+    val clockPreferences by lazy { ClockPreferences(application) }
+    val reminderPreferences by lazy { ReminderPreferences(application) }
     internal val loudnessPreferences = LoudnessPreferences(application, applicationScope)
     internal val loudness = LoudnessLeveller()
-    val reminderPreferences = ReminderPreferences(application)
 
     val library = LibraryRepository(
         database = database,
@@ -50,27 +55,41 @@ class AppContainer(application: Application) {
         context = application,
         scope = applicationScope,
         epg = epg,
+        awaitStartup = startup::awaitReady,
     )
 
     internal val errorReports: ErrorReporting = ErrorReporting(application, database.reportDao(), applicationScope,
-        allowed = ::reportUploadsAllowed)
-    internal val deadChannels: DeadChannels = DeadChannels(File(application.filesDir, "dead-channels.json"), applicationScope, reports = errorReports)
-    internal val stalls = StallHistory(File(application.filesDir, "playback-stalls.json"), applicationScope)
+        allowed = ::reportUploadsAllowed, awaitStartup = startup::awaitReady)
+    internal val deadChannels: DeadChannels = DeadChannels(File(application.filesDir, "dead-channels.json"), applicationScope,
+        reports = errorReports, awaitStartup = startup::awaitReady)
+    internal val stalls = StallHistory(File(application.filesDir, "playback-stalls.json"), applicationScope, startup::awaitReady)
     /** The one object that may open a stream. */
-    val playback: PlaybackController = PlaybackController(application, applicationScope, deadChannels, stalls, errorReports, loudness)
+    val playback: PlaybackController = PlaybackController(application, applicationScope, deadChannels, stalls, errorReports,
+        loudness = loudness, launchEvent = startup::mark)
 
     private fun reportUploadsAllowed(): Boolean = playback.reportUploadsAllowed
     internal val launchUpdate = LaunchUpdateCheck(applicationScope, playback.firstFrame, BuildConfig.VERSION_CODE.toLong(),
-        streamActive = { playback.hasActiveStream }) {
+        streamActive = { playback.hasActiveStream }, awaitStartup = startup::awaitReady) {
         if (BuildConfig.UPDATE_REPOSITORY.isBlank()) ReleaseParser.Result.NoApk
         else UpdateRepository(BuildConfig.UPDATE_REPOSITORY, BuildConfig.VERSION_CODE_OFFSET).fetchLatestBackground()
     }
 
     private val foregroundEpg = ForegroundRefresh(applicationScope) {
+        startup.awaitReady()
         database.sourceDao().active()?.let { epg.refresh(it.id) }
     }
 
     init {
+        applicationScope.launch {
+            startup.awaitCompletion()
+            if (startup.latest.value.total != null) delay(1_500)
+            withContext(Dispatchers.IO) {
+                clockPreferences
+                reminderPreferences
+                films
+            }
+            startup.backgroundReady()
+        }
         applicationScope.launch { loudnessPreferences.enabled.collect { loudness.setEnabled(it) } }
         application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
             private var started = 0
@@ -100,6 +119,7 @@ class FireLiteApplication : Application() {
         private set
 
     override fun onCreate() {
+        val startedAt = SystemClock.elapsedRealtime()
         super.onCreate()
         if (BuildConfig.DEBUG) {
             StrictMode.setThreadPolicy(StrictMode.ThreadPolicy.Builder().detectNetwork().penaltyDeath().build())
@@ -113,10 +133,11 @@ class FireLiteApplication : Application() {
                 previousHandler,
             ),
         )
-        container = AppContainer(this)
+        container = AppContainer(this, startedAt)
         val connectedReports = CrashReportStore(File(filesDir, "last-crash.txt"), container.errorReports)
         Thread.setDefaultUncaughtExceptionHandler(connectedReports.handler(
             "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", previousHandler))
-        AppHealthMonitor(this, connectedReports).start("${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+        AppHealthMonitor(this, connectedReports) { container.startup.ready.value }
+            .start("${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
     }
 }

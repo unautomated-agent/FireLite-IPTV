@@ -73,6 +73,7 @@ internal fun compactDeadSummary(total: Int, items: List<Pair<String, String>>, b
 
 internal class DeadChannels(private val file: File, scope: CoroutineScope,
     private val reports: ReportSink = ReportSink.None,
+    private val awaitStartup: suspend () -> Unit = {},
     private val clock: () -> Long = System::currentTimeMillis) {
     private val mutableState = MutableStateFlow(ChannelHealthState())
     val state = mutableState.asStateFlow()
@@ -80,6 +81,7 @@ internal class DeadChannels(private val file: File, scope: CoroutineScope,
 
     init {
         scope.launch(Dispatchers.IO) {
+            awaitStartup()
             mutableState.value = runCatching {
                 check(file.length() <= 128_000)
                 val saved = JSONObject(file.readText())

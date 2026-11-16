@@ -23,21 +23,24 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
 
     private val app: Application = application
 
-    private val repository: UpdateRepository? = BuildConfig.UPDATE_REPOSITORY
+    private val repository: UpdateRepository? by lazy { BuildConfig.UPDATE_REPOSITORY
         .takeIf { it.isNotBlank() }
-        ?.let { UpdateRepository(it, BuildConfig.VERSION_CODE_OFFSET) }
+        ?.let { UpdateRepository(it, BuildConfig.VERSION_CODE_OFFSET) } }
 
     private val mutableState = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val state: StateFlow<UpdateState> = mutableState.asStateFlow()
     val automaticUpdate = (application as FireLiteApplication).container.launchUpdate.available
 
-    val installed: InstalledVersion = readInstalledVersion()
+    val installed: InstalledVersion by lazy { readInstalledVersion() }
 
-    private val updateFile = File(app.cacheDir, "updates/firelite.apk")
+    private val updateFile by lazy { File(app.cacheDir, "updates/firelite.apk") }
 
     init {
         // A finished update leaves its APK behind; it is no longer needed once this build runs.
-        viewModelScope.launch(Dispatchers.IO) { updateFile.parentFile?.deleteRecursively() }
+        viewModelScope.launch(Dispatchers.IO) {
+            (application as FireLiteApplication).container.startup.awaitReady()
+            updateFile.parentFile?.deleteRecursively()
+        }
     }
 
     fun showAutomaticUpdate(release: ReleaseInfo) {

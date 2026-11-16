@@ -144,6 +144,7 @@ internal fun PlayerQuickMenu(viewModel: PlayerViewModel, active: Boolean, onClos
                         QuickMenuAction.Settings -> R.drawable.menu_settings
                         QuickMenuAction.Favorite -> R.drawable.menu_favorite
                         QuickMenuAction.Audio -> R.drawable.menu_audio
+                        QuickMenuAction.Search -> R.drawable.menu_search
                     }
                     val subtitle = when (action) {
                         QuickMenuAction.Audio -> if (tracks.isEmpty()) stringResource(R.string.quick_menu_no_audio) else null
@@ -156,6 +157,7 @@ internal fun PlayerQuickMenu(viewModel: PlayerViewModel, active: Boolean, onClos
                             QuickMenuAction.Settings -> onSettings()
                             QuickMenuAction.Favorite -> viewModel.toggleFavorite()
                             QuickMenuAction.Audio -> audio = true
+                            QuickMenuAction.Search -> { onClose(); viewModel.openSearch() }
                         }
                     }, active, when (action) {
                         QuickMenuAction.Films -> Modifier.focusRequester(firstFocus)

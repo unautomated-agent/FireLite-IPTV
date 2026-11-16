@@ -32,6 +32,7 @@ abstract class FireLiteDatabase : RoomDatabase() {
     abstract fun channelDao(): ChannelDao
     abstract fun userDao(): UserDao
     abstract fun epgDao(): EpgDao
+    abstract fun searchDao(): SearchDao
     abstract fun xtreamDao(): XtreamDao
     abstract fun filmDao(): FilmDao
     abstract fun reportDao(): ReportDao

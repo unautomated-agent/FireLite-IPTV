@@ -17,7 +17,10 @@ import java.util.UUID
 interface ReportSink {
     fun enqueue(kind: String, channel: String, summary: String, detail: String)
     fun crash(summary: String, detail: String) = enqueue("crash", "", summary, detail)
-    fun processExit(occurredAt: Long, summary: String, detail: String) = enqueue("exit", "", summary, detail)
+    fun processExit(occurredAt: Long, summary: String, detail: String): Boolean {
+        enqueue("exit", "", summary, detail)
+        return true
+    }
     fun midPlaybackStall(channel: String, summary: String, detail: String) = enqueue("stall", channel, summary, detail)
 
     object None : ReportSink {

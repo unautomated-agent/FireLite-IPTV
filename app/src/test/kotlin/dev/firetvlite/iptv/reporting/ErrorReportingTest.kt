@@ -2,6 +2,8 @@ package dev.firetvlite.iptv.reporting
 
 import com.google.gson.JsonParser
 import dev.firetvlite.iptv.BuildConfig
+import dev.firetvlite.iptv.CrashReportStore
+import dev.firetvlite.iptv.ProcessExitRecord
 import java.io.File
 import java.time.Instant
 import kotlinx.coroutines.runBlocking
@@ -48,6 +50,31 @@ private class MemoryPreferences : ReportPreferences {
 
 class ErrorReportingTest {
     @get:Rule val folder = TemporaryFolder()
+
+    @Test fun exitIsDurableBeforeSeenMarkerAndRecoversWithoutTheOriginalProcess() {
+        val directory = File(folder.root, "exit-handoff")
+        val handoff = CrashReportHandoff(directory)
+        val marker = File(folder.root, "process-exits-seen.txt")
+        val sink = object : ReportSink {
+            override fun enqueue(kind: String, channel: String, summary: String, detail: String) = Unit
+            override fun processExit(occurredAt: Long, summary: String, detail: String): Boolean {
+                val captured = handoff.processExit(occurredAt, summary, detail)
+                assertFalse(marker.exists())
+                assertTrue(directory.listFiles().orEmpty().any { it.extension == "json" })
+                return captured
+            }
+        }
+        val file = File(folder.root, "exits.txt")
+        val exits = listOf(ProcessExitRecord(3000, "ANR", 0, "fixture", 0, 0))
+        CrashReportStore(file, sink).processExits(exits)
+        assertEquals("3000", marker.readText())
+        CrashReportStore(file, CrashReportHandoff(directory)).processExits(exits)
+        val recovered = MemoryReportDao()
+        CrashReportHandoff(directory).drain(recovered)
+        assertEquals("exit", recovered.pending(1).single().kind)
+        assertEquals(Instant.ofEpochMilli(3000).toString(), recovered.pending(1).single().occurredAt)
+        assertEquals(1, recovered.count())
+    }
     private fun report(index: Int = 0, now: Long = 1_000_000) = ReportText.create("other", "Channel $index", "failure $index", "detail", now)
 
     @Test fun queueCapsAt500DropsOldestAndDedupesEvenAfterSuccessfulRemoval() {

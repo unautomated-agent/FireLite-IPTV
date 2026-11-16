@@ -37,6 +37,11 @@ internal class AndroidReportPreferences(private val context: Context) : ReportPr
 }
 
 internal class CrashReportHandoff(private val directory: File) : ReportSink {
+    override fun processExit(occurredAt: Long, summary: String, detail: String): Boolean = runCatching {
+        save(ReportText.create("exit", "", summary, detail)
+            .copy(occurredAt = java.time.Instant.ofEpochMilli(occurredAt).toString()))
+    }.isSuccess
+
     override fun enqueue(kind: String, channel: String, summary: String, detail: String) {
         save(ReportText.create(kind, channel, summary, detail))
     }
@@ -107,8 +112,10 @@ internal class ErrorReporting(context: Context, private val queue: ReportQueue, 
         io.launch { runCatching { handoff.drain(queue); refresh(); afterEnqueue() } }
     }
 
-    override fun processExit(occurredAt: Long, summary: String, detail: String) {
-        runCatching { captures.trySend(Capture("exit", "", summary, detail, occurredAt = occurredAt)) }
+    override fun processExit(occurredAt: Long, summary: String, detail: String): Boolean {
+        if (!handoff.processExit(occurredAt, summary, detail)) return false
+        io.launch { runCatching { handoff.drain(queue); refresh(); afterEnqueue() } }
+        return true
     }
 
     fun setEnabled(enabled: Boolean) {

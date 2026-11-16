@@ -41,7 +41,7 @@ class CrashReportStore(private val file: File, private val reports: ReportSink =
             val detail = "Process exit: ${exit.reason} · ${Instant.ofEpochMilli(exit.timestamp)} · status=${exit.status}" +
                 " · pss=${exit.pss}KB rss=${exit.rss}KB\n${exit.description.take(512)}"
             record(detail)
-            runCatching { reports.processExit(exit.timestamp, detail.lineSequence().first(), detail) }
+            if (!runCatching { reports.processExit(exit.timestamp, detail.lineSequence().first(), detail) }.getOrDefault(false)) return
             marker.writeText(exit.timestamp.toString())
         }
     }

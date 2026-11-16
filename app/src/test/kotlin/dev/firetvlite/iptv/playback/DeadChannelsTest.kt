@@ -127,6 +127,22 @@ class DeadChannelsTest {
         assertEquals("Martwe kanały: 0", ChannelHealthState().summary())
     }
 
+    @Test fun qrCompactionPreservesPlusPrefixedNamesAndOnlySkipsOmissionMarkers() {
+        val dead = ChannelHealthState(listOf(
+            DeadChannel("plus", "+TVI", 1, 1, 1, "HTTP 404", "playback"),
+            DeadChannel("markerLike", "+3 więcej", 1, 1, 1, "HTTP 500", "playback"),
+        ))
+        val summary = dead.qrSummary().replace("Martwe (2):", "Martwe (5):") + "; +3 więcej"
+        val report = summary + "\n" + "Transport pending: waiting response\n".repeat(100)
+        assertTrue(report.toByteArray(Charsets.UTF_8).size > 1800)
+        val payload = DiagnosticsReport.payload(report)
+        assertTrue(payload.toByteArray(Charsets.UTF_8).size <= 1800)
+        assertTrue(payload, payload.contains("+TVI 404"))
+        assertTrue(payload, payload.contains("+3 więcej 500"))
+        assertTrue(payload, payload.contains("; +3 więcej\n"))
+        assertFalse(payload, payload.contains("; +2 więcej"))
+    }
+
     @Test fun compactQrListsEveryNameForThirtyAndOneHundredShortEntriesBeforeOtherDiagnostics() {
         val noise = "Transport pending: waiting response 9000ms\nProvider response: HTTP=404 hop=3 host#2\n" +
             "Transport headers: headers=User-Agent,Referer\nTransport: http/1.1 reuse=no\n" +

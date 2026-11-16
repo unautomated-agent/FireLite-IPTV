@@ -142,7 +142,7 @@ internal class ReportUploader(
         }
         return when (code) {
             200 -> {
-                queue.remove(batch.map { it.id })
+                queue.acknowledge(batch)
                 preferences.lastSent = clock()
                 preferences.lastError = ""
                 UploadOutcome()

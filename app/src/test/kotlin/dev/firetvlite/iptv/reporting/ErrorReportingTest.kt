@@ -3,6 +3,8 @@ package dev.firetvlite.iptv.reporting
 import com.google.gson.JsonParser
 import dev.firetvlite.iptv.CrashReportStore
 import dev.firetvlite.iptv.ProcessExitRecord
+import dev.firetvlite.iptv.playback.StallDetector
+import dev.firetvlite.iptv.playback.StallSample
 import java.io.File
 import java.time.Instant
 import kotlinx.coroutines.runBlocking
@@ -10,6 +12,7 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withTimeout
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.atomic.AtomicBoolean
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -23,6 +26,11 @@ import org.junit.rules.TemporaryFolder
 internal class MemoryReportDao : ReportDao() {
     val rows = linkedMapOf<String, QueuedReport>()
     private val recent = mutableMapOf<String, Long>()
+    override fun pendingStall(channel: String, summary: String, build: Int) = rows.values.lastOrNull {
+        it.kind == "stall" && it.channel == channel && it.summary == summary && it.build == build
+    }
+    override fun updateDetail(id: String, detail: String) { rows[id]?.let { rows[id] = it.copy(detail = detail) } }
+    override fun find(id: String) = rows[id]
     override fun duplicate(fingerprint: String, since: Long, until: Long) = recent[fingerprint]?.let { it in since..until } == true
     override fun remember(fingerprint: ReportFingerprint) { recent[fingerprint.fingerprint] = fingerprint.createdAt }
     override fun expire(before: Long) { recent.entries.removeAll { it.value < before } }
@@ -75,6 +83,60 @@ class ErrorReportingTest {
         assertEquals(1, recovered.count())
     }
     private fun report(index: Int = 0, now: Long = 1_000_000) = ReportText.create("other", "Channel $index", "failure $index", "detail", now, build = 101)
+
+    @Test fun pendingStallKeepsFinalDetectorDurationAndStableIdentityBeyondTheDedupeWindow() {
+        val detector = StallDetector()
+        val sample = StallSample(1000, 1_000_000, "TV", true, true, false, 0, 0, 0, 5000)
+        assertNull(detector.sample(sample))
+        val initial = detector.sample(sample.copy(nowMs = 4000, wallMs = 1_003_000))!!
+        val final = detector.sample(sample.copy(nowMs = 9000, wallMs = 1_008_000, active = false))!!
+        val queue = MemoryReportDao()
+        val first = ReportText.create("stall", initial.channel, "${initial.kind} · ${initial.evidence.substringBefore(';')}", initial.line())
+        assertTrue(queue.enqueue(first))
+        val updated = first.copy(id = "updated-id", detail = final.line(), createdAt = first.createdAt + 8000)
+        assertTrue(queue.enqueue(updated))
+        assertEquals(first.copy(detail = final.line()), queue.pending(1).single())
+        assertTrue(queue.enqueue(updated.copy(createdAt = first.createdAt + 120_000, detail = "final 120s")))
+        assertEquals(first.copy(detail = "final 120s"), queue.pending(1).single())
+        assertFalse(queue.enqueue(updated.copy(detail = "final 120s")))
+        queue.acknowledge(queue.pending(1))
+        assertEquals(0, queue.count())
+        assertTrue(queue.enqueue(updated.copy(id = "after-upload")))
+        assertEquals("after-upload", queue.pending(1).single().id)
+        assertTrue(queue.enqueue(updated.copy(id = "different-build", build = first.build + 1)))
+        assertTrue(queue.enqueue(updated.copy(id = "different-channel", channel = "Other")))
+        assertEquals(3, queue.count())
+    }
+
+    @Test fun stallUpdatedDuringHttpRequestSurvivesAcknowledgementWithANewWorkerId() = runBlocking {
+        MockWebServer().use { server ->
+            val release = CountDownLatch(1)
+            server.dispatcher = object : okhttp3.mockwebserver.Dispatcher() {
+                override fun dispatch(request: okhttp3.mockwebserver.RecordedRequest): MockResponse {
+                    check(release.await(3, TimeUnit.SECONDS))
+                    return MockResponse().setResponseCode(200)
+                }
+            }
+            val initial = report().copy(kind = "stall", detail = "3s")
+            val queue = MemoryReportDao().apply { enqueue(initial) }
+            val uploader = ReportUploader(queue, MemoryPreferences(), { true }, endpoint = server.url("/").toString())
+            val uploading = async(Dispatchers.Default) { uploader.upload() }
+            try {
+                assertNotNull(server.takeRequest(2, TimeUnit.SECONDS))
+                assertTrue(queue.enqueue(initial.copy(id = "final", detail = "8s")))
+            } finally { release.countDown() }
+            withTimeout(3000) { uploading.await() }
+            val latest = queue.pending(1).single()
+            assertEquals("8s", latest.detail)
+            assertNotEquals(initial.id, latest.id)
+            uploader.upload()
+            val body = JsonParser.parseString(server.takeRequest().body.readUtf8()).asJsonObject
+            assertEquals("8s", body["reports"].asJsonArray.single().asJsonObject["detail"].asString)
+            assertEquals(0, queue.count())
+            queue.acknowledge(listOf(initial))
+            assertEquals(0, queue.count())
+        }
+    }
 
     @Test fun queueCapsAt500DropsOldestAndDedupesEvenAfterSuccessfulRemoval() {
         val queue = MemoryReportDao()

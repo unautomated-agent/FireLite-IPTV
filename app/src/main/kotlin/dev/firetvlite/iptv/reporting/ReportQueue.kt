@@ -45,6 +45,7 @@ interface ReportQueue {
     fun enqueue(report: QueuedReport): Boolean
     fun pending(limit: Int): List<QueuedReport>
     fun remove(ids: List<String>)
+    fun acknowledge(reports: List<QueuedReport>)
     fun count(): Int
 }
 
@@ -53,6 +54,24 @@ data class ReportFingerprint(@PrimaryKey val fingerprint: String, val createdAt:
 
 @Dao
 abstract class ReportDao : ReportQueue {
+    @Query("SELECT * FROM report_queue WHERE kind='stall' AND channel=:channel AND summary=:summary AND build=:build ORDER BY createdAt DESC LIMIT 1")
+    abstract fun pendingStall(channel: String, summary: String, build: Int): QueuedReport?
+
+    @Query("UPDATE report_queue SET detail=:detail WHERE id=:id")
+    abstract fun updateDetail(id: String, detail: String)
+
+    @Query("SELECT * FROM report_queue WHERE id=:id")
+    abstract fun find(id: String): QueuedReport?
+
+    @Transaction
+    override fun acknowledge(reports: List<QueuedReport>) {
+        reports.forEach { sent ->
+            val current = find(sent.id) ?: return@forEach
+            remove(listOf(sent.id))
+            if (current != sent) insert(current.copy(id = UUID.randomUUID().toString()))
+        }
+    }
+
     @Query("SELECT EXISTS(SELECT 1 FROM report_recent WHERE fingerprint=:fingerprint AND createdAt >= :since AND createdAt <= :until)")
     abstract fun duplicate(fingerprint: String, since: Long, until: Long): Boolean
 
@@ -73,7 +92,14 @@ abstract class ReportDao : ReportQueue {
         val fingerprint = MessageDigest.getInstance("SHA-256")
             .digest("${report.kind}\u0000${report.channel}\u0000${report.summary}".toByteArray())
             .joinToString("") { "%02x".format(it) }
-        if (duplicate(fingerprint, report.createdAt - 60_000, report.createdAt)) return false
+        if (report.kind == "stall") {
+            val pending = pendingStall(report.channel, report.summary, report.build)
+            if (pending != null) {
+                if (pending.detail == report.detail) return false
+                updateDetail(pending.id, report.detail)
+                return true
+            }
+        } else if (duplicate(fingerprint, report.createdAt - 60_000, report.createdAt)) return false
         val added = insert(report) != -1L
         if (added) remember(ReportFingerprint(fingerprint, report.createdAt))
         expire(report.createdAt - 60_000)

@@ -18,6 +18,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -41,6 +42,7 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.SoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -92,7 +94,7 @@ internal fun SearchDialog(sourceId: Long?, viewModel: PlayerViewModel) {
     val firstFocus = remember { FocusRequester() }
     val scroll = rememberLazyListState()
     val scope = rememberCoroutineScope()
-    val keyboard = LocalSoftwareKeyboardController.current
+    var keyboard by remember { mutableStateOf<SoftwareKeyboardController?>(null) }
     var focusedKey by remember { mutableStateOf<String?>(null) }
     var fieldFocused by remember { mutableStateOf(false) }
     val hits = remember(results) {
@@ -131,6 +133,8 @@ internal fun SearchDialog(sourceId: Long?, viewModel: PlayerViewModel) {
         }
     }
     Dialog(onDismissRequest = viewModel::closeSearch, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        val dialogKeyboard = LocalSoftwareKeyboardController.current
+        SideEffect { keyboard = dialogKeyboard }
         val colors = FireLiteTheme.colors
         val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
         val inputLabel = stringResource(R.string.search_input)

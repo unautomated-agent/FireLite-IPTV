@@ -319,6 +319,7 @@ class PlaybackController internal constructor(
         }
 
         override fun onAudioTrackInitialized(eventTime: AnalyticsListener.EventTime, audioTrackConfig: AudioSink.AudioTrackConfig) {
+            exo?.let { loudness?.sessionChanged(it.audioSessionId) }
             loudness?.outputChanged(Util.isEncodingLinearPcm(audioTrackConfig.encoding) &&
                 !audioTrackConfig.offload && !audioTrackConfig.tunneling)
         }
@@ -962,6 +963,7 @@ class PlaybackController internal constructor(
         player.setAudioAttributes(AudioAttributes.DEFAULT, true)
         player.addListener(listener)
         player.addAnalyticsListener(analytics)
+        loudness?.sessionChanged(player.audioSessionId)
         exo = player
         mutablePlayer.value = player
         return player

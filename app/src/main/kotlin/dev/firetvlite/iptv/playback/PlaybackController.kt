@@ -326,6 +326,7 @@ class PlaybackController internal constructor(
             val player = exo ?: return
             if (player.playbackState == Player.STATE_READY && player.audioFormat != null &&
                 player.currentTracks.groups.none { it.type == C.TRACK_TYPE_VIDEO }) {
+                if (!sessionFirstFrame && activeRequest?.coldStart == true) launchEvent(LaunchPhase.FirstFrame)
                 sessionFirstFrame = true
                 mutableFirstFrame.value = true
                 renderingStarted()

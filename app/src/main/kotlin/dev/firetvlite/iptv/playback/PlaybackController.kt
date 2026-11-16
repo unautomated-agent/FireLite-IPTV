@@ -589,12 +589,12 @@ class PlaybackController internal constructor(
         mutableProviderWaiting.value = false
     }
 
-    private fun watchStartup(request: StreamRequest) {
+    private fun watchStartup(request: StreamRequest, extraMs: Long = 0) {
         clearStartupWatch()
         val timing = StartupTiming()
         startupTiming = timing
         startupTimedOut = false
-        val since = System.nanoTime()
+        val since = System.nanoTime() + extraMs * 1_000_000
         startupJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             var reported = false
             while (activeRequest === request) {
@@ -726,7 +726,7 @@ class PlaybackController internal constructor(
         lastHttpFailure = null
         startupError = null
         hlsSession = HlsSession(request.archive)
-        watchStartup(request)
+        watchStartup(request, if (automatic) reconnectDelayMs else 0)
 
         val player = prepareSafely { ensurePlayer() } ?: return
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()

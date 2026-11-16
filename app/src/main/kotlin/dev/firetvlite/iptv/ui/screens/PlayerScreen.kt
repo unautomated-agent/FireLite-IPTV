@@ -293,6 +293,7 @@ private fun PlayerContent(viewModel: PlayerViewModel, onFilms: () -> Unit, onSet
 private fun StatusLayer(status: PlaybackStatus) {
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         when (status) {
+            PlaybackStatus.Reconnecting -> FLText(stringResource(R.string.player_reconnecting), style = FireLiteTheme.typography.title)
             PlaybackStatus.Connecting, PlaybackStatus.Buffering -> Spinner()
             is PlaybackStatus.Failed -> FLText(if (status.httpStatus != null)
                 stringResource(R.string.player_http_error, status.httpStatus)

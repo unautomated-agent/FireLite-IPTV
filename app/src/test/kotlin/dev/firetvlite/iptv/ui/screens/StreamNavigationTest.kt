@@ -69,7 +69,7 @@ class StreamNavigationTest {
         val activity = File("src/main/kotlin/dev/firetvlite/iptv/MainActivity.kt").readText()
         val dispatch = activity.substringAfter("override fun dispatchKeyEvent(").substringBefore("override fun onCreate(")
         assertTrue(dispatch.indexOf("guideBackAction(") < dispatch.indexOf("super.dispatchKeyEvent(event)"))
-        assertTrue(dispatch.contains("if (event.keyCode == KeyEvent.KEYCODE_BACK)"))
+        assertTrue(dispatch.contains("if (event.keyCode == KeyEvent.KEYCODE_BACK && !playerViewModel.searchVisible.value)"))
         assertTrue(dispatch.contains("GuideBackAction.ReturnToPlayback -> { playerViewModel.returnToFullscreen(); return true }"))
         assertTrue(dispatch.contains("GuideBackAction.Exit -> { finish(); return true }"))
     }
@@ -91,12 +91,27 @@ class StreamNavigationTest {
     }
 
     @Test fun quickMenuHasExactlyTheRequestedActionsInOrderForBothFavoriteStates() {
-        val actions = listOf(QuickMenuAction.Films, QuickMenuAction.Settings, QuickMenuAction.Favorite, QuickMenuAction.Audio)
+        val actions = listOf(QuickMenuAction.Films, QuickMenuAction.Settings, QuickMenuAction.Favorite, QuickMenuAction.Audio,
+            QuickMenuAction.Search)
         assertEquals(actions, quickMenuItems(false).map { it.first })
         assertEquals(actions, quickMenuItems(true).map { it.first })
         assertEquals(listOf(R.string.nav_films, R.string.nav_settings, R.string.quick_menu_add_favorite,
-            R.string.quick_menu_audio), quickMenuItems(false).map { it.second })
+            R.string.quick_menu_audio, R.string.search), quickMenuItems(false).map { it.second })
         assertEquals(R.string.quick_menu_remove_favorite, quickMenuItems(true)[2].second)
+    }
+
+    @Test fun searchKeyAndQuickMenuOpenTheSameLocalOverlayAndSelectionUsesExistingPlayback() {
+        val activity = File("src/main/kotlin/dev/firetvlite/iptv/MainActivity.kt").readText()
+        assertTrue(activity.contains("event.keyCode == KeyEvent.KEYCODE_SEARCH"))
+        assertTrue(activity.contains("event.repeatCount == 0) playerViewModel.openSearch()"))
+        val menu = File("src/main/kotlin/dev/firetvlite/iptv/ui/screens/PlayerQuickMenu.kt").readText()
+        assertTrue(menu.contains("QuickMenuAction.Search -> { onClose(); viewModel.openSearch() }"))
+        val vm = File("src/main/kotlin/dev/firetvlite/iptv/ui/viewmodel/PlayerViewModel.kt").readText()
+        val opening = vm.substringAfter("fun openSearch()").substringBefore("fun closeSearch()")
+        assertFalse(opening.contains("playback.play("))
+        val selection = vm.substringAfter("fun playSearchResult(").substringBefore("fun dismissTimeline()")
+        assertTrue(selection.contains("open(zap, index, GroupKey.All)"))
+        assertTrue(selection.contains("openArchive(zap, index, GroupKey.All, archiveStart)"))
     }
 
     @Test fun quickMenuFocusAndAudioBackAreIndependentOfTrackAndFavoriteUpdates() {
@@ -156,16 +171,40 @@ class StreamNavigationTest {
         assertFalse(File("src/main/kotlin/dev/firetvlite/iptv/ui/navigation/AppNavigationRail.kt").exists())
     }
 
-    @Test fun fullscreenReturnRestartsTheSelectedChannelOnlyWhenItsStreamIsAbsent() {
+    @Test fun fullscreenReturnRestartsAnAbsentStreamUnlessReconnectWasCancelled() {
         val model = File("src/main/kotlin/dev/firetvlite/iptv/ui/viewmodel/PlayerViewModel.kt").readText()
         val body = model.substringAfter("fun returnToFullscreen()").substringBefore("fun openGuide(")
         assertTrue(body.contains("val channel = activeChannel"))
-        assertTrue(body.contains("if (channel != null && !playback.hasActiveStream) {"))
+        assertTrue(body.contains("if (channel != null && !playback.hasActiveStream && !reconnectCancelled) {"))
         assertTrue(body.contains("if (start == null) startLive(channel) else applyCatchup(channel, start)"))
         assertTrue(body.indexOf("!playback.hasActiveStream") < body.indexOf("startLive(channel)"))
         assertTrue(body.indexOf("startLive(channel)") < body.indexOf("setMode("))
         assertFalse(body.contains("playback.stop("))
         assertFalse(body.contains("prepare("))
+    }
+
+    @Test fun remoteCancellationRunsBeforeBackRoutingAndNavigationAlsoCancels() {
+        val activity = File("src/main/kotlin/dev/firetvlite/iptv/MainActivity.kt").readText()
+        val dispatch = activity.substringAfter("override fun dispatchKeyEvent(").substringBefore("override fun dispatchTouchEvent(")
+        assertTrue(dispatch.indexOf("playerViewModel.cancelAutoReconnect()") < dispatch.indexOf("overlayBackAction("))
+        assertTrue(dispatch.contains("event.action == KeyEvent.ACTION_DOWN"))
+        val model = File("src/main/kotlin/dev/firetvlite/iptv/ui/viewmodel/PlayerViewModel.kt").readText()
+        val cancel = model.substringAfter("fun cancelAutoReconnect()").substringBefore("private val mutableBrowserTarget")
+        assertTrue(cancel.contains("if (playback.cancelAutoReconnect()) reconnectCancelled = true"))
+        val mode = model.substringAfter("private fun setMode(").substringBefore("fun cancelStartupResume(")
+        assertTrue(mode.contains("cancelAutoReconnect()"))
+    }
+
+    @Test fun openingSearchCancelsReconnectBeforeSearchKeyRoutingWithoutStartingPlayback() {
+        val activity = File("src/main/kotlin/dev/firetvlite/iptv/MainActivity.kt").readText()
+        val dispatch = activity.substringAfter("override fun dispatchKeyEvent(").substringBefore("override fun dispatchTouchEvent(")
+        assertTrue(dispatch.indexOf("playerViewModel.cancelAutoReconnect()") < dispatch.indexOf("KeyEvent.KEYCODE_SEARCH"))
+        assertTrue(dispatch.contains("KeyEvent.KEYCODE_BACK && !playerViewModel.searchVisible.value"))
+        val model = File("src/main/kotlin/dev/firetvlite/iptv/ui/viewmodel/PlayerViewModel.kt").readText()
+        val search = model.substringAfter("fun openSearch() {").substringBefore("fun closeSearch()")
+        assertTrue(search.indexOf("cancelAutoReconnect()") < search.indexOf("mutableSearchVisible.value = true"))
+        assertFalse(search.contains("startLive("))
+        assertFalse(search.contains("playback.play("))
     }
 
     @Test fun guideLabelAndQuickMenuCopyArePolishResourcesWithNoMainMenu() {

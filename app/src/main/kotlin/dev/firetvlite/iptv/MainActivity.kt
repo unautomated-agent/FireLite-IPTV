@@ -2,6 +2,7 @@ package dev.firetvlite.iptv
 
 import android.os.Bundle
 import android.view.KeyEvent
+import android.view.MotionEvent
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
@@ -22,7 +23,12 @@ class MainActivity : ComponentActivity() {
     private val playerViewModel: PlayerViewModel by viewModels()
 
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
-        if (event.keyCode == KeyEvent.KEYCODE_BACK) {
+        if (event.action == KeyEvent.ACTION_DOWN) playerViewModel.cancelAutoReconnect()
+        if (event.keyCode == KeyEvent.KEYCODE_SEARCH) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) playerViewModel.openSearch()
+            return true
+        }
+        if (event.keyCode == KeyEvent.KEYCODE_BACK && !playerViewModel.searchVisible.value) {
             when (overlayBackAction(playerViewModel.mode.value, event.action == KeyEvent.ACTION_UP, event.isCanceled)) {
                 OverlayBackAction.Pass -> Unit
                 OverlayBackAction.Consume -> return true
@@ -37,6 +43,11 @@ class MainActivity : ComponentActivity() {
             }
         }
         return super.dispatchKeyEvent(event)
+    }
+
+    override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) playerViewModel.cancelAutoReconnect()
+        return super.dispatchTouchEvent(event)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

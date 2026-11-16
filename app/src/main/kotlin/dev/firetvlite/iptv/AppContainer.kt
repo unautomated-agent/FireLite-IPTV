@@ -7,6 +7,8 @@ import android.os.StrictMode
 import android.os.SystemClock
 import java.io.File
 import dev.firetvlite.iptv.data.ClockPreferences
+import dev.firetvlite.iptv.data.LoudnessPreferences
+import dev.firetvlite.iptv.playback.LoudnessLeveller
 import dev.firetvlite.iptv.data.db.FireLiteDatabase
 import dev.firetvlite.iptv.data.epg.EpgRepository
 import dev.firetvlite.iptv.data.epg.ForegroundRefresh
@@ -44,6 +46,8 @@ class AppContainer(application: Application, startedAt: Long = SystemClock.elaps
     val films by lazy { FilmRepository(database, OmdbPreferences(application), applicationScope, epg) }
     val clockPreferences by lazy { ClockPreferences(application) }
     val reminderPreferences by lazy { ReminderPreferences(application) }
+    internal val loudnessPreferences = LoudnessPreferences(application, applicationScope)
+    internal val loudness = LoudnessLeveller()
 
     val library = LibraryRepository(
         database = database,
@@ -61,7 +65,7 @@ class AppContainer(application: Application, startedAt: Long = SystemClock.elaps
     internal val stalls = StallHistory(File(application.filesDir, "playback-stalls.json"), applicationScope, startup::awaitReady)
     /** The one object that may open a stream. */
     val playback: PlaybackController = PlaybackController(application, applicationScope, deadChannels, stalls, errorReports,
-        startup::mark)
+        loudness = loudness, launchEvent = startup::mark)
 
     private fun reportUploadsAllowed(): Boolean = playback.reportUploadsAllowed
     internal val launchUpdate = LaunchUpdateCheck(applicationScope, playback.firstFrame, BuildConfig.VERSION_CODE.toLong(),
@@ -86,6 +90,7 @@ class AppContainer(application: Application, startedAt: Long = SystemClock.elaps
             }
             startup.backgroundReady()
         }
+        applicationScope.launch { loudnessPreferences.enabled.collect { loudness.setEnabled(it) } }
         application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
             private var started = 0
 

@@ -1,6 +1,7 @@
 package dev.firetvlite.iptv.playback
 
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
 import androidx.media3.common.TrackSelectionParameters
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
@@ -15,6 +16,7 @@ import java.util.concurrent.atomic.AtomicReference
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -33,6 +35,45 @@ import dev.firetvlite.iptv.LaunchPhase
 
 class PlaybackControllerTest {
     private val request = StreamRequest("https://example.org/live", "FireLite")
+
+    @Test fun audioOnlyColdLaunchCompletesOnceWhenAudioAdvancesAndKeepsLoudnessSessionHooks() = runBlocking {
+        val event = AnalyticsListener.EventTime(0, Timeline.EMPTY, 0, null, 0, Timeline.EMPTY, 0, null, 0, 0)
+        for (coldStart in listOf(false, true)) {
+            val fake = FakePlayer()
+            val phases = mutableListOf<LaunchPhase>()
+            val sessions = mutableListOf<Int>()
+            val loudness = LoudnessLeveller { session ->
+                sessions += session
+                object : LoudnessEffect {
+                    override fun enable() = Unit
+                    override fun release() = Unit
+                }
+            }
+            loudness.outputChanged(true)
+            val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+                evictConnections = {}, launchEvent = { phases += it }, loudness = loudness)
+            try {
+                controller.play(request.copy(coldStart = coldStart))
+                delay(450)
+                fake.analytics!!.onAudioSessionIdChanged(event, 42)
+                assertEquals(listOf(42), sessions)
+                assertEquals(LoudnessStatus.Active, loudness.status.value)
+                fake.state = Player.STATE_READY
+                fake.analytics!!.onAudioPositionAdvancing(event, 0)
+                assertEquals(0, phases.count { it == LaunchPhase.FirstFrame })
+                fake.audioFormat = Format.Builder().setSampleMimeType("audio/mp4a-latm").build()
+                fake.state = Player.STATE_BUFFERING
+                fake.analytics!!.onAudioPositionAdvancing(event, 0)
+                assertEquals(0, phases.count { it == LaunchPhase.FirstFrame })
+                fake.state = Player.STATE_READY
+                fake.analytics!!.onAudioPositionAdvancing(event, 0)
+                fake.analytics!!.onAudioPositionAdvancing(event, 0)
+                assertEquals(if (coldStart) 1 else 0, phases.count { it == LaunchPhase.FirstFrame })
+                assertTrue(controller.firstFrame.value)
+            } finally { controller.releasePlayer() }
+            assertEquals(LoudnessStatus.Waiting, loudness.status.value)
+        }
+    }
 
     @Test fun coldLaunchMarkersFollowTheNormalGraceAndNeverCountManualPlayback() = runBlocking {
         val fake = FakePlayer()
@@ -54,6 +95,228 @@ class PlaybackControllerTest {
             fake.listener!!.onRenderedFirstFrame()
             assertEquals(captured, phases)
         } finally { controller.stop() }
+    }
+
+    private class ReconnectFixture(scope: CoroutineScope, startupTimeout: Long = 10_000) {
+        val fake = FakePlayer()
+        val outcomes = mutableListOf<String>()
+        var now = 0L
+        val controller = PlaybackController(scope, { fake.player }, {}, { MediaItem.EMPTY },
+            evictConnections = { fake.calls += "evict" }, reconnectDelayMs = 30, monotonicMs = { now },
+            startupTimeoutMs = startupTimeout, reports = object : ReportSink {
+                override fun enqueue(kind: String, channel: String, summary: String, detail: String) {
+                    if (summary.startsWith("auto-reconnect:")) outcomes += summary
+                }
+            })
+        suspend fun prepared(count: Int) {
+            withTimeout(3000) { while (fake.calls.count { it == "prepare" } < count) delay(10) }
+        }
+        fun ready() {
+            fake.state = Player.STATE_READY
+            fake.listener!!.onPlaybackStateChanged(fake.state)
+        }
+        fun drop() = fake.listener!!.onPlayerError(TestError(2001))
+    }
+
+    @Test fun liveDropReconnectsOnceAndASecondDropWithin60SecondsShowsError() = runBlocking {
+        val fixture = ReconnectFixture(this)
+        val controller = fixture.controller
+        try {
+            controller.play(request)
+            fixture.prepared(1)
+            fixture.ready()
+            fixture.drop()
+            assertEquals(PlaybackStatus.Reconnecting, controller.status.value)
+            assertEquals(false, controller.reportUploadsAllowed)
+            fixture.prepared(2)
+            fixture.ready()
+            assertEquals(listOf("auto-reconnect: ok"), fixture.outcomes)
+            fixture.now = 59_999
+            fixture.drop()
+            assertTrue(controller.status.value is PlaybackStatus.Failed)
+            delay(500)
+            assertEquals(2, fixture.fake.calls.count { it == "prepare" })
+        } finally { controller.stop() }
+    }
+
+    @Test fun failedAutomaticAttemptNeverEntersStartupRecoveryRetries() = runBlocking {
+        val fixture = ReconnectFixture(this)
+        try {
+            fixture.controller.play(request)
+            fixture.prepared(1)
+            fixture.ready()
+            fixture.drop()
+            fixture.prepared(2)
+            fixture.drop()
+            assertTrue(fixture.controller.status.value is PlaybackStatus.Failed)
+            fixture.drop()
+            delay(500)
+            assertEquals(2, fixture.fake.calls.count { it == "prepare" })
+            assertEquals(listOf("auto-reconnect: failed"), fixture.outcomes)
+        } finally { fixture.controller.stop() }
+    }
+
+    @Test fun sixtySecondsOfGoodReconnectedPlayRearmsOneAttempt() = runBlocking {
+        val fixture = ReconnectFixture(this)
+        try {
+            fixture.controller.play(request)
+            fixture.prepared(1)
+            fixture.ready()
+            fixture.drop()
+            fixture.prepared(2)
+            fixture.ready()
+            fixture.now = 60_000
+            fixture.drop()
+            assertEquals(PlaybackStatus.Reconnecting, fixture.controller.status.value)
+            fixture.prepared(3)
+            fixture.ready()
+            assertEquals(listOf("auto-reconnect: ok", "auto-reconnect: ok"), fixture.outcomes)
+        } finally { fixture.controller.stop() }
+    }
+
+    @Test fun bufferingAndPausedTimeDoNotRearmTheReconnectBudget() = runBlocking {
+        val fixture = ReconnectFixture(this)
+        try {
+            fixture.controller.play(request)
+            fixture.prepared(1)
+            fixture.ready()
+            fixture.drop()
+            fixture.prepared(2)
+            fixture.ready()
+            fixture.now = 30_000
+            fixture.fake.state = Player.STATE_BUFFERING
+            fixture.fake.listener!!.onPlaybackStateChanged(fixture.fake.state)
+            fixture.now = 90_000
+            fixture.ready()
+            fixture.now = 120_000
+            fixture.fake.playing = false
+            fixture.fake.listener!!.onPlaybackStateChanged(Player.STATE_READY)
+            fixture.now = 180_000
+            fixture.fake.playing = true
+            fixture.ready()
+            fixture.drop()
+            assertTrue(fixture.controller.status.value is PlaybackStatus.Failed)
+            assertEquals(2, fixture.fake.calls.count { it == "prepare" })
+        } finally { fixture.controller.stop() }
+    }
+
+    @Test fun channelChangeDuringReconnectDelayCancelsTheOldAttempt() = runBlocking {
+        val fixture = ReconnectFixture(this)
+        try {
+            fixture.controller.play(request)
+            fixture.prepared(1)
+            fixture.ready()
+            fixture.drop()
+            fixture.controller.play(request.copy(url = "https://example.org/other"))
+            fixture.prepared(2)
+            delay(500)
+            assertEquals(2, fixture.fake.calls.count { it == "prepare" })
+            assertEquals(listOf("auto-reconnect: cancelled"), fixture.outcomes)
+        } finally { fixture.controller.stop() }
+    }
+
+    @Test fun navigationCancellationAlsoStopsAnAlreadyPreparedReconnect() = runBlocking {
+        val fixture = ReconnectFixture(this)
+        try {
+            fixture.controller.play(request)
+            fixture.prepared(1)
+            fixture.ready()
+            fixture.drop()
+            fixture.prepared(2)
+            assertTrue(fixture.controller.cancelAutoReconnect())
+            assertEquals(false, fixture.controller.cancelAutoReconnect())
+            fixture.ready()
+            fixture.drop()
+            delay(500)
+            assertEquals(2, fixture.fake.calls.count { it == "prepare" })
+            assertEquals(listOf("auto-reconnect: cancelled"), fixture.outcomes)
+            assertEquals(false, fixture.controller.hasActiveStream)
+        } finally { fixture.controller.stop() }
+    }
+
+    @Test fun reconnectCancellationOnBackgroundDoesNotResumeALateAttempt() = runBlocking {
+        val fixture = ReconnectFixture(this)
+        try {
+            fixture.controller.play(request)
+            fixture.prepared(1)
+            fixture.ready()
+            fixture.drop()
+            fixture.controller.suspendStream()
+            fixture.controller.resumeStream()
+            delay(500)
+            assertEquals(1, fixture.fake.calls.count { it == "prepare" })
+            assertEquals(listOf("auto-reconnect: cancelled"), fixture.outcomes)
+        } finally { fixture.controller.stop() }
+    }
+
+    @Test fun healthCheckCancelsPendingReconnectWithoutOpeningItLater() = runBlocking {
+        val fixture = ReconnectFixture(this)
+        try {
+            fixture.controller.play(request)
+            fixture.prepared(1)
+            fixture.ready()
+            fixture.drop()
+            fixture.controller.startHealthCheck("empty", 0) { null }
+            delay(500)
+            assertEquals(1, fixture.fake.calls.count { it == "prepare" })
+            assertEquals(listOf("auto-reconnect: cancelled"), fixture.outcomes)
+        } finally { fixture.controller.stop() }
+    }
+
+    @Test fun reconnectWaitsForDrainThenEvictionAndFullGraceBeforePreparing() = runBlocking {
+        val fixture = ReconnectFixture(this)
+        val controller = fixture.controller
+        val connections = PlaybackController::class.java.getDeclaredField("connections").let {
+            it.isAccessible = true
+            it.get(controller) as AtomicInteger
+        }
+        try {
+            controller.play(request)
+            fixture.prepared(1)
+            fixture.ready()
+            fixture.fake.calls.clear()
+            connections.set(1)
+            fixture.drop()
+            delay(100)
+            assertEquals(1, fixture.fake.calls.count { it == "stop" })
+            assertEquals(0, fixture.fake.calls.count { it == "evict" || it == "prepare" })
+            connections.set(0)
+            withTimeout(1000) { while (!fixture.fake.calls.contains("evict")) delay(10) }
+            delay(300)
+            assertEquals(0, fixture.fake.calls.count { it == "prepare" })
+            fixture.prepared(1)
+            assertTrue(fixture.fake.calls.indexOf("stop") < fixture.fake.calls.indexOf("evict"))
+            assertTrue(fixture.fake.calls.indexOf("evict") < fixture.fake.calls.indexOf("prepare"))
+        } finally { connections.set(0); controller.stop() }
+    }
+
+    @Test fun startupAndArchiveErrorsDoNotEnterLiveReconnect() = runBlocking {
+        for (archive in listOf(false, true)) {
+            val fixture = ReconnectFixture(this)
+            try {
+                fixture.controller.play(request.copy(archive = archive))
+                fixture.prepared(1)
+                if (archive) fixture.ready()
+                fixture.drop()
+                assertEquals(PlaybackStatus.Connecting, fixture.controller.status.value)
+                assertTrue(fixture.outcomes.isEmpty())
+                assertEquals(1, fixture.fake.calls.count { it == "prepare" })
+            } finally { fixture.controller.stop() }
+        }
+    }
+
+    @Test fun automaticAttemptTimesOutToNormalErrorWithoutAnotherRetry() = runBlocking {
+        val fixture = ReconnectFixture(this, startupTimeout = 600)
+        try {
+            fixture.controller.play(request)
+            fixture.prepared(1)
+            fixture.ready()
+            fixture.drop()
+            fixture.prepared(2)
+            withTimeout(2000) { while (fixture.controller.status.value !is PlaybackStatus.Failed) delay(10) }
+            assertEquals(listOf("auto-reconnect: failed"), fixture.outcomes)
+            assertEquals(2, fixture.fake.calls.count { it == "prepare" })
+        } finally { fixture.controller.stop() }
     }
 
     @Test fun playbackReportChannelRedactsStandaloneStreamSecretsAndUnsafeText() = runBlocking {
@@ -726,14 +989,14 @@ class PlaybackControllerTest {
         controller.stop()
     }
 
-    @Test fun successfulProgressivePlaybackRetriesItsSourceInTheSameSessionAfterTransientErrors() = runBlocking {
+    @Test fun successfulProgressivePlaybackGetsOneFreshSessionReconnectAfterADrop() = runBlocking {
         val fake = FakePlayer()
         val trace = mutableListOf<String>()
         val hlsUrls = mutableListOf<String>()
         val progressiveUrls = mutableListOf<String>()
         var sources = 0
         val controller = PlaybackController(this, { fake.player }, { trace += it }, { hlsUrls += it; MediaItem.EMPTY },
-            setStream = { _, _, _ -> sources++ }, progressiveItem = { progressiveUrls += it; MediaItem.EMPTY })
+            setStream = { _, _, _ -> sources++ }, progressiveItem = { progressiveUrls += it; MediaItem.EMPTY }, reconnectDelayMs = 30)
         val hls = request.copy(url = "https://example.org/live.m3u8")
         controller.play(hls)
         delay(450)
@@ -754,25 +1017,26 @@ class PlaybackControllerTest {
         delay(1600)
         assertEquals(0, fake.calls.count { it == "prepare" })
         connections.decrementAndGet()
-        delay(50)
+        withTimeout(2000) { while (fake.calls.count { it == "prepare" } == 0) delay(10) }
         assertEquals(1, fake.calls.count { it == "prepare" })
         fake.listener!!.onPlayerError(TestError(3002))
-        delay(3100)
-        assertEquals(2, trace.count { it == "RECOVER session=1 action=Retry" })
+        delay(500)
+        assertTrue(controller.status.value is PlaybackStatus.Failed)
+        assertEquals(0, trace.count { it == "RECOVER session=1 action=Retry" })
         assertEquals(0, trace.count { it.endsWith("action=RestoreHls") })
-        assertEquals(2, sources)
-        assertEquals(listOf(hls.url), hlsUrls)
+        assertEquals(3, sources)
+        assertEquals(listOf(hls.url, hls.url), hlsUrls)
         assertEquals(listOf(hls.url), progressiveUrls)
         controller.stop()
     }
 
-    @Test fun segmentErrorsAfterReadyKeepTheHlsSourceEvenAfterBufferingAgain() = runBlocking {
+    @Test fun segmentErrorsAfterReadyReconnectHlsWithoutProgressiveFallback() = runBlocking {
         val fake = FakePlayer()
         val trace = mutableListOf<String>()
         var progressive = 0
         var sources = 0
         val controller = PlaybackController(this, { fake.player }, { trace += it }, { MediaItem.EMPTY },
-            setStream = { _, _, _ -> sources++ }, progressiveItem = { progressive++; MediaItem.EMPTY })
+            setStream = { _, _, _ -> sources++ }, progressiveItem = { progressive++; MediaItem.EMPTY }, reconnectDelayMs = 30)
         controller.play(request.copy(url = "https://example.org/live.m3u8"))
         delay(450)
         fake.state = Player.STATE_READY
@@ -780,10 +1044,10 @@ class PlaybackControllerTest {
         fake.state = Player.STATE_BUFFERING
         fake.listener!!.onPlaybackStateChanged(fake.state)
         fake.listener!!.onPlayerError(TestError(3001))
-        delay(1600)
+        delay(500)
         assertEquals(0, progressive)
-        assertEquals(1, sources)
-        assertEquals(1, trace.count { it == "RECOVER session=1 action=Retry" })
+        assertEquals(2, sources)
+        assertEquals(1, trace.count { it.startsWith("PREPARE session=2") })
         controller.stop()
     }
 
@@ -1264,10 +1528,12 @@ class PlaybackControllerTest {
         val calls = mutableListOf<String>()
         var parameters = TrackSelectionParameters.DEFAULT_WITHOUT_CONTEXT
         var listener: Player.Listener? = null
+        var analytics: AnalyticsListener? = null
         var state = Player.STATE_IDLE
         var prepareFailure: Throwable? = null
         var tracks: Tracks = Tracks.EMPTY
         var videoFormat: Format? = null
+        var audioFormat: Format? = null
         var position = 0L
         var seekPosition = 0L
         var playing = true
@@ -1282,9 +1548,11 @@ class PlaybackControllerTest {
                 "getTrackSelectionParameters" -> parameters
                 "setTrackSelectionParameters" -> { parameters = args!![0] as TrackSelectionParameters; null }
                 "addListener" -> { listener = args!![0] as Player.Listener; null }
+                "addAnalyticsListener" -> { analytics = args!![0] as AnalyticsListener; null }
                 "getPlaybackState" -> state
                 "getCurrentTracks" -> tracks
                 "getVideoFormat" -> videoFormat
+                "getAudioFormat" -> audioFormat
                 "getBufferedPosition" -> 2500L
                 "getCurrentPosition" -> position
                 "getCurrentTimeline" -> Timeline.EMPTY

@@ -70,6 +70,9 @@ internal fun reportScrollTarget(position: Int, maximum: Int, down: Boolean, step
     if (down && position >= maximum) null
     else (position + if (down) step else -step).coerceIn(0, maximum)
 
+internal fun settingsEntrySection(saved: String, openUpdates: Boolean): SettingsSection =
+    if (openUpdates) SettingsSection.Updates else SettingsSection.restored(saved)
+
 internal fun settingsLastError(report: String): String? =
     listOf("Ostatni błąd odtwarzania:", "Ostatni raport błędu:").firstNotNullOfOrNull { heading ->
         val lines = report.substringAfter("$heading\n", "").substringBefore("\n---\n")

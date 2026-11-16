@@ -11,6 +11,14 @@ import org.junit.rules.TemporaryFolder
 class SettingsNavigationTest {
     @get:Rule val folder = TemporaryFolder()
 
+    @Test fun updateActionOpensUpdatesRegardlessOfSavedSectionWhileNormalEntryRestores() {
+        SettingsSection.entries.forEach {
+            assertEquals(SettingsSection.Updates, settingsEntrySection(it.name, true))
+            assertEquals(it, settingsEntrySection(it.name, false))
+        }
+        assertEquals(SettingsSection.Sources, settingsEntrySection("unknown", false))
+    }
+
     @Test fun conciseErrorSkipsRealCrashMetadataAndPreservesPlaybackErrorPriority() {
         val store = CrashReportStore(File(folder.root, "crash.txt"))
         store.handler("test-version", null).uncaughtException(Thread.currentThread(), IllegalStateException("fixture failure"))

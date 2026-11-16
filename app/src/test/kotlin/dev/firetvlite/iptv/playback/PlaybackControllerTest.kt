@@ -32,6 +32,34 @@ import org.junit.Test
 class PlaybackControllerTest {
     private val request = StreamRequest("https://example.org/live", "FireLite")
 
+    @Test fun midPlaybackStallsOnlyObserveAfterRenderAndCancelOnSwitch(): Unit = runBlocking {
+        val fake = FakePlayer()
+        val stalls = mutableListOf<PlaybackStall>()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            evictConnections = {}, recordStall = { stalls += it }, startupTimeoutMs = 60_000)
+        try {
+            controller.play(request)
+            delay(450)
+            fake.state = Player.STATE_READY
+            fake.listener!!.onIsPlayingChanged(true)
+            assertEquals(false, controller.firstFrame.value)
+            delay(3_600)
+            assertTrue(stalls.isEmpty())
+            fake.listener!!.onRenderedFirstFrame()
+            assertEquals(true, controller.firstFrame.value)
+            fake.state = Player.STATE_BUFFERING
+            fake.listener!!.onPlaybackStateChanged(fake.state)
+            withTimeout(5_000) { while (stalls.isEmpty()) delay(50) }
+            assertEquals(1, fake.calls.count { it == "prepare" })
+            assertEquals(1, fake.calls.count { it == "stop" })
+            controller.play(request.copy(url = "https://example.org/other"))
+            val count = stalls.size
+            delay(3_600)
+            assertEquals(count, stalls.size)
+            assertEquals(2, fake.calls.count { it == "prepare" })
+        } finally { controller.stop() }
+    }
+
     @Test fun selectedPlaybackCanRestartAfterRunningOrCompletedHealthChecks(): Unit = runBlocking {
         for (complete in listOf(false, true)) {
             val fake = FakePlayer()

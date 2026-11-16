@@ -171,16 +171,40 @@ class StreamNavigationTest {
         assertFalse(File("src/main/kotlin/dev/firetvlite/iptv/ui/navigation/AppNavigationRail.kt").exists())
     }
 
-    @Test fun fullscreenReturnRestartsTheSelectedChannelOnlyWhenItsStreamIsAbsent() {
+    @Test fun fullscreenReturnRestartsAnAbsentStreamUnlessReconnectWasCancelled() {
         val model = File("src/main/kotlin/dev/firetvlite/iptv/ui/viewmodel/PlayerViewModel.kt").readText()
         val body = model.substringAfter("fun returnToFullscreen()").substringBefore("fun openGuide(")
         assertTrue(body.contains("val channel = activeChannel"))
-        assertTrue(body.contains("if (channel != null && !playback.hasActiveStream) {"))
+        assertTrue(body.contains("if (channel != null && !playback.hasActiveStream && !reconnectCancelled) {"))
         assertTrue(body.contains("if (start == null) startLive(channel) else applyCatchup(channel, start)"))
         assertTrue(body.indexOf("!playback.hasActiveStream") < body.indexOf("startLive(channel)"))
         assertTrue(body.indexOf("startLive(channel)") < body.indexOf("setMode("))
         assertFalse(body.contains("playback.stop("))
         assertFalse(body.contains("prepare("))
+    }
+
+    @Test fun remoteCancellationRunsBeforeBackRoutingAndNavigationAlsoCancels() {
+        val activity = File("src/main/kotlin/dev/firetvlite/iptv/MainActivity.kt").readText()
+        val dispatch = activity.substringAfter("override fun dispatchKeyEvent(").substringBefore("override fun dispatchTouchEvent(")
+        assertTrue(dispatch.indexOf("playerViewModel.cancelAutoReconnect()") < dispatch.indexOf("overlayBackAction("))
+        assertTrue(dispatch.contains("event.action == KeyEvent.ACTION_DOWN"))
+        val model = File("src/main/kotlin/dev/firetvlite/iptv/ui/viewmodel/PlayerViewModel.kt").readText()
+        val cancel = model.substringAfter("fun cancelAutoReconnect()").substringBefore("private val mutableBrowserTarget")
+        assertTrue(cancel.contains("if (playback.cancelAutoReconnect()) reconnectCancelled = true"))
+        val mode = model.substringAfter("private fun setMode(").substringBefore("fun cancelStartupResume(")
+        assertTrue(mode.contains("cancelAutoReconnect()"))
+    }
+
+    @Test fun openingSearchCancelsReconnectBeforeSearchKeyRoutingWithoutStartingPlayback() {
+        val activity = File("src/main/kotlin/dev/firetvlite/iptv/MainActivity.kt").readText()
+        val dispatch = activity.substringAfter("override fun dispatchKeyEvent(").substringBefore("override fun dispatchTouchEvent(")
+        assertTrue(dispatch.indexOf("playerViewModel.cancelAutoReconnect()") < dispatch.indexOf("KeyEvent.KEYCODE_SEARCH"))
+        assertTrue(dispatch.contains("KeyEvent.KEYCODE_BACK && !playerViewModel.searchVisible.value"))
+        val model = File("src/main/kotlin/dev/firetvlite/iptv/ui/viewmodel/PlayerViewModel.kt").readText()
+        val search = model.substringAfter("fun openSearch() {").substringBefore("fun closeSearch()")
+        assertTrue(search.indexOf("cancelAutoReconnect()") < search.indexOf("mutableSearchVisible.value = true"))
+        assertFalse(search.contains("startLive("))
+        assertFalse(search.contains("playback.play("))
     }
 
     @Test fun guideLabelAndQuickMenuCopyArePolishResourcesWithNoMainMenu() {

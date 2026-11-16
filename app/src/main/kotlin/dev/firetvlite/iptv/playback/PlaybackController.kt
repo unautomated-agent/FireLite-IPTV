@@ -65,6 +65,7 @@ data class StreamRequest(
 sealed interface PlaybackStatus {
     data object Idle : PlaybackStatus
     data object Connecting : PlaybackStatus
+    data object Reconnecting : PlaybackStatus
     data object Buffering : PlaybackStatus
     data object Playing : PlaybackStatus
     data object Paused : PlaybackStatus
@@ -124,6 +125,8 @@ class PlaybackController internal constructor(
         ChannelHealthProbe().check(request, call, active)
     },
     private val reports: ReportSink = ReportSink.None,
+    private val reconnectDelayMs: Long = 2_000L,
+    private val monotonicMs: () -> Long = { System.nanoTime() / 1_000_000 },
     private val loudness: LoudnessLeveller? = null,
 ) {
     internal constructor(scope: CoroutineScope, createPlayer: (HttpDataSource.Factory) -> ExoPlayer) :
@@ -163,7 +166,7 @@ class PlaybackController internal constructor(
     @Volatile private var reportSteadyAfter = Long.MAX_VALUE
     internal val reportUploadsAllowed: Boolean
         get() = !reportSwitching && when (status.value) {
-            PlaybackStatus.Connecting, PlaybackStatus.Buffering -> false
+            PlaybackStatus.Connecting, PlaybackStatus.Reconnecting, PlaybackStatus.Buffering -> false
             PlaybackStatus.Playing, PlaybackStatus.Paused -> rendered && System.nanoTime() >= reportSteadyAfter
             else -> true
         }
@@ -194,6 +197,12 @@ class PlaybackController internal constructor(
     private var startupTimedOut = false
     private var recovery = PlaybackRecovery()
     private var activeRequest: StreamRequest? = null
+    private data class ReconnectAttempt(val request: StreamRequest, val error: PlaybackException)
+    private var reconnectAttempt: ReconnectAttempt? = null
+    private var reconnectUsed = false
+    private var reachedReady = false
+    private var preparedCurrent = false
+    private var stableSince: Long? = null
     internal val hasActiveStream: Boolean get() = activeRequest != null
     private var suspendedRequest: StreamRequest? = null
     private var preview = false
@@ -497,6 +506,7 @@ class PlaybackController internal constructor(
         if (!rendered) activeRequest?.let { channelResult(it, null) }
         if (!rendered) watchStalls()
         rendered = true
+        livePlaying()
         startupTimedOut = false
         lastHttpFailure = null
         startupError = null
@@ -597,12 +607,12 @@ class PlaybackController internal constructor(
         mutableProviderWaiting.value = false
     }
 
-    private fun watchStartup(request: StreamRequest) {
+    private fun watchStartup(request: StreamRequest, extraMs: Long = 0) {
         clearStartupWatch()
         val timing = StartupTiming()
         startupTiming = timing
         startupTimedOut = false
-        val since = System.nanoTime()
+        val since = System.nanoTime() + extraMs * 1_000_000
         startupJob = scope.launch(start = CoroutineStart.UNDISPATCHED) {
             var reported = false
             while (activeRequest === request) {
@@ -632,6 +642,13 @@ class PlaybackController internal constructor(
                         "Source: $sourceType",
                     ) + listOfNotNull(hlsSession.providerTimeout())))
                     mutableStartupDelayed.value = true
+                    val attempt = reconnectAttempt
+                    if (attempt != null) {
+                        finishReconnect("failed")
+                        stop()
+                        mutableStatus.value = failed(attempt.error)
+                        return@launch
+                    }
                 }
                 delay(if (reported) 250 else minOf(250, (deadline - elapsed).coerceAtLeast(1)))
             }
@@ -657,6 +674,7 @@ class PlaybackController internal constructor(
     }
 
     fun selectAudioTrack(choice: AudioTrackChoice): Boolean {
+        cancelAutoReconnect()
         val player = exo ?: return false
         val group = player.currentTracks.groups.getOrNull(choice.group) ?: return false
         if (!AudioTrackSelection.valid(group.type == C.TRACK_TYPE_AUDIO, group.length, choice.index,
@@ -668,6 +686,7 @@ class PlaybackController internal constructor(
     }
 
     fun playArchiveFromStart(request: StreamRequest) {
+        cancelAutoReconnect()
         val player = exo
         val current = activeRequest
         val sameStream = request.archive && current?.archive == true && request.url == current.url &&
@@ -683,7 +702,16 @@ class PlaybackController internal constructor(
 
     /** Plays [request]. A request for the stream that is already active does nothing. */
     fun play(request: StreamRequest) {
+        cancelAutoReconnect()
+        playInternal(request)
+    }
+
+    private fun playInternal(request: StreamRequest, automatic: Boolean = false) {
         if (gate.onRequest(request.url) == StreamGate.Action.Ignore) return
+        if (!automatic) reconnectUsed = false
+        reachedReady = false
+        preparedCurrent = false
+        stableSince = null
         reportSwitching = true
         stopHealthCheck()
         val previousCheck = healthJob
@@ -716,7 +744,7 @@ class PlaybackController internal constructor(
         lastHttpFailure = null
         startupError = null
         hlsSession = HlsSession(request.archive)
-        watchStartup(request)
+        watchStartup(request, if (automatic) reconnectDelayMs else 0)
 
         val player = prepareSafely { ensurePlayer() } ?: return
         player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
@@ -729,7 +757,7 @@ class PlaybackController internal constructor(
         val session = connectionGate.nextSession()
         activeSession = session
         trace("STOP before switch")
-        mutableStatus.value = PlaybackStatus.Connecting
+        mutableStatus.value = if (automatic) PlaybackStatus.Reconnecting else PlaybackStatus.Connecting
         reportSwitching = false
 
         startupTiming?.enter(StartupTiming.Phase.WAITING_PREVIOUS_CONNECTION)
@@ -746,11 +774,14 @@ class PlaybackController internal constructor(
             hlsSession.evicted()
             startupTiming?.enter(StartupTiming.Phase.CLOSE_GRACE)
             delay(CLOSE_GRACE_MS)
+            if (automatic) delay(reconnectDelayMs)
+            if (activeRequest !== request || activeSession != session) return@launch
             startupTiming?.enter(StartupTiming.Phase.PREPARING_BUFFERING)
             trace("PREPARE session=$session player=${System.identityHashCode(player)} stream=${request.url.hashCode()}")
             prepareSafely {
                 setStream(player, mediaItem(request.url), trackedFactory(session))
                 player.playWhenReady = true
+                preparedCurrent = true
                 player.prepare()
             }
         }
@@ -769,6 +800,7 @@ class PlaybackController internal constructor(
     }
 
     private fun failPreparation(cause: Throwable) {
+        finishReconnect("failed")
         markStartupFailure("ERROR_CODE_FAILED_RUNTIME_CHECK")
         clearProgressWatch()
         clearStartupWatch()
@@ -783,6 +815,10 @@ class PlaybackController internal constructor(
 
     /** Closes the stream for good. */
     fun stop() {
+        finishReconnect("cancelled")
+        stableSince = null
+        reachedReady = false
+        preparedCurrent = false
         reportSwitching = false
         stopHealthCheck()
         clearProgressWatch()
@@ -805,6 +841,7 @@ class PlaybackController internal constructor(
     }
 
     fun setPreview(enabled: Boolean) {
+        cancelAutoReconnect()
         if (preview == enabled) return
         preview = enabled
         exo?.let(::applyQuality)
@@ -888,7 +925,7 @@ class PlaybackController internal constructor(
 
     /** Called when the app goes to the background: closes the stream but remembers it. */
     fun suspendStream() {
-        val request = activeRequest ?: suspendedRequest
+        val request = if (reconnectAttempt != null) null else activeRequest ?: suspendedRequest
         stop()
         suspendedRequest = request
     }
@@ -916,19 +953,23 @@ class PlaybackController internal constructor(
     }
 
     fun togglePause() {
+        cancelAutoReconnect()
         val player = exo ?: return
         if (player.playWhenReady) player.pause() else player.play()
     }
 
     fun pause() {
+        cancelAutoReconnect()
         exo?.pause()
     }
 
     fun resume() {
+        cancelAutoReconnect()
         exo?.play()
     }
 
     fun seekTo(positionMs: Long): Boolean {
+        cancelAutoReconnect()
         val player = exo ?: return false
         if (!player.isCurrentMediaItemSeekable) return false
         val duration = player.duration.takeIf { it != C.TIME_UNSET && it > 0 }
@@ -974,28 +1015,54 @@ class PlaybackController internal constructor(
         if (activeRequest == null) return
         when (player.playbackState) {
             Player.STATE_BUFFERING -> {
-                mutableStatus.value = PlaybackStatus.Buffering
+                endStablePlayback()
+                mutableStatus.value = if (reconnectAttempt != null) PlaybackStatus.Reconnecting else PlaybackStatus.Buffering
                 if (rendered && progressJob == null) watchProgress("REBUFFER_TIMEOUT")
             }
             Player.STATE_READY -> {
+                if (player.playWhenReady) livePlaying() else endStablePlayback()
                 recovery.onReady()
                 if (mutableStatus.value != PlaybackStatus.Playing && player.playWhenReady)
                     reportSteadyAfter = System.nanoTime() + 3_000_000_000L
                 mutableStatus.value =
                     if (player.playWhenReady) PlaybackStatus.Playing else PlaybackStatus.Paused
             }
-            Player.STATE_ENDED -> mutableStatus.value = PlaybackStatus.Ended
+            Player.STATE_ENDED -> {
+                endStablePlayback()
+                val attempt = reconnectAttempt
+                if (attempt != null) {
+                    finishReconnect("failed")
+                    stop()
+                    mutableStatus.value = failed(attempt.error)
+                } else mutableStatus.value = PlaybackStatus.Ended
+            }
             else -> Unit // IDLE: keep Connecting or Failed
         }
     }
 
     private fun handleError(error: PlaybackException) {
         if (activeRequest == null) return
+        val request = activeRequest!!
+        val wasReady = reachedReady
+        endStablePlayback()
         reportSwitching = true
         markStartupFailure(PlaybackHttpError.status(error)?.let { "HTTP $it" } ?: error.errorCodeName)
         clearProgressWatch()
         startupError = error
         saveDiagnostic(true, diagnostic(error, details = startupDetails()))
+        if (reconnectAttempt != null || wasReady && !request.archive) {
+            if (reconnectAttempt == null && !reconnectUsed && !request.archive && !mutableHealthCheck.value.running) {
+                reconnectUsed = true
+                reconnectAttempt = ReconnectAttempt(request, error)
+                gate.onStopped()
+                playInternal(request.copy(userInitiated = false), automatic = true)
+            } else {
+                finishReconnect("failed")
+                stop()
+                mutableStatus.value = failed(error)
+            }
+            return
+        }
         if (retries < MAX_RETRIES) {
             retries++
             val request = activeRequest ?: return
@@ -1046,6 +1113,35 @@ class PlaybackController internal constructor(
         if (rendered || startupFailureMarked || !startupUserInitiated) return
         startupFailureMarked = true
         channelResult(request.copy(userInitiated = startupUserInitiated), reason)
+    }
+
+    private fun livePlaying() {
+        val player = exo ?: return
+        if (activeRequest == null || !preparedCurrent || !player.playWhenReady || player.playbackState != Player.STATE_READY) return
+        reachedReady = true
+        if (stableSince == null) stableSince = monotonicMs()
+        finishReconnect("ok")
+    }
+
+    private fun endStablePlayback() {
+        stableSince?.let { if (monotonicMs() - it >= 60_000) reconnectUsed = false }
+        stableSince = null
+    }
+
+    private fun finishReconnect(outcome: String) {
+        val attempt = reconnectAttempt ?: return
+        reconnectAttempt = null
+        runCatching {
+            reports.enqueue("other", ReportText.safe(attempt.request.channelName, 120,
+                DiagnosticRedactor.secrets(listOf(attempt.request.url))), "auto-reconnect: $outcome", "")
+        }
+    }
+
+    fun cancelAutoReconnect(): Boolean {
+        val attempt = reconnectAttempt ?: return false
+        stop()
+        mutableStatus.value = failed(attempt.error)
+        return true
     }
 
     private companion object {

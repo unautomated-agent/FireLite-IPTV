@@ -7,7 +7,7 @@ import org.junit.Test
 class ScreenAwakePolicyTest {
     @Test fun visiblePlayingConnectingAndBufferingModesKeepTheScreenAwake() {
         for (mode in listOf(PlayerMode.Preview, PlayerMode.Fullscreen, PlayerMode.Overlay)) {
-            for (status in listOf(PlaybackStatus.Playing, PlaybackStatus.Buffering, PlaybackStatus.Connecting)) {
+            for (status in listOf(PlaybackStatus.Playing, PlaybackStatus.Buffering, PlaybackStatus.Connecting, PlaybackStatus.Reconnecting)) {
                 assertTrue(ScreenAwakePolicy.keepAwake(mode, status, true))
                 assertFalse(ScreenAwakePolicy.keepAwake(mode, status, false))
             }

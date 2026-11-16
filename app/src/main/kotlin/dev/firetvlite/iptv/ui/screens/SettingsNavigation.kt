@@ -72,6 +72,9 @@ internal fun reportScrollTarget(position: Int, maximum: Int, down: Boolean, step
 
 internal fun settingsLastError(report: String): String? =
     listOf("Ostatni błąd odtwarzania:", "Ostatni raport błędu:").firstNotNullOfOrNull { heading ->
-        report.substringAfter("$heading\n", "").lineSequence().firstOrNull { it.isNotBlank() }
-            ?.takeUnless { it == "Brak" }
+        val lines = report.substringAfter("$heading\n", "").substringBefore("\n---\n")
+            .lineSequence().filter { it.isNotBlank() }
+        val exception = if (heading == "Ostatni raport błędu:")
+            lines.firstOrNull { it.startsWith("Uncaught crash:") } else null
+        (exception ?: lines.firstOrNull())?.takeUnless { it == "Brak" }
     }

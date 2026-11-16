@@ -1,10 +1,25 @@
 package dev.firetvlite.iptv.ui.screens
 
 import androidx.compose.ui.focus.FocusRequester
+import dev.firetvlite.iptv.CrashReportStore
+import java.io.File
 import org.junit.Assert.*
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.TemporaryFolder
 
 class SettingsNavigationTest {
+    @get:Rule val folder = TemporaryFolder()
+
+    @Test fun conciseErrorSkipsRealCrashMetadataAndPreservesPlaybackErrorPriority() {
+        val store = CrashReportStore(File(folder.root, "crash.txt"))
+        store.handler("test-version", null).uncaughtException(Thread.currentThread(), IllegalStateException("fixture failure"))
+        val crash = "Ostatni raport błędu:\n${store.read()}"
+        assertEquals("Uncaught crash: java.lang.IllegalStateException: fixture failure",
+            settingsLastError("Ostatni błąd odtwarzania:\nBrak\n$crash"))
+        assertEquals("HTTP 404", settingsLastError("Ostatni błąd odtwarzania:\nHTTP 404\n$crash"))
+    }
+
     @Test fun sectionStateDefaultsSafelyAndRestoresEverySection() {
         assertEquals(SettingsSection.Sources, SettingsSection.restored(""))
         assertEquals(SettingsSection.Sources, SettingsSection.restored("obsolete"))
@@ -46,5 +61,7 @@ class SettingsNavigationTest {
         assertNull(settingsLastError("Ostatni błąd odtwarzania:\nBrak\nOstatni raport błędu:\nBrak"))
         assertEquals("HTTP 404", settingsLastError("Ostatni błąd odtwarzania:\nHTTP 404\nDetails\nOstatni raport błędu:\nCrash"))
         assertEquals("Uncaught crash: failure", settingsLastError("Ostatni błąd odtwarzania:\nBrak\nOstatni raport błędu:\nUncaught crash: failure\nStack"))
+        assertEquals("Main-thread stall: 3500ms", settingsLastError(
+            "Ostatni raport błędu:\nMain-thread stall: 3500ms\nStack\n---\nFireLite old\nUncaught crash: older failure"))
     }
 }

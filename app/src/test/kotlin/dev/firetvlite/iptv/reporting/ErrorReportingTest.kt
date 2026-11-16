@@ -1,7 +1,6 @@
 package dev.firetvlite.iptv.reporting
 
 import com.google.gson.JsonParser
-import dev.firetvlite.iptv.BuildConfig
 import dev.firetvlite.iptv.CrashReportStore
 import dev.firetvlite.iptv.ProcessExitRecord
 import java.io.File
@@ -75,7 +74,7 @@ class ErrorReportingTest {
         assertEquals(Instant.ofEpochMilli(3000).toString(), recovered.pending(1).single().occurredAt)
         assertEquals(1, recovered.count())
     }
-    private fun report(index: Int = 0, now: Long = 1_000_000) = ReportText.create("other", "Channel $index", "failure $index", "detail", now)
+    private fun report(index: Int = 0, now: Long = 1_000_000) = ReportText.create("other", "Channel $index", "failure $index", "detail", now, build = 101)
 
     @Test fun queueCapsAt500DropsOldestAndDedupesEvenAfterSuccessfulRemoval() {
         val queue = MemoryReportDao()
@@ -101,7 +100,7 @@ class ErrorReportingTest {
         val input = "https://alice:secretpw@provider.test/live/alice/secretpw/123456789?token=privatetoken " +
             "token=privatetoken Authorization: Bearer very-private-bearer\n9876543210\nCookie: session=private-cookie\nBasic private-basic"
         val entry = ReportText.create("unexpected", input, input, input + "\n" + "🌍\"\\".repeat(16_000))
-        val body = ReportBatch.json("install123", 101, listOf(entry))
+        val body = ReportBatch.json("install123", listOf(entry))
         listOf("https://", "/live/", "alice", "secretpw", "privatetoken", "very-private-bearer", "private-cookie", "private-basic", "9876543210", "123456789").forEach {
             assertFalse(it, body.contains(it))
         }
@@ -115,12 +114,12 @@ class ErrorReportingTest {
 
     @Test fun batchesAreBoundedByCountAndEncodedByteSize() {
         val entries = (0..100).map { report(it).copy(detail = "\\\"🌍".repeat(2000)) }
-        val short = ReportBatch.next("install123", 101, (0..100).map { report(it) })
+        val short = ReportBatch.next("install123", (0..100).map { report(it) })
         assertEquals(50, short.size)
-        val batch = ReportBatch.next("install123", 101, entries)
+        val batch = ReportBatch.next("install123", entries)
         assertTrue(batch.isNotEmpty() && batch.size < 50)
-        assertTrue(ReportBatch.json("install123", 101, batch).toByteArray().size < 60_000)
-        assertEquals(emptyList<QueuedReport>(), ReportBatch.next("install123", 101, emptyList()))
+        assertTrue(ReportBatch.json("install123", batch).toByteArray().size < 60_000)
+        assertEquals(emptyList<QueuedReport>(), ReportBatch.next("install123", emptyList()))
     }
 
     @Test fun successDeletesOnlySentBatchAndSendsContractHeaderAndFields() = runBlocking {
@@ -128,7 +127,7 @@ class ErrorReportingTest {
             server.enqueue(MockResponse().setResponseCode(200).setBody("{\"ok\":true}"))
             val queue = MemoryReportDao().apply { repeat(51) { enqueue(report(it)) } }
             val prefs = MemoryPreferences()
-            val uploader = ReportUploader(queue, prefs, 101, { true }, endpoint = server.url("/v1/reports").toString())
+            val uploader = ReportUploader(queue, prefs, { true }, endpoint = server.url("/v1/reports").toString())
             uploader.upload()
             assertEquals(1, queue.count())
             assertTrue(prefs.lastSent > 0)
@@ -150,7 +149,7 @@ class ErrorReportingTest {
             server.enqueue(MockResponse().setResponseCode(200))
             server.enqueue(MockResponse().setResponseCode(code))
             val queue = MemoryReportDao().apply { repeat(4) { enqueue(report(it)) } }
-            val uploader = ReportUploader(queue, MemoryPreferences(), 101, { true }, endpoint = server.url("/").toString())
+            val uploader = ReportUploader(queue, MemoryPreferences(), { true }, endpoint = server.url("/").toString())
             assertEquals(0L, uploader.upload().retryIn)
             assertEquals(0, queue.count())
             assertEquals(listOf(4, 2, 2), (1..3).map {
@@ -163,7 +162,7 @@ class ErrorReportingTest {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setResponseCode(400))
             val queue = MemoryReportDao().apply { enqueue(report()) }
-            ReportUploader(queue, MemoryPreferences(), 101, { true }, endpoint = server.url("/").toString()).upload()
+            ReportUploader(queue, MemoryPreferences(), { true }, endpoint = server.url("/").toString()).upload()
             assertEquals(0, queue.count())
             assertEquals(1, server.requestCount)
         }
@@ -176,7 +175,7 @@ class ErrorReportingTest {
             val queue = MemoryReportDao().apply { enqueue(report()) }
             val id = queue.pending(1).single().id
             var now = 1_000_000L
-            val uploader = ReportUploader(queue, MemoryPreferences(), 101, { true }, endpoint = server.url("/").toString(), clock = { now })
+            val uploader = ReportUploader(queue, MemoryPreferences(), { true }, endpoint = server.url("/").toString(), clock = { now })
             val first = uploader.upload()
             assertEquals(60_000L, first.retryIn)
             assertEquals(60_000L, uploader.upload().retryIn)
@@ -196,7 +195,7 @@ class ErrorReportingTest {
             var allowed = false
             val prefs = MemoryPreferences()
             var status = ReportingStatus()
-            val uploader = ReportUploader(queue, prefs, 101, { allowed }, { status = it }, server.url("/").toString())
+            val uploader = ReportUploader(queue, prefs, { allowed }, { status = it }, server.url("/").toString())
             assertTrue(uploader.upload().blocked)
             assertTrue(status.blocked)
             assertTrue(uploader.upload(manual = true).blocked)
@@ -213,7 +212,7 @@ class ErrorReportingTest {
 
     @Test fun crashHandoffSurvivesRecreationAndRetainsTheStableId() {
         val directory = File(folder.root, "handoff")
-        val report = report().copy(kind = "crash")
+        val report = report().copy(kind = "crash", build = 42)
         CrashReportHandoff(directory).save(report)
         File(directory, "corrupt.json").writeText("not JSON")
         val queue = MemoryReportDao()
@@ -225,12 +224,43 @@ class ErrorReportingTest {
         assertEquals(1, queue.count())
     }
 
+    @Test fun uploadsCapturedBuildGroupsAfterHandoffRecoveryRatherThanTheRunningBuild() = runBlocking {
+        val directory = File(folder.root, "build-handoff")
+        val old = ReportText.create("other", "TV", "old", "detail", 1000, build = 41)
+        CrashReportHandoff(directory).save(old)
+        val queue = MemoryReportDao()
+        CrashReportHandoff(directory).drain(queue)
+        val current = ReportText.create("other", "TV", "current", "detail", 2000, build = 42)
+        val oldAgain = ReportText.create("other", "TV", "old again", "detail", 3000, build = 41)
+        queue.enqueue(current)
+        queue.enqueue(oldAgain)
+        MockWebServer().use { server ->
+            repeat(2) { server.enqueue(MockResponse().setResponseCode(200)) }
+            val uploader = ReportUploader(queue, MemoryPreferences(), { true }, endpoint = server.url("/").toString())
+            uploader.upload()
+            val first = JsonParser.parseString(server.takeRequest().body.readUtf8()).asJsonObject
+            assertEquals(41, first["build"].asInt)
+            assertEquals(listOf(old.id, oldAgain.id), first["reports"].asJsonArray.map { it.asJsonObject["id"].asString })
+            assertEquals(listOf(current), queue.pending(50))
+            uploader.upload()
+            val second = JsonParser.parseString(server.takeRequest().body.readUtf8()).asJsonObject
+            assertEquals(42, second["build"].asInt)
+            assertEquals(current.id, second["reports"].asJsonArray.single().asJsonObject["id"].asString)
+            assertEquals(0, queue.count())
+        }
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun payloadRejectsMixedBuildEntries() {
+        ReportBatch.json("install123", listOf(report().copy(build = 41), report(1).copy(build = 42)))
+    }
+
     @Test fun startupCancelsAnUploadAlreadyInFlightAndKeepsTheEntry() = runBlocking {
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
             val queue = MemoryReportDao().apply { enqueue(report()) }
             val allowed = AtomicBoolean(true)
-            val uploader = ReportUploader(queue, MemoryPreferences(), 101, allowed::get, endpoint = server.url("/").toString())
+            val uploader = ReportUploader(queue, MemoryPreferences(), allowed::get, endpoint = server.url("/").toString())
             val uploading = async(Dispatchers.Default) { uploader.upload() }
             assertNotNull(server.takeRequest(2, TimeUnit.SECONDS))
             allowed.set(false)
@@ -245,7 +275,7 @@ class ErrorReportingTest {
         val report = ReportText.create("other", "", "selftest", "FireLite uploader selftest")
         queue.enqueue(report)
         val prefs = MemoryPreferences()
-        val result = ReportUploader(queue, prefs, BuildConfig.VERSION_CODE, { true }).upload(manual = true)
+        val result = ReportUploader(queue, prefs, { true }).upload(manual = true)
         assertEquals(prefs.lastError, 0L, result.retryIn)
         assertEquals(0, queue.count())
         assertTrue(prefs.lastSent > 0)

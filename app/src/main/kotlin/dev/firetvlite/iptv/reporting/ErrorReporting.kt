@@ -3,7 +3,6 @@ package dev.firetvlite.iptv.reporting
 import android.content.Context
 import android.content.SharedPreferences
 import com.google.gson.JsonParser
-import dev.firetvlite.iptv.BuildConfig
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -51,7 +50,10 @@ internal class CrashReportHandoff(private val directory: File) : ReportSink {
         val target = File(directory, "${report.id}.json")
         val temporary = File(directory, "${report.id}.new")
         temporary.outputStream().use { stream ->
-            val json = ReportBatch.item(report).apply { addProperty("createdAt", report.createdAt) }
+            val json = ReportBatch.item(report).apply {
+                addProperty("createdAt", report.createdAt)
+                addProperty("build", report.build)
+            }
             stream.write(json.toString().toByteArray(Charsets.UTF_8))
             stream.fd.sync()
         }
@@ -66,7 +68,7 @@ internal class CrashReportHandoff(private val directory: File) : ReportSink {
                 check(file.length() <= 128_000)
                 val row = JsonParser.parseString(file.readText()).asJsonObject
                 QueuedReport(row["id"].asString, row["kind"].asString, row["createdAt"].asLong,
-                    row["occurredAt"].asString, row["channel"].asString, row["summary"].asString, row["detail"].asString)
+                    row["occurredAt"].asString, row["channel"].asString, row["summary"].asString, row["detail"].asString, row["build"].asInt)
             } catch (_: RuntimeException) { null }
             if (report != null) queue.enqueue(report)
             check(file.delete())
@@ -81,7 +83,7 @@ internal class ErrorReporting(context: Context, private val queue: ReportQueue, 
     private val mutableState = MutableStateFlow(ReportingStatus())
     val state = mutableState.asStateFlow()
     private val handoff = CrashReportHandoff(File(context.filesDir, "report-crash-handoff"))
-    private val uploader = ReportUploader(queue, preferences, BuildConfig.VERSION_CODE, allowed, { mutableState.value = it })
+    private val uploader = ReportUploader(queue, preferences, allowed, { mutableState.value = it })
     private data class Capture(val kind: String, val channel: String, val summary: String, val detail: String,
         val capturedAt: Long = System.currentTimeMillis(), val occurredAt: Long = capturedAt)
     private val captures = Channel<Capture>(500, BufferOverflow.DROP_OLDEST)

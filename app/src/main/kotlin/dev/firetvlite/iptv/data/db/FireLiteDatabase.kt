@@ -39,7 +39,7 @@ abstract class FireLiteDatabase : RoomDatabase() {
     companion object {
         val MIGRATION_8_9 = object : Migration(8, 9) {
             override fun migrate(db: SupportSQLiteDatabase) {
-                db.execSQL("CREATE TABLE IF NOT EXISTS report_queue (id TEXT NOT NULL PRIMARY KEY, kind TEXT NOT NULL, createdAt INTEGER NOT NULL, occurredAt TEXT NOT NULL, channel TEXT NOT NULL, summary TEXT NOT NULL, detail TEXT NOT NULL)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS report_queue (id TEXT NOT NULL PRIMARY KEY, kind TEXT NOT NULL, createdAt INTEGER NOT NULL, occurredAt TEXT NOT NULL, channel TEXT NOT NULL, summary TEXT NOT NULL, detail TEXT NOT NULL, build INTEGER NOT NULL)")
                 db.execSQL("CREATE TABLE IF NOT EXISTS report_recent (fingerprint TEXT NOT NULL PRIMARY KEY, createdAt INTEGER NOT NULL)")
             }
         }

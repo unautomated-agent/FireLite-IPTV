@@ -41,7 +41,9 @@ internal object ReportBatch {
         addProperty("channel", report.channel); addProperty("summary", report.summary); addProperty("detail", report.detail)
     }
 
-    fun json(install: String, build: Int, reports: List<QueuedReport>): String {
+    fun json(install: String, reports: List<QueuedReport>): String {
+        val build = reports.first().build
+        require(reports.all { it.build == build })
         val items = JsonArray()
         reports.forEach { report ->
             items.add(item(report))
@@ -51,10 +53,11 @@ internal object ReportBatch {
         })
     }
 
-    fun next(install: String, build: Int, pending: List<QueuedReport>): List<QueuedReport> {
+    fun next(install: String, pending: List<QueuedReport>): List<QueuedReport> {
         val batch = mutableListOf<QueuedReport>()
-        for (report in pending.take(50)) {
-            if (json(install, build, batch + report).toByteArray(Charsets.UTF_8).size >= MAX_BYTES) break
+        val build = pending.firstOrNull()?.build ?: return batch
+        for (report in pending.filter { it.build == build }.take(50)) {
+            if (json(install, batch + report).toByteArray(Charsets.UTF_8).size >= MAX_BYTES) break
             batch.add(report)
         }
         return batch
@@ -64,7 +67,6 @@ internal object ReportBatch {
 internal class ReportUploader(
     private val queue: ReportQueue,
     private val preferences: ReportPreferences,
-    private val build: Int,
     private val allowed: () -> Boolean,
     private val publish: (ReportingStatus) -> Unit = {},
     private val endpoint: String = ENDPOINT,
@@ -87,7 +89,7 @@ internal class ReportUploader(
                 if (!allowed()) { publish(status(true)); return@withLock UploadOutcome(2_000, true) }
                 val remaining = retryAt - clock()
                 if (remaining > 0) { publish(status()); return@withLock UploadOutcome(remaining) }
-                val batch = ReportBatch.next(preferences.install, build, queue.pending(50))
+                val batch = ReportBatch.next(preferences.install, queue.pending(50))
                 if (batch.isEmpty()) return@withLock UploadOutcome()
                 val outcome = send(batch, true, manual)
                 if (outcome.blocked) {
@@ -116,7 +118,7 @@ internal class ReportUploader(
         if (!allowed()) return UploadOutcome(2_000, true)
         val interrupted = AtomicBoolean(false)
         val call = http.newCall(Request.Builder().url(endpoint).header("x-firelite-app", "firelite-iptv")
-            .post(ReportBatch.json(preferences.install, build, batch).toRequestBody("application/json; charset=utf-8".toMediaType())).build())
+            .post(ReportBatch.json(preferences.install, batch).toRequestBody("application/json; charset=utf-8".toMediaType())).build())
         val code = try {
             coroutineScope {
                 val guard = launch {

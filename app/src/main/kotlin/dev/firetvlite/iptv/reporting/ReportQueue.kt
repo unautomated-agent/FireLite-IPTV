@@ -7,6 +7,7 @@ import androidx.room.OnConflictStrategy
 import androidx.room.PrimaryKey
 import androidx.room.Query
 import androidx.room.Transaction
+import dev.firetvlite.iptv.BuildConfig
 import dev.firetvlite.iptv.data.library.DiagnosticRedactor
 import dev.firetvlite.iptv.playback.utf8Limit
 import java.net.URI
@@ -37,6 +38,7 @@ data class QueuedReport(
     val channel: String,
     val summary: String,
     val detail: String,
+    val build: Int = BuildConfig.VERSION_CODE,
 )
 
 interface ReportQueue {
@@ -107,9 +109,10 @@ internal object ReportText {
             .replace(Regex("[\\p{Cc}&&[^\\n\\t]]"), " "), bytes)
     }
 
-    fun create(kind: String, channel: String, summary: String, detail: String, now: Long = System.currentTimeMillis()): QueuedReport {
+    fun create(kind: String, channel: String, summary: String, detail: String, now: Long = System.currentTimeMillis(),
+        build: Int = BuildConfig.VERSION_CODE): QueuedReport {
         val known = DiagnosticRedactor.secrets(urls.findAll("$channel\n$summary\n$detail").map { it.value }.toList())
         return QueuedReport(UUID.randomUUID().toString(), kind.takeIf { it in kinds } ?: "other", now,
-            Instant.ofEpochMilli(now).toString(), safe(channel, 120, known), safe(summary, 500, known), safe(detail, 16_000, known))
+            Instant.ofEpochMilli(now).toString(), safe(channel, 120, known), safe(summary, 500, known), safe(detail, 16_000, known), build)
     }
 }

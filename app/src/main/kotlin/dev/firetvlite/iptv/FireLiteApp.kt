@@ -44,6 +44,7 @@ import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 import dev.firetvlite.iptv.ui.theme.ReferenceDensity
 import dev.firetvlite.iptv.ui.viewmodel.LibraryViewModel
 import dev.firetvlite.iptv.ui.viewmodel.PlayerViewModel
+import dev.firetvlite.iptv.ui.screens.SearchDialog
 import dev.firetvlite.iptv.update.UpdateViewModel
 import kotlinx.coroutines.delay
 
@@ -71,6 +72,7 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
     val importState by libraryViewModel.importState.collectAsState()
     val epgStates by libraryViewModel.epgStates.collectAsState()
     val mode by playerViewModel.mode.collectAsState()
+    val searchVisible by playerViewModel.searchVisible.collectAsState()
     val channel by playerViewModel.channel.collectAsState()
     val browserTarget by playerViewModel.browserTarget.collectAsState()
     var current by rememberSaveable { mutableStateOf(StreamPanel.Settings) }
@@ -154,5 +156,6 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
                 }
             }
         }
+        if (searchVisible) SearchDialog(source?.id, playerViewModel)
     }
 }

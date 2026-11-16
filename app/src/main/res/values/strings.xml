@@ -1,6 +1,18 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Default (and only) UI language: Polish. Resource names are English. -->
 <resources>
+    <string name="search">Szukaj</string>
+    <string name="search_input">Kanał lub tytuł audycji</string>
+    <string name="search_hint">Wpisz tekst lub użyj mikrofonu w klawiaturze. ↓ Wyniki · ↑ Pole · Wstecz Zamknij</string>
+    <string name="search_empty_query">Szukaj w zapisanych kanałach i lokalnym programie TV.</string>
+    <string name="search_no_results">Brak wyników</string>
+    <string name="search_loading">Wyszukiwanie…</string>
+    <string name="search_failed">Nie udało się odczytać wyników. Spróbuj ponownie.</string>
+    <string name="search_channels">Kanały (%1$d)</string>
+    <string name="search_programmes">Audycje (%1$d)</string>
+    <string name="search_live">Na żywo</string>
+    <string name="search_upcoming">Nadchodząca — odtwórz kanał na żywo</string>
+    <string name="search_archive">Archiwum — od początku audycji</string>
     <string name="reports_automatic">Automatyczne wysyłanie błędów: %1$s</string>
     <string name="reports_on">włączone</string>
     <string name="reports_off">wyłączone</string>
@@ -42,6 +54,14 @@
     <string name="settings_appearance">Wygląd</string>
     <string name="settings_clock_on">Zegar w lewym górnym rogu: włączony</string>
     <string name="settings_clock_off">Zegar w lewym górnym rogu: wyłączony</string>
+    <string name="settings_loudness_on">Wyrównanie głośności: włączone</string>
+    <string name="settings_loudness_off">Wyrównanie głośności: wyłączone</string>
+    <string name="settings_loudness_disabled">Wyrównanie wyłączone</string>
+    <string name="settings_loudness_waiting">Wyrównanie: oczekiwanie na dźwięk</string>
+    <string name="settings_loudness_active">Wyrównanie aktywne · kompresor i limiter</string>
+    <string name="settings_loudness_unavailable">Wyrównanie niedostępne na tym urządzeniu · dźwięk bez zmian</string>
+    <string name="settings_loudness_unsupported">Wyrównanie niedostępne dla tego wyjścia (passthrough/offload) · dźwięk bez zmian</string>
+    <string name="settings_loudness_help">Łagodzi głośne kanały i reklamy, bez podbijania cichego dźwięku. Nie zmienia głośności telewizora. Działa dla dekodowanego dźwięku PCM, także z dekodera FFmpeg.</string>
     <string name="nav_films">Najlepsze filmy</string>
     <string name="films_setup_hint">Ustaw klucz OMDb w Ustawieniach, aby zobaczyć oceny IMDb i ranking filmów.</string>
     <string name="films_first_window">Najbliższe 24 h</string>

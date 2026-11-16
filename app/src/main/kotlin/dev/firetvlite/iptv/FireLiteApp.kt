@@ -16,6 +16,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -63,6 +64,7 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
     val updateState by updateViewModel.state.collectAsState()
     val automaticUpdate by updateViewModel.automaticUpdate.collectAsState()
     var dismissedUpdate by rememberSaveable { mutableStateOf<String?>(null) }
+    var openUpdates by rememberSaveable { mutableStateOf(false) }
     val source by libraryViewModel.source.collectAsState()
     val sources by libraryViewModel.sources.collectAsState()
     val channelCount by libraryViewModel.channelCount.collectAsState()
@@ -72,6 +74,7 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
     val channel by playerViewModel.channel.collectAsState()
     val browserTarget by playerViewModel.browserTarget.collectAsState()
     var current by rememberSaveable { mutableStateOf(StreamPanel.Settings) }
+    val settingsState = rememberSaveableStateHolder()
 
     fun navigate(panel: StreamPanel) {
         playerViewModel.cancelStartupResume()
@@ -89,7 +92,7 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
                 when (panel) {
                     StreamPanel.Films -> FilmRankingsScreen(libraryViewModel, playerViewModel, active = true,
                         onSettings = { navigate(StreamPanel.Settings) })
-                    StreamPanel.Settings -> SettingsScreen(
+                    StreamPanel.Settings -> settingsState.SaveableStateProvider("settings") { SettingsScreen(
                         installed = updateViewModel.installed,
                         updateState = updateState,
                         onCheckForUpdate = updateViewModel::checkForUpdate,
@@ -103,7 +106,9 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
                         diagnostics = libraryViewModel.diagnostics,
                         canWatch = canChooseChannel(source != null, channelCount),
                         onWatch = { playerViewModel.cancelStartupResume(); playerViewModel.openGuide() },
-                    )
+                        openUpdates = openUpdates,
+                        onUpdatesOpened = { openUpdates = false },
+                    ) }
                 }
             }
         }
@@ -140,6 +145,7 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
                             SecondaryButton(stringResource(R.string.update_view), {
                                 dismissedUpdate = release.tag
                                 updateViewModel.showAutomaticUpdate(release)
+                                openUpdates = true
                                 navigate(StreamPanel.Settings)
                             }, Modifier.focusRequester(focus))
                             SecondaryButton(stringResource(R.string.update_later), { dismissedUpdate = release.tag })

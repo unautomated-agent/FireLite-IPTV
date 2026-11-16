@@ -1,10 +1,11 @@
-@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
+@file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class, androidx.compose.foundation.ExperimentalFoundationApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 
 package dev.firetvlite.iptv.ui.screens
 
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.relocation.BringIntoViewRequester
 import androidx.compose.foundation.relocation.bringIntoViewRequester
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -28,12 +30,23 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRestorer
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -68,10 +81,11 @@ import dev.firetvlite.iptv.update.pendingRelease
 import java.text.DateFormat
 import java.util.Date
 import java.util.Locale
+import kotlinx.coroutines.launch
 
 private val WarningColor = Color(0xFFFFB74D)
 
-/** Settings: the channel list (M3U address) and app updates. */
+/** TV section rail and independently scrolling settings panes. */
 @Composable
 fun SettingsScreen(
     installed: InstalledVersion,
@@ -91,46 +105,94 @@ fun SettingsScreen(
     canWatch: Boolean,
     onWatch: () -> Unit,
     modifier: Modifier = Modifier,
+    openUpdates: Boolean = false,
+    onUpdatesOpened: () -> Unit = {},
 ) {
+    var savedSection by rememberSaveable { mutableStateOf(SettingsSection.Sources.name) }
+    val section = SettingsSection.restored(savedSection)
+    var lastControls by rememberSaveable { mutableStateOf(hashMapOf<String, String>()) }
+    val rail = remember { SettingsSection.entries.associateWith { FocusRequester() } }
+    val pane = remember { FocusRequester() }
+    var paneFocused by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+    val state = rememberSaveableStateHolder()
+    val controls = remember(section) { SettingsPaneFocus(
+        last = { lastControls[section.name] },
+        changed = { lastControls = HashMap(lastControls).apply { put(section.name, it) } },
+    ) }
+    fun enterPane() { scope.launch { pane.requestFocusWhenReady() } }
+    LaunchedEffect(openUpdates) {
+        val target = settingsEntrySection(savedSection, openUpdates)
+        savedSection = target.name
+        rail.getValue(target).requestFocusWhenReady()
+        if (openUpdates) onUpdatesOpened()
+    }
+    BackHandler(enabled = paneFocused) { rail.getValue(section).requestFocus() }
     SettingsLayout(modifier) {
-        FLText(
-            text = stringResource(R.string.nav_settings),
-            style = FireLiteTheme.typography.display,
-            modifier = Modifier.padding(start = 4.dp),
-        )
-        SourceSection(
-            source = source, sources = sources, importState = importState, epgStates = epgStates,
-            onSave = onSaveSource, onRefresh = onRefreshSource, onActivate = onActivateSource, onDelete = onDeleteSource,
-        )
-        if (canWatch) PrimaryButton(stringResource(R.string.settings_watch_live), onWatch)
-        SettingsCard {
-            val preferences = (LocalContext.current.applicationContext as FireLiteApplication).container.clockPreferences
-            val visible by preferences.visible.collectAsState()
-            FLText(stringResource(R.string.settings_appearance), style = FireLiteTheme.typography.title)
-            PrimaryButton(stringResource(if (visible) R.string.settings_clock_on else R.string.settings_clock_off),
-                { preferences.setVisible(!visible) })
+        Column(Modifier.width(220.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            FLText(stringResource(R.string.nav_settings), style = FireLiteTheme.typography.headline)
+            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).focusGroup(),
+                verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                SettingsSection.entries.forEach { item ->
+                    FocusSurface(onClick = { enterPane() },
+                        background = SolidColor(if (item == section) FireLiteTheme.colors.surfaceHigh else FireLiteTheme.colors.surface),
+                        modifier = Modifier.fillMaxWidth().focusRequester(rail.getValue(item))
+                            .onFocusChanged { if (it.isFocused) savedSection = item.name }
+                            .onPreviewKeyEvent {
+                                if (it.key == Key.DirectionRight) {
+                                    if (it.type == KeyEventType.KeyDown) enterPane()
+                                    true
+                                } else false
+                            }) {
+                        FLText(stringResource(item.title), style = FireLiteTheme.typography.title,
+                            maxLines = 2, modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
+                    }
+                }
+            }
+            if (canWatch) FocusSurface(onClick = onWatch) {
+                FLText(stringResource(R.string.settings_watch_live), style = FireLiteTheme.typography.body,
+                    maxLines = 2, modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp))
+            }
         }
-        SettingsCard { OmdbSettings() }
-        SettingsCard { ChannelHealthSection(source) }
-        SettingsCard { DiagnosticsSection(source, source?.id?.let { epgStates[it] }, diagnostics) }
-        UpdateSection(
-            installed = installed,
-            state = updateState,
-            onCheck = onCheckForUpdate,
-            onInstall = onInstallUpdate,
-            onOpenInstallSettings = onOpenInstallSettings,
-        )
+        Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            FLText(stringResource(section.title), style = FireLiteTheme.typography.headline)
+            state.SaveableStateProvider(section.name) {
+                CompositionLocalProvider(LocalSettingsPaneFocus provides controls) {
+                    Column(Modifier.weight(1f).fillMaxWidth()
+                        .onFocusChanged { paneFocused = it.hasFocus }
+                        .focusProperties { exit = { direction ->
+                            if (direction == FocusDirection.Left) rail.getValue(section) else FocusRequester.Default
+                        } }.focusRestorer { controls.target() ?: FocusRequester.Default }
+                        .focusRequester(pane).focusGroup().verticalScroll(rememberScrollState()),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        when (section) {
+                            SettingsSection.Sources -> SourceSection(
+                                source, sources, importState, epgStates, onSaveSource, onRefreshSource, onActivateSource, onDeleteSource)
+                            SettingsSection.Appearance -> SettingsCard {
+                                val preferences = (LocalContext.current.applicationContext as FireLiteApplication).container.clockPreferences
+                                val visible by preferences.visible.collectAsState()
+                                PrimaryButton(stringResource(if (visible) R.string.settings_clock_on else R.string.settings_clock_off),
+                                    { preferences.setVisible(!visible) }, Modifier.settingsControl("clock"))
+                            }
+                            SettingsSection.Omdb -> SettingsCard { OmdbSettings() }
+                            SettingsSection.Health -> SettingsCard { ChannelHealthSection(source) }
+                            SettingsSection.Diagnostics -> SettingsCard { DiagnosticsSection(source, source?.id?.let { epgStates[it] }, diagnostics) }
+                            SettingsSection.Updates -> UpdateSection(installed, updateState, onCheckForUpdate, onInstallUpdate, onOpenInstallSettings)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
 @Composable
-private fun SettingsLayout(modifier: Modifier, content: @Composable () -> Unit) {
+private fun SettingsLayout(modifier: Modifier, content: @Composable RowScope.() -> Unit) {
     val density = Density(LocalDensity.current.density, LocalConfiguration.current.fontScale)
     CompositionLocalProvider(LocalFocusedScale provides 1f, LocalDensity provides density) {
-        Column(
-            modifier = modifier.fillMaxSize().verticalScroll(rememberScrollState())
-                .padding(start = 16.dp, end = 24.dp, top = 24.dp, bottom = 24.dp),
-            verticalArrangement = Arrangement.spacedBy(18.dp),
+        Row(
+            modifier = modifier.fillMaxSize().padding(horizontal = 48.dp, vertical = 27.dp),
+            horizontalArrangement = Arrangement.spacedBy(24.dp),
         ) { content() }
     }
 }
@@ -167,6 +229,7 @@ private fun SourceSection(
     val typography = FireLiteTheme.typography
 
     var editing by remember { mutableStateOf(false) }
+    var returnToActions by remember { mutableStateOf(false) }
     var editingId by remember { mutableStateOf<Long?>(null) }
     var deleting by remember { mutableStateOf<SourceEntity?>(null) }
     var url by remember { mutableStateOf("") }
@@ -184,7 +247,10 @@ private fun SourceSection(
     var pendingFocus by remember { mutableStateOf<SavedSourceFocusRequest?>(null) }
     val sourceIds = sources.map { it.source.id }
     LaunchedEffect(editing) {
-        if (deleting == null) firstFocus.requestFocusWhenReady()
+        if ((editing || returnToActions) && deleting == null) {
+            firstFocus.requestFocusWhenReady()
+            if (!editing) returnToActions = false
+        }
     }
     LaunchedEffect(pendingFocus, sourceIds, source?.id, editing, deleting) {
         if (editing || deleting != null) return@LaunchedEffect
@@ -211,6 +277,7 @@ private fun SourceSection(
         epgUrl = existing?.epgUrl.orEmpty()
         invalid = false
         invalidEpg = false
+        returnToActions = true
         editing = true
     }
 
@@ -260,13 +327,13 @@ private fun SourceSection(
                     url = it
                     invalid = false
                 },
-                modifier = Modifier.focusRequester(firstFocus).focusProperties { down = agentFocus },
+                modifier = Modifier.settingsControl("source-url").focusRequester(firstFocus).focusProperties { down = agentFocus },
             )
             LabeledTextField(
                 label = stringResource(R.string.source_agent_label),
                 value = agent,
                 onValueChange = { agent = it },
-                modifier = Modifier.focusRequester(agentFocus).focusProperties {
+                modifier = Modifier.settingsControl("source-agent").focusRequester(agentFocus).focusProperties {
                     up = firstFocus
                     down = epgFocus
                 },
@@ -275,7 +342,7 @@ private fun SourceSection(
                 label = stringResource(R.string.source_epg_label),
                 value = epgUrl,
                 onValueChange = { epgUrl = it; invalidEpg = false },
-                modifier = Modifier.focusRequester(epgFocus).focusProperties {
+                modifier = Modifier.settingsControl("source-epg").focusRequester(epgFocus).focusProperties {
                     up = agentFocus
                     down = saveFocus
                 },
@@ -310,12 +377,12 @@ private fun SourceSection(
                             editing = false
                         }
                     },
-                    modifier = Modifier.focusRequester(saveFocus).focusProperties { up = epgFocus },
+                    modifier = Modifier.settingsControl("source-save").focusRequester(saveFocus).focusProperties { up = epgFocus },
                 )
                 SecondaryButton(
                     text = stringResource(R.string.source_cancel),
                     onClick = { editing = false },
-                    modifier = Modifier.focusProperties { up = epgFocus },
+                    modifier = Modifier.settingsControl("source-cancel").focusProperties { up = epgFocus },
                 )
             }
         } else {
@@ -331,7 +398,7 @@ private fun SourceSection(
                                 pendingFocus = SavedSourceFocusRequest.Activate(entry.id)
                                 onActivate(entry.id)
                             },
-                            modifier = Modifier.weight(1f)
+                            modifier = Modifier.weight(1f).settingsControl("source-${entry.id}")
                                 .focusRequester(rowFocus.getOrPut(entry.id) { FocusRequester() })
                                 .bringIntoViewRequester(rowBounds.getOrPut(entry.id) { BringIntoViewRequester() }),
                             focusedScale = 1f,
@@ -371,6 +438,7 @@ private fun SourceSection(
                         SecondaryButton(
                             text = stringResource(R.string.source_delete),
                             onClick = { deleting = entry },
+                            modifier = Modifier.settingsControl("delete-${entry.id}"),
                         )
                     }
                 }
@@ -387,16 +455,18 @@ private fun SourceSection(
                 SecondaryButton(
                     text = stringResource(R.string.source_add),
                     onClick = { openForm(null) },
-                    modifier = Modifier.focusRequester(firstFocus).bringIntoViewRequester(firstBounds),
+                    modifier = Modifier.settingsControl("source-add").focusRequester(firstFocus).bringIntoViewRequester(firstBounds),
                 )
                 if (source != null) {
                     SecondaryButton(
                         text = stringResource(R.string.source_change),
                         onClick = { openForm(source) },
+                        modifier = Modifier.settingsControl("source-change"),
                     )
                     SecondaryButton(
                         text = stringResource(R.string.source_refresh),
                         onClick = onRefresh,
+                        modifier = Modifier.settingsControl("source-refresh"),
                     )
                 }
             }
@@ -467,12 +537,12 @@ private fun UpdateSection(
             ProgressBar(progress = state.progress ?: 0f, modifier = Modifier.width(360.dp))
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            SecondaryButton(text = stringResource(R.string.update_check), onClick = onCheck)
+            SecondaryButton(text = stringResource(R.string.update_check), onClick = onCheck, modifier = Modifier.settingsControl("update-check"))
             if (state.pendingRelease != null && state !is UpdateState.Downloading) {
-                PrimaryButton(text = stringResource(R.string.update_install), onClick = onInstall)
+                PrimaryButton(text = stringResource(R.string.update_install), onClick = onInstall, modifier = Modifier.settingsControl("update-install"))
             }
             if (state is UpdateState.Failed && state.reason == FailureReason.PermissionNeeded) {
-                SecondaryButton(text = stringResource(R.string.update_open_settings), onClick = onOpenInstallSettings)
+                SecondaryButton(text = stringResource(R.string.update_open_settings), onClick = onOpenInstallSettings, modifier = Modifier.settingsControl("update-permission"))
             }
         }
     }

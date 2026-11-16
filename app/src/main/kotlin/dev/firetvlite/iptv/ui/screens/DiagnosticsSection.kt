@@ -3,7 +3,6 @@ package dev.firetvlite.iptv.ui.screens
 import android.graphics.Bitmap
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -28,6 +27,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.input.key.Key
@@ -36,6 +36,7 @@ import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -97,9 +98,15 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
             stalls.joinToString("\n") { it.line(compact = true) } + "\n" + baseReport
     }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        FLText(stringResource(R.string.diagnostics_title), style = FireLiteTheme.typography.headline)
-        PrimaryButton(stringResource(R.string.diagnostics_open), { opened = true })
-        FLText(report.substringBefore("Ostatni raport błędu:"), style = FireLiteTheme.typography.label)
+        val lastError = settingsLastError(report)
+        FLText(stringResource(R.string.settings_last_error, lastError ?: stringResource(R.string.settings_no_report)),
+            style = FireLiteTheme.typography.body, maxLines = 1)
+        FLText(stringResource(R.string.settings_dead_count, channelHealth.entries.size), style = FireLiteTheme.typography.body)
+        FLText(stringResource(R.string.settings_stall_count, stalls.size, settingsWatchdogStallCount(crash)),
+            style = FireLiteTheme.typography.body)
+        FLText(stringResource(R.string.settings_health_summary, channelHealth.check.ifBlank { stringResource(R.string.settings_no_report) }),
+            style = FireLiteTheme.typography.body, maxLines = 2)
+        PrimaryButton(stringResource(R.string.diagnostics_open), { opened = true }, Modifier.settingsControl("diagnostics-open"))
     }
     if (opened) {
         val text = DiagnosticsReport.payload(qrReport)
@@ -114,17 +121,21 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
         }
         val scroll = rememberScrollState()
         val close = remember { FocusRequester() }
+        val reportFocus = remember { FocusRequester() }
+        val step = with(LocalDensity.current) { 80.dp.roundToPx() }
         Dialog(onDismissRequest = { opened = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
             LaunchedEffect(Unit) { close.requestFocusWhenReady() }
-            Column(Modifier.width(900.dp).height(500.dp).background(FireLiteTheme.colors.surface).padding(20.dp),
+            Column(Modifier.width(864.dp).height(486.dp).background(FireLiteTheme.colors.surface).padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 FLText(stringResource(R.string.diagnostics_title), style = FireLiteTheme.typography.headline)
-                FLText(stringResource(R.string.diagnostics_scan), style = FireLiteTheme.typography.label)
+                FLText(stringResource(R.string.diagnostics_scan), style = FireLiteTheme.typography.body)
                 Row(Modifier.weight(1f), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
                     FocusSurface(onClick = { scope.launch { scroll.animateScrollTo(0) } }, focusedScale = 1f,
-                        modifier = Modifier.weight(1f).onPreviewKeyEvent { event ->
+                        modifier = Modifier.weight(1f).focusRequester(reportFocus).onPreviewKeyEvent { event ->
                             if (event.type == KeyEventType.KeyDown && event.key in listOf(Key.DirectionUp, Key.DirectionDown)) {
-                                scope.launch { scroll.animateScrollBy(if (event.key == Key.DirectionDown) 100f else -100f) }
+                                val target = reportScrollTarget(scroll.value, scroll.maxValue, event.key == Key.DirectionDown, step)
+                                if (target == null) close.requestFocus()
+                                else scope.launch { scroll.scrollTo(target) }
                                 true
                             } else false
                         }) {
@@ -135,7 +146,8 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
                         Modifier.fillMaxHeight().aspectRatio(1f).background(Color.White)) }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    PrimaryButton(stringResource(R.string.diagnostics_close), { opened = false }, Modifier.focusRequester(close))
+                    PrimaryButton(stringResource(R.string.diagnostics_close), { opened = false },
+                        Modifier.focusRequester(close).focusProperties { up = reportFocus })
                     if (crash != null) SecondaryButton(stringResource(R.string.crash_clear), {
                         scope.launch { if (withContext(Dispatchers.IO) { store.clear() }) crash = null }
                     })

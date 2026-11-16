@@ -247,7 +247,9 @@ object DiagnosticsReport {
             suffix.toByteArray(Charsets.UTF_8).size - 2
         val compactDead = dead?.let {
             val total = Regex("^Martwe \\((\\d+)\\):").find(it)?.groupValues?.get(1)?.toIntOrNull()
-            val items = it.substringAfter(": ").split("; ").filter { row -> row.isNotBlank() && !row.startsWith("+") }
+            val items = it.substringAfter(": ").split("; ").filter { row ->
+                row.isNotBlank() && !Regex("\\+\\d+ więcej").matches(row)
+            }
                 .map { row -> row.substringBeforeLast(' ') to row.substringAfterLast(' ') }
             if (total != null) compactDeadSummary(total, items, deadBudget) else utf8Limit(it, deadBudget)
         }.orEmpty()

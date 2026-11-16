@@ -20,6 +20,8 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
@@ -30,6 +32,7 @@ import dev.firetvlite.iptv.playback.PlayerMode
 import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.SecondaryButton
 import dev.firetvlite.iptv.ui.components.LocalFilmRatings
+import dev.firetvlite.iptv.ui.components.LocalChannelLogosEnabled
 import dev.firetvlite.iptv.ui.components.WarsawClockBox
 import dev.firetvlite.iptv.ui.components.requestFocusWhenReady
 import dev.firetvlite.iptv.ui.navigation.StreamPanel
@@ -51,8 +54,9 @@ import kotlinx.coroutines.delay
 fun FireLiteApp(updateViewModel: UpdateViewModel, libraryViewModel: LibraryViewModel, playerViewModel: PlayerViewModel) {
     ReferenceDensity {
         FireLiteTheme {
-            val ratings by libraryViewModel.films.ratings.collectAsState()
-            CompositionLocalProvider(LocalFilmRatings provides ratings) {
+            val startupReady by libraryViewModel.startupReady.collectAsState()
+            val ratings = if (startupReady) libraryViewModel.films.ratings.collectAsState().value else emptyMap()
+            CompositionLocalProvider(LocalFilmRatings provides ratings, LocalChannelLogosEnabled provides startupReady) {
                 AppShell(updateViewModel, libraryViewModel, playerViewModel)
             }
         }
@@ -61,6 +65,9 @@ fun FireLiteApp(updateViewModel: UpdateViewModel, libraryViewModel: LibraryViewM
 
 @Composable
 private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: LibraryViewModel, playerViewModel: PlayerViewModel) {
+    val startup = (LocalContext.current.applicationContext as FireLiteApplication).container.startup
+    val firstDraw = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
+    val startupReady by libraryViewModel.startupReady.collectAsState()
     val updateState by updateViewModel.state.collectAsState()
     val automaticUpdate by updateViewModel.automaticUpdate.collectAsState()
     var dismissedUpdate by rememberSaveable { mutableStateOf<String?>(null) }
@@ -86,8 +93,15 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
         playerViewModel.returnToFullscreen()
     }
 
-    Box(Modifier.fillMaxSize().background(FireLiteTheme.colors.background)) {
-        visiblePanel(mode, current)?.let { panel ->
+    Box(Modifier.fillMaxSize().background(FireLiteTheme.colors.background).drawWithContent {
+        drawContent()
+        if (firstDraw.compareAndSet(false, true)) startup.mark(LaunchPhase.Compose)
+    }) {
+        if (!startupReady && (mode == PlayerMode.Closed || mode == PlayerMode.Panel)) {
+            FLText(stringResource(R.string.startup_loading), style = FireLiteTheme.typography.title,
+                modifier = Modifier.align(Alignment.Center))
+        }
+        if (startupReady) visiblePanel(mode, current)?.let { panel ->
             Box(Modifier.fillMaxSize().padding(top = if (mode == PlayerMode.Panel) 148.dp else 56.dp)) {
                 when (panel) {
                     StreamPanel.Films -> FilmRankingsScreen(libraryViewModel, playerViewModel, active = true,
@@ -120,7 +134,7 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
         }
         PlayerLayer(viewModel = playerViewModel, library = libraryViewModel, previewBounds = null,
             onFilms = { navigate(StreamPanel.Films) }, onSettings = { navigate(StreamPanel.Settings) })
-        WarsawClockBox(Modifier.align(Alignment.TopStart).padding(16.dp))
+        if (startupReady) WarsawClockBox(Modifier.align(Alignment.TopStart).padding(16.dp))
         automaticUpdate?.takeIf { it.tag != dismissedUpdate }?.let { release ->
             var hintVisible by rememberSaveable(release.tag) { mutableStateOf(true) }
             LaunchedEffect(release.tag) {

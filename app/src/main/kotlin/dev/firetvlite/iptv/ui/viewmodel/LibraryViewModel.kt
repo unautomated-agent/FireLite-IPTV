@@ -30,6 +30,9 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.flow.stateIn
@@ -47,8 +50,9 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     private val container = (application as FireLiteApplication).container
     private val repository: LibraryRepository = container.library
-    val films = container.films
-    val reminderPreferences = container.reminderPreferences
+    val films get() = container.films
+    val reminderPreferences get() = container.reminderPreferences
+    val startupReady = container.startup.ready
 
     suspend fun reminderShowings(sourceId: Long, now: Long) = FilmReminders.loadCandidates(now) {
         container.database.epgDao().reminderWindow(sourceId, now, FilmReminders.queryUntil(now))
@@ -62,7 +66,10 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
     val importState: StateFlow<ImportState> = repository.importState
     val epgStates = container.epg.states
 
-    val sources = repository.sources.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val sources = flow {
+        container.startup.awaitReady()
+        emitAll(repository.sources)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     private val sourceId: Flow<Long?> = source.map { it?.id }.distinctUntilChanged()
     val diagnostics: Flow<SourceDiagnostics> = sourceId.flatMapLatest { id ->
@@ -74,6 +81,7 @@ class LibraryViewModel(application: Application) : AndroidViewModel(application)
 
     val channelCount: StateFlow<Int> = sourceId
         .flatMapLatest { id -> if (id == null) flowOf(0) else channelDao.observeCount(id) }
+        .onStart { container.startup.awaitReady() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
 
     private val mutableSelectedGroup = MutableStateFlow<GroupKey>(GroupKey.All)

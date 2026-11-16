@@ -3,6 +3,7 @@ package dev.firetvlite.iptv.update
 import java.io.File
 import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
@@ -15,6 +16,22 @@ import org.junit.Test
 
 class LaunchUpdateCheckTest {
     private val release = ReleaseInfo("build-42", 42, 1042, "https://github.com/owner/repo/releases/download/build-42/app.apk", 1)
+
+    @Test fun completedFirstFrameStillWaitsForDeferredStartupWork() = runBlocking {
+        val scope = CoroutineScope(coroutineContext + SupervisorJob())
+        val ready = CompletableDeferred<Unit>()
+        val calls = AtomicInteger()
+        try {
+            LaunchUpdateCheck(scope, MutableStateFlow(true), 1041, awaitStartup = { ready.await() }) {
+                calls.incrementAndGet(); ReleaseParser.Result.Found(release)
+            }
+            delay(50)
+            assertEquals(0, calls.get())
+            ready.complete(Unit)
+            withTimeout(2_000) { while (calls.get() == 0) delay(10) }
+            assertEquals(1, calls.get())
+        } finally { scope.cancel() }
+    }
 
     @Test fun firstFrameStartsExactlyOneOffControllerCheckAndOnlyNewerBuildIsAnnounced() = runBlocking {
         val scope = CoroutineScope(coroutineContext + SupervisorJob())

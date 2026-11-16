@@ -87,7 +87,7 @@ internal class ReportUploadDebounce(private val scope: CoroutineScope, private v
 }
 
 internal class ErrorReporting(context: Context, private val queue: ReportQueue, scope: CoroutineScope,
-    allowed: () -> Boolean) : ReportSink {
+    allowed: () -> Boolean, private val awaitStartup: suspend () -> Unit = {}) : ReportSink {
     private val io = CoroutineScope(scope.coroutineContext + Dispatchers.IO)
     private val preferences = AndroidReportPreferences(context)
     private val mutableState = MutableStateFlow(ReportingStatus())
@@ -102,6 +102,7 @@ internal class ErrorReporting(context: Context, private val queue: ReportQueue, 
 
     init {
         io.launch {
+            awaitStartup()
             runCatching { preferences.install; handoff.drain(queue); refresh() }
             for (capture in captures) runCatching {
                 val report = ReportText.create(capture.kind, capture.channel, capture.summary, capture.detail, capture.capturedAt)
@@ -150,6 +151,7 @@ internal class ErrorReporting(context: Context, private val queue: ReportQueue, 
     private fun afterEnqueue() = debounce.enqueue()
 
     private suspend fun attempt(manual: Boolean = false) {
+        awaitStartup()
         runCatching {
             val outcome = uploader.upload(manual)
             synchronized(this) {

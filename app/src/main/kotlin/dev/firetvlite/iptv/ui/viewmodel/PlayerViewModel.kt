@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.exoplayer.ExoPlayer
 import dev.firetvlite.iptv.FireLiteApplication
+import dev.firetvlite.iptv.LaunchPhase
 import dev.firetvlite.iptv.data.db.ChannelEntity
 import dev.firetvlite.iptv.data.db.ProgrammeEntity
 import dev.firetvlite.iptv.data.db.FavoriteEntity
@@ -46,6 +47,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -118,7 +120,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val seekDebouncer = SeekDebouncer(viewModelScope, ::seek)
     private val mutableFrame = MutableStateFlow(PlaybackFrame())
     val frame = mutableFrame.asStateFlow()
-    val programme = combine(channel, frame) { selected, frame -> selected?.id to frame.watchedMs / 1_000 }
+    val programme = combine(channel, frame, container.startup.ready) { selected, frame, ready ->
+        (selected?.id.takeIf { ready }) to frame.watchedMs / 1_000
+    }
         .distinctUntilChanged()
         .flatMapLatest { (id, time) ->
             if (id == null) flowOf(CurrentAndNext(null, null)) else epg.observeCurrentAndNextAt(id, time * 1_000)
@@ -131,23 +135,30 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             }
         }
         startupJob = viewModelScope.launch {
-            val (sourceId, recent) = StartupResume.awaitRecent(
-                sourceDao.observeActive().map { it?.id }.distinctUntilChanged(), channelDao::startupRecent)
+            val source = sourceDao.active()
+            val sourceId = source?.id
+            val recent = if (sourceId == null) emptyList() else channelDao.startupRecent(sourceId).first()
             val last = recent.firstOrNull()
+            container.startup.mark(LaunchPhase.Database)
             val resume = StartupResume.allowed(true, last != null, mutableMode.value, startupPending)
-            if (resume && last != null) {
-                val index = channelDao.allIndex(sourceId, last.streamUrl) ?: return@launch
+            if (resume && last != null && sourceId != null) {
+                val index = channelDao.allIndex(sourceId, last.streamUrl)
+                if (index == null) { container.startup.finish("channel_removed"); return@launch }
                 if (startupPending && mutableMode.value == PlayerMode.Closed && sourceDao.active()?.id == sourceId) {
                     previous.seedRecent(recent)
                     watchedSourceId = sourceId
                     cancelPreview()
                     select(allChannels(sourceId), index, GroupKey.All, PlayerMode.Fullscreen, restoring = true)
-                }
-            }
+                } else container.startup.finish("cancelled")
+            } else container.startup.finish("no_resume")
             startupPending = false
         }
         viewModelScope.launch {
             status.collect { state ->
+                if (state is PlaybackStatus.Failed) container.startup.finish("failed")
+                if (state == PlaybackStatus.Ended) container.startup.finish("ended_without_video")
+                if (state == PlaybackStatus.Idle && LaunchPhase.Resume.label in container.startup.latest.value.phases)
+                    container.startup.finish("stopped")
                 val start = archiveStartMs
                 val channel = activeChannel
                 if (state == PlaybackStatus.Ended && start != null && channel != null && mutableMode.value.continuesPlayback) {
@@ -243,7 +254,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 activeChannel = first
                 activeIndex = index
                 applyCatchup(first, archiveTime, restartIfActive = true)
-            } else if (restoring) startLive(first, userInitiated = false)
+            } else if (restoring) startLive(first, userInitiated = false, coldStart = true)
             else if (!sameChannel || archiveStartMs != null || status.value is PlaybackStatus.Failed) startLive(first)
             markWatched(first)
         }
@@ -254,7 +265,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         playback.setPreview(mode == PlayerMode.Preview || mode == PlayerMode.Guide || mode == PlayerMode.Panel)
     }
 
-    fun cancelStartupResume() { startupPending = false; startupJob?.cancel() }
+    fun cancelStartupResume() {
+        startupPending = false
+        startupJob?.cancel()
+        container.startup.finish("cancelled")
+    }
 
     fun showPanel() {
         cancelPreview()
@@ -583,14 +598,14 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         mutablePosition.value = ZapPosition(zapIndex + 1, zapCount)
     }
 
-    private fun startLive(channel: ChannelEntity, userInitiated: Boolean = true) {
+    private fun startLive(channel: ChannelEntity, userInitiated: Boolean = true, coldStart: Boolean = false) {
         activeChannel = channel
         activeIndex = zapIndex
         archiveStartMs = null
         fallbackStartMs = System.currentTimeMillis()
         mutableLiveChannelId.value = channel.id
         playback.play(StreamRequest(channel.streamUrl, userAgent, channelName = channel.name,
-            headers = PlaylistHttpHeaders.decode(channel.requestHeaders), userInitiated = userInitiated))
+            headers = PlaylistHttpHeaders.decode(channel.requestHeaders), userInitiated = userInitiated, coldStart = coldStart))
         updateFrame()
     }
 

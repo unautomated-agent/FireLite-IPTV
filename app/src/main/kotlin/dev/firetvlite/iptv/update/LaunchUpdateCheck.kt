@@ -20,6 +20,7 @@ internal class LaunchUpdateCheck(
     streamActive: () -> Boolean = { false },
     fallbackMs: Long = 10_000,
     io: CoroutineDispatcher = Dispatchers.IO,
+    awaitStartup: suspend () -> Unit = {},
     fetch: () -> ReleaseParser.Result,
 ) {
     private val mutable = MutableStateFlow<ReleaseInfo?>(null)
@@ -27,6 +28,7 @@ internal class LaunchUpdateCheck(
 
     init {
         scope.launch {
+            awaitStartup()
             withTimeoutOrNull(fallbackMs) { firstFrame.first { it } }
             while (!firstFrame.value && streamActive()) delay(100)
             mutable.value = withContext(io) {

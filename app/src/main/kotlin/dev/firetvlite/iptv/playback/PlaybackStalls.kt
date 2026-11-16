@@ -86,13 +86,14 @@ internal class StallDetector {
     }
 }
 
-internal class StallHistory(private val file: File, scope: CoroutineScope) {
+internal class StallHistory(private val file: File, scope: CoroutineScope, awaitStartup: suspend () -> Unit = {}) {
     private val commands = Channel<() -> Unit>(Channel.UNLIMITED)
     private val mutable = MutableStateFlow<List<PlaybackStall>>(emptyList())
     val state = mutable.asStateFlow()
 
     init {
         scope.launch(Dispatchers.IO) {
+            awaitStartup()
             mutable.value = runCatching {
                 check(file.length() <= 16_000)
                 val rows = JSONArray(file.readText())

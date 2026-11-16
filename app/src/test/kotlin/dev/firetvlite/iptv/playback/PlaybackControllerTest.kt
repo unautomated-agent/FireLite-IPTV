@@ -29,9 +29,32 @@ import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import dev.firetvlite.iptv.reporting.ReportSink
+import dev.firetvlite.iptv.LaunchPhase
 
 class PlaybackControllerTest {
     private val request = StreamRequest("https://example.org/live", "FireLite")
+
+    @Test fun coldLaunchMarkersFollowTheNormalGraceAndNeverCountManualPlayback() = runBlocking {
+        val fake = FakePlayer()
+        val phases = mutableListOf<LaunchPhase>()
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            evictConnections = {}, launchEvent = { phases += it })
+        try {
+            controller.play(request.copy(coldStart = true))
+            assertEquals(listOf(LaunchPhase.Resume), phases)
+            delay(200)
+            assertEquals(listOf(LaunchPhase.Resume), phases)
+            delay(250)
+            assertEquals(listOf(LaunchPhase.Resume, LaunchPhase.Prepare), phases)
+            fake.listener!!.onRenderedFirstFrame()
+            assertEquals(LaunchPhase.FirstFrame, phases.last())
+            val captured = phases.toList()
+            controller.play(request.copy(url = "https://example.org/manual"))
+            delay(450)
+            fake.listener!!.onRenderedFirstFrame()
+            assertEquals(captured, phases)
+        } finally { controller.stop() }
+    }
 
     @Test fun playbackReportChannelRedactsStandaloneStreamSecretsAndUnsafeText() = runBlocking {
         val fake = FakePlayer()

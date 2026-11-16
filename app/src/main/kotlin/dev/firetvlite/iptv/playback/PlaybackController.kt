@@ -22,7 +22,10 @@ import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.DecoderReuseEvaluation
+import androidx.media3.exoplayer.DecoderCounters
 import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.common.util.Util
 import androidx.media3.exoplayer.source.LoadEventInfo
 import androidx.media3.exoplayer.source.MediaLoadData
 import kotlinx.coroutines.CoroutineScope
@@ -121,12 +124,13 @@ class PlaybackController internal constructor(
         ChannelHealthProbe().check(request, call, active)
     },
     private val reports: ReportSink = ReportSink.None,
+    private val loudness: LoudnessLeveller? = null,
 ) {
     internal constructor(scope: CoroutineScope, createPlayer: (HttpDataSource.Factory) -> ExoPlayer) :
         this(scope, createPlayer, {})
 
     internal constructor(context: Context, scope: CoroutineScope, deadChannels: DeadChannels, stalls: StallHistory,
-        reports: ReportSink = ReportSink.None) : this(scope, { httpFactory ->
+        reports: ReportSink = ReportSink.None, loudness: LoudnessLeveller? = null) : this(scope, { httpFactory ->
         val renderers = DefaultRenderersFactory(context)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
             .setEnableDecoderFallback(true)
@@ -141,7 +145,7 @@ class PlaybackController internal constructor(
         player.setMediaSource(PlaybackMediaSourceFactory(factory).createMediaSource(item))
     }, recordPlayback = diagnosticRecorder(context, scope), channelResult = { request, reason -> deadChannels.result(request, reason) },
         healthResult = { request, reason -> deadChannels.result(request, reason, "health check") },
-        healthSummary = deadChannels::checkSummary, recordStall = stalls::record, reports = reports)
+        healthSummary = deadChannels::checkSummary, recordStall = stalls::record, reports = reports, loudness = loudness)
 
     private val gate = StreamGate()
     private val evictionMutex = Mutex()
@@ -310,6 +314,20 @@ class PlaybackController internal constructor(
     }
 
     private val analytics = object : AnalyticsListener {
+        override fun onAudioSessionIdChanged(eventTime: AnalyticsListener.EventTime, audioSessionId: Int) {
+            loudness?.sessionChanged(audioSessionId)
+        }
+
+        override fun onAudioTrackInitialized(eventTime: AnalyticsListener.EventTime, audioTrackConfig: AudioSink.AudioTrackConfig) {
+            exo?.let { loudness?.sessionChanged(it.audioSessionId) }
+            loudness?.outputChanged(Util.isEncodingLinearPcm(audioTrackConfig.encoding) &&
+                !audioTrackConfig.offload && !audioTrackConfig.tunneling)
+        }
+
+        override fun onAudioDisabled(eventTime: AnalyticsListener.EventTime, decoderCounters: DecoderCounters) {
+            loudness?.trackReleased()
+        }
+
         override fun onBandwidthEstimate(eventTime: AnalyticsListener.EventTime, totalLoadTimeMs: Int,
             totalBytesLoaded: Long, bitrateEstimate: Long) { bandwidth = bitrateEstimate }
 
@@ -884,6 +902,7 @@ class PlaybackController internal constructor(
 
     /** Frees the decoder. The player is created again when needed. */
     fun releasePlayer() {
+        loudness?.release()
         val request = suspendedRequest
         stop()
         suspendedRequest = request
@@ -944,6 +963,7 @@ class PlaybackController internal constructor(
         player.setAudioAttributes(AudioAttributes.DEFAULT, true)
         player.addListener(listener)
         player.addAnalyticsListener(analytics)
+        loudness?.sessionChanged(player.audioSessionId)
         exo = player
         mutablePlayer.value = player
         return player

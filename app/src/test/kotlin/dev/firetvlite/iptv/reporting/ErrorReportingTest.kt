@@ -10,9 +10,18 @@ import java.time.Instant
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.async
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.job
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.withTimeout
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.atomic.AtomicBoolean
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
@@ -327,6 +336,74 @@ class ErrorReportingTest {
             assertNotNull(server.takeRequest(2, TimeUnit.SECONDS))
             allowed.set(false)
             assertTrue(withTimeout(3000) { uploading.await() }.blocked)
+            assertEquals(1, queue.count())
+        }
+    }
+
+    @Test fun debounceReschedulesOnlyThePendingDelay() = runBlocking {
+        val delivered = Channel<Unit>(Channel.UNLIMITED)
+        val debounce = ReportUploadDebounce(this, 20) { delivered.send(Unit) }
+        assertTrue(delivered.tryReceive().isFailure)
+        debounce.enqueue()
+        debounce.enqueue()
+        withTimeout(2000) { delivered.receive() }
+        kotlinx.coroutines.delay(60)
+        assertTrue(delivered.tryReceive().isFailure)
+    }
+
+    @Test fun enqueueDoesNotCancelActiveUploadAndPlaybackStartupStillCancelsItsHttpCall() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            val failed = LinkedBlockingQueue<okhttp3.Call>()
+            val client = ReportUploader.client().newBuilder().eventListener(object : okhttp3.EventListener() {
+                override fun callFailed(call: okhttp3.Call, ioe: java.io.IOException) { failed.add(call) }
+            }).build()
+            val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+            try {
+                val allowed = AtomicBoolean(true)
+                val queue = MemoryReportDao().apply { enqueue(report()) }
+                val uploader = ReportUploader(queue, MemoryPreferences(), allowed::get,
+                    endpoint = server.url("/").toString(), suppliedClient = client)
+                val started = CompletableDeferred<Job>()
+                val completed = CompletableDeferred<UploadOutcome>()
+                val debounce = ReportUploadDebounce(scope, 20) {
+                    started.complete(currentCoroutineContext().job)
+                    completed.complete(uploader.upload())
+                }
+                debounce.enqueue()
+                assertNotNull(server.takeRequest(2, TimeUnit.SECONDS))
+                val uploading = started.await()
+                debounce.enqueue()
+                assertTrue(uploading.isActive)
+                allowed.set(false)
+                assertTrue(withTimeout(3000) { completed.await() }.blocked)
+                val cancelled = failed.poll(2, TimeUnit.SECONDS)
+                assertNotNull(cancelled)
+                assertTrue(cancelled!!.isCanceled())
+                assertEquals(1, queue.count())
+                assertEquals(1, server.requestCount)
+            } finally { scope.cancel() }
+        }
+    }
+
+    @Test fun cancellingUploaderCoroutineImmediatelyCancelsTheUnderlyingHttpCall() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            val failed = LinkedBlockingQueue<okhttp3.Call>()
+            val client = ReportUploader.client().newBuilder().eventListener(object : okhttp3.EventListener() {
+                override fun callFailed(call: okhttp3.Call, ioe: java.io.IOException) { failed.add(call) }
+            }).build()
+            val queue = MemoryReportDao().apply { enqueue(report()) }
+            val uploader = ReportUploader(queue, MemoryPreferences(), { true },
+                endpoint = server.url("/").toString(), suppliedClient = client)
+            val uploading = async(Dispatchers.Default) { uploader.upload() }
+            assertNotNull(server.takeRequest(2, TimeUnit.SECONDS))
+            uploading.cancel()
+            withTimeout(3000) { uploading.join() }
+            val cancelled = failed.poll(2, TimeUnit.SECONDS)
+            assertNotNull(cancelled)
+            assertTrue(cancelled!!.isCanceled())
+            assertTrue(uploading.isCancelled)
             assertEquals(1, queue.count())
         }
     }

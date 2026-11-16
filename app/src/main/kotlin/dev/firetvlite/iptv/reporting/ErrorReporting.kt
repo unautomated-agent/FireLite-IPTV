@@ -76,6 +76,16 @@ internal class CrashReportHandoff(private val directory: File) : ReportSink {
     }
 }
 
+internal class ReportUploadDebounce(private val scope: CoroutineScope, private val delayMs: Long = 30_000,
+    private val upload: suspend () -> Unit) {
+    private var pending: Job? = null
+
+    @Synchronized fun enqueue() {
+        pending?.cancel()
+        pending = scope.launch { delay(delayMs); scope.launch { upload() } }
+    }
+}
+
 internal class ErrorReporting(context: Context, private val queue: ReportQueue, scope: CoroutineScope,
     allowed: () -> Boolean) : ReportSink {
     private val io = CoroutineScope(scope.coroutineContext + Dispatchers.IO)
@@ -87,7 +97,7 @@ internal class ErrorReporting(context: Context, private val queue: ReportQueue, 
     private data class Capture(val kind: String, val channel: String, val summary: String, val detail: String,
         val capturedAt: Long = System.currentTimeMillis(), val occurredAt: Long = capturedAt)
     private val captures = Channel<Capture>(500, BufferOverflow.DROP_OLDEST)
-    private var debounce: Job? = null
+    private val debounce = ReportUploadDebounce(io) { attempt() }
     private var retry: Job? = null
 
     init {
@@ -133,17 +143,14 @@ internal class ErrorReporting(context: Context, private val queue: ReportQueue, 
 
     private fun refresh() { mutableState.value = uploader.status(mutableState.value.blocked) }
 
-    @Synchronized private fun afterEnqueue() {
-        debounce?.cancel()
-        debounce = io.launch { delay(30_000); attempt() }
-    }
+    private fun afterEnqueue() = debounce.enqueue()
 
     private suspend fun attempt(manual: Boolean = false) {
         runCatching {
             val outcome = uploader.upload(manual)
             synchronized(this) {
                 retry?.cancel()
-                retry = if (outcome.retryIn > 0) io.launch { delay(outcome.retryIn); attempt(manual) } else null
+                retry = if (outcome.retryIn > 0) io.launch { delay(outcome.retryIn); io.launch { attempt(manual) } } else null
             }
         }
     }

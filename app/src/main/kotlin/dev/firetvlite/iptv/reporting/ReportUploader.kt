@@ -7,6 +7,8 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -17,6 +19,9 @@ import kotlinx.coroutines.withContext
 import okhttp3.ConnectionPool
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 
@@ -106,6 +111,8 @@ internal class ReportUploader(
                 backoff = 60_000
                 publish(status())
                 UploadOutcome(if (queue.count() > 0) 2_000 else 0)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
             } catch (_: Exception) {
                 runCatching { preferences.lastError = "Błąd lokalnej kolejki"; publish(status()) }
                 UploadOutcome(60_000)
@@ -131,7 +138,7 @@ internal class ReportUploader(
                 }
                 try {
                     if (!allowed()) { interrupted.set(true); call.cancel() }
-                    call.execute().use { it.code }
+                    execute(call)
                 } finally { guard.cancel() }
             }
         } catch (_: IOException) {
@@ -163,6 +170,16 @@ internal class ReportUploader(
                 UploadOutcome(1)
             }
         }
+    }
+
+    private suspend fun execute(call: Call): Int = suspendCancellableCoroutine { continuation ->
+        continuation.invokeOnCancellation { call.cancel() }
+        call.enqueue(object : Callback {
+            override fun onFailure(call: Call, error: IOException) { continuation.resumeWith(Result.failure(error)) }
+            override fun onResponse(call: Call, response: Response) {
+                continuation.resumeWith(runCatching { response.use { it.code } })
+            }
+        })
     }
 
     companion object {

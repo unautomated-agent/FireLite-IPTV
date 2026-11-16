@@ -89,6 +89,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private val mutableMode = MutableStateFlow(PlayerMode.Closed)
     val mode = mutableMode.asStateFlow()
+    private var reconnectCancelled = false
+
+    fun cancelAutoReconnect() {
+        if (playback.cancelAutoReconnect()) reconnectCancelled = true
+    }
     private val mutableBrowserTarget = MutableStateFlow<BrowserTarget?>(null)
     val browserTarget = mutableBrowserTarget.asStateFlow()
     private val mutableTimeline = MutableStateFlow<ChannelTimelineTarget?>(null)
@@ -214,6 +219,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun select(zap: ZapContext, startIndex: Int, group: GroupKey, mode: PlayerMode, archiveTime: Long? = null,
         restoring: Boolean = false) {
+        cancelAutoReconnect()
+        reconnectCancelled = false
         seekDebouncer.cancel()
         openJob?.cancel()
         zapJob?.cancel()
@@ -250,6 +257,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun setMode(mode: PlayerMode) {
+        cancelAutoReconnect()
         mutableMode.value = mode
         playback.setPreview(mode == PlayerMode.Preview || mode == PlayerMode.Guide || mode == PlayerMode.Panel)
     }
@@ -267,7 +275,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         cancelPreview()
         closeTimeline()
         val channel = activeChannel
-        if (channel != null && !playback.hasActiveStream) {
+        if (channel != null && !playback.hasActiveStream && !reconnectCancelled) {
             val start = archiveStartMs
             if (start == null) startLive(channel) else applyCatchup(channel, start)
         }
@@ -408,6 +416,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     /** Channel up (-1) / down (+1). Rapid presses are merged: only the channel the user stops on connects. */
     fun zap(delta: Int) {
+        cancelAutoReconnect()
         if (mutableMode.value != PlayerMode.Fullscreen) return
         val zap = zapContext ?: return
         if (zapCount == 0) return
@@ -584,6 +593,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun startLive(channel: ChannelEntity, userInitiated: Boolean = true) {
+        reconnectCancelled = false
         activeChannel = channel
         activeIndex = zapIndex
         archiveStartMs = null

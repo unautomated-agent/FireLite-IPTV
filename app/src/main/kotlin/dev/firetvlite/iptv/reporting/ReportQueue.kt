@@ -22,7 +22,7 @@ interface ReportSink {
         enqueue("exit", "", summary, detail)
         return true
     }
-    fun midPlaybackStall(channel: String, summary: String, detail: String) = enqueue("stall", channel, summary, detail)
+    fun midPlaybackStall(channel: String, summary: String, detail: String, startedAt: Long) = enqueue("stall", channel, summary, detail)
 
     object None : ReportSink {
         override fun enqueue(kind: String, channel: String, summary: String, detail: String) = Unit
@@ -54,8 +54,8 @@ data class ReportFingerprint(@PrimaryKey val fingerprint: String, val createdAt:
 
 @Dao
 abstract class ReportDao : ReportQueue {
-    @Query("SELECT * FROM report_queue WHERE kind='stall' AND channel=:channel AND summary=:summary AND build=:build ORDER BY createdAt DESC LIMIT 1")
-    abstract fun pendingStall(channel: String, summary: String, build: Int): QueuedReport?
+    @Query("SELECT * FROM report_queue WHERE kind='stall' AND channel=:channel AND summary=:summary AND build=:build AND occurredAt=:occurredAt ORDER BY createdAt DESC LIMIT 1")
+    abstract fun pendingStall(channel: String, summary: String, build: Int, occurredAt: String): QueuedReport?
 
     @Query("UPDATE report_queue SET detail=:detail WHERE id=:id")
     abstract fun updateDetail(id: String, detail: String)
@@ -93,7 +93,7 @@ abstract class ReportDao : ReportQueue {
             .digest("${report.kind}\u0000${report.channel}\u0000${report.summary}".toByteArray())
             .joinToString("") { "%02x".format(it) }
         if (report.kind == "stall") {
-            val pending = pendingStall(report.channel, report.summary, report.build)
+            val pending = pendingStall(report.channel, report.summary, report.build, report.occurredAt)
             if (pending != null) {
                 if (pending.detail == report.detail) return false
                 updateDetail(pending.id, report.detail)

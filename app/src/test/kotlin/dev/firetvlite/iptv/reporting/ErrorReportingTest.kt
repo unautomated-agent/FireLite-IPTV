@@ -35,8 +35,8 @@ import org.junit.rules.TemporaryFolder
 internal class MemoryReportDao : ReportDao() {
     val rows = linkedMapOf<String, QueuedReport>()
     private val recent = mutableMapOf<String, Long>()
-    override fun pendingStall(channel: String, summary: String, build: Int) = rows.values.lastOrNull {
-        it.kind == "stall" && it.channel == channel && it.summary == summary && it.build == build
+    override fun pendingStall(channel: String, summary: String, build: Int, occurredAt: String) = rows.values.lastOrNull {
+        it.kind == "stall" && it.channel == channel && it.summary == summary && it.build == build && it.occurredAt == occurredAt
     }
     override fun updateDetail(id: String, detail: String) { rows[id]?.let { rows[id] = it.copy(detail = detail) } }
     override fun find(id: String) = rows[id]
@@ -101,6 +101,7 @@ class ErrorReportingTest {
         val final = detector.sample(sample.copy(nowMs = 9000, wallMs = 1_008_000, active = false))!!
         val queue = MemoryReportDao()
         val first = ReportText.create("stall", initial.channel, "${initial.kind} · ${initial.evidence.substringBefore(';')}", initial.line())
+            .copy(occurredAt = Instant.ofEpochMilli(initial.time).toString())
         assertTrue(queue.enqueue(first))
         val updated = first.copy(id = "updated-id", detail = final.line(), createdAt = first.createdAt + 8000)
         assertTrue(queue.enqueue(updated))
@@ -115,6 +116,32 @@ class ErrorReportingTest {
         assertTrue(queue.enqueue(updated.copy(id = "different-build", build = first.build + 1)))
         assertTrue(queue.enqueue(updated.copy(id = "different-channel", channel = "Other")))
         assertEquals(3, queue.count())
+    }
+
+    @Test fun separateStallsWithTheSameSummaryRemainSeparateWhileEachDurationUpdates() {
+        val detector = StallDetector()
+        val sample = StallSample(1000, 1_000_000, "TV", true, true, false, 0, 0, 0, 5000)
+        val queue = MemoryReportDao()
+        fun enqueue(stall: dev.firetvlite.iptv.playback.PlaybackStall) = queue.enqueue(
+            ReportText.create("stall", stall.channel, "${stall.kind} · ${stall.evidence.substringBefore(';')}", stall.line())
+                .copy(occurredAt = Instant.ofEpochMilli(stall.time).toString()))
+        assertEquals(0, queue.count())
+        assertNull(detector.sample(sample))
+        val first = detector.sample(sample.copy(nowMs = 4000, wallMs = 1_003_000))!!
+        assertTrue(enqueue(first))
+        val firstFinal = detector.sample(sample.copy(nowMs = 9000, wallMs = 1_008_000, active = false))!!
+        assertTrue(enqueue(firstFinal))
+        assertNull(detector.sample(sample.copy(nowMs = 10_000, wallMs = 1_009_000)))
+        val second = detector.sample(sample.copy(nowMs = 13_000, wallMs = 1_012_000))!!
+        assertTrue(enqueue(second))
+        val secondFinal = detector.sample(sample.copy(nowMs = 17_000, wallMs = 1_016_000, active = false))!!
+        assertTrue(enqueue(secondFinal))
+        assertFalse(enqueue(secondFinal))
+        val pending = queue.pending(50)
+        assertEquals(2, pending.size)
+        assertEquals(pending[0].summary, pending[1].summary)
+        assertNotEquals(pending[0].occurredAt, pending[1].occurredAt)
+        assertEquals(listOf(firstFinal.line(), secondFinal.line()), pending.map { it.detail })
     }
 
     @Test fun stallUpdatedDuringHttpRequestSurvivesAcknowledgementWithANewWorkerId() = runBlocking {

@@ -84,7 +84,12 @@ class PlaybackControllerTest {
         val fake = FakePlayer()
         val stalls = mutableListOf<PlaybackStall>()
         val sent = mutableListOf<List<String>>()
+        val started = mutableListOf<Long>()
         val sink = object : ReportSink {
+            override fun midPlaybackStall(channel: String, summary: String, detail: String, startedAt: Long) {
+                started += startedAt
+                enqueue("stall", channel, summary, detail)
+            }
             override fun enqueue(kind: String, channel: String, summary: String, detail: String) {
                 sent += listOf(kind, channel, summary, detail)
                 throw IllegalStateException("reporting fixture")
@@ -104,6 +109,7 @@ class PlaybackControllerTest {
             withTimeout(5_000) { while (sent.isEmpty()) delay(50) }
             val event = sent.first()
             val stall = stalls.first()
+            assertEquals(stall.time, started.first())
             assertEquals("stall", event[0])
             assertEquals("${stall.kind} · ${stall.evidence.substringBefore(';')}", event[2])
             assertTrue(event[3].startsWith("Zawieszenie:"))

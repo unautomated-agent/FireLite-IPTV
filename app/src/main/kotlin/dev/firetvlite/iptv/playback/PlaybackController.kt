@@ -520,7 +520,7 @@ class PlaybackController internal constructor(
                     runCatching {
                         reports.midPlaybackStall(ReportText.safe(stall.channel, 120, known),
                             ReportText.safe("${stall.kind} · ${stall.evidence.substringBefore(';')}", 500, known),
-                            ReportText.safe(stall.line(), 16_000, known))
+                            ReportText.safe(stall.line(), 16_000, known), stall.time)
                     }
                 }
                 previousTick = now

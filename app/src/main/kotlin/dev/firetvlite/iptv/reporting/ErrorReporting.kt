@@ -119,6 +119,10 @@ internal class ErrorReporting(context: Context, private val queue: ReportQueue, 
         runCatching { captures.trySend(Capture(kind, channel, summary, detail)) }
     }
 
+    override fun midPlaybackStall(channel: String, summary: String, detail: String, startedAt: Long) {
+        runCatching { captures.trySend(Capture("stall", channel, summary, detail, occurredAt = startedAt)) }
+    }
+
     override fun crash(summary: String, detail: String) {
         runCatching { handoff.save(ReportText.create("crash", "", summary, detail)) }
         io.launch { runCatching { handoff.drain(queue); refresh(); afterEnqueue() } }

@@ -42,27 +42,32 @@ internal data class ChannelHealthState(val entries: List<DeadChannel> = emptyLis
             else -> "błąd"
         }
         val items = entries.map { DeadChannels.safeName(it.name).replace(".", "[.]").replace(';', ',') to reason(it.reason) }
-        fun pack(nameBytes: Int, count: Int = items.size): String = "Martwe (${entries.size}): " +
-            items.take(count).joinToString("; ") { (name, code) -> "${utf8Limit(name, nameBytes)} $code" } +
-            if (count < items.size) "; +${items.size - count} więcej" else ""
-        var low = 7
-        var high = 360
-        var result = pack(low)
-        if (result.toByteArray(Charsets.UTF_8).size <= bytes) {
-            while (low <= high) {
-                val middle = (low + high) / 2
-                val candidate = pack(middle)
-                if (candidate.toByteArray(Charsets.UTF_8).size <= bytes) {
-                    result = candidate
-                    low = middle + 1
-                } else high = middle - 1
-            }
-        } else {
-            var count = items.size
-            do { result = pack(7, --count) } while (count > 0 && result.toByteArray(Charsets.UTF_8).size > bytes)
-        }
-        return result + if (check.isNotBlank()) "\nZdrowie kanałów: $check" else ""
+        return compactDeadSummary(entries.size, items, bytes) +
+            if (check.isNotBlank()) "\nZdrowie kanałów: $check" else ""
     }
+}
+
+internal fun compactDeadSummary(total: Int, items: List<Pair<String, String>>, bytes: Int): String {
+    fun pack(nameBytes: Int, count: Int = items.size): String = "Martwe ($total): " +
+        items.take(count).joinToString("; ") { (name, code) -> "${utf8Limit(name, nameBytes)} $code" } +
+        if (count < total) "; +${total - count} więcej" else ""
+    var low = 7
+    var high = 360
+    var result = pack(low)
+    if (result.toByteArray(Charsets.UTF_8).size <= bytes) {
+        while (low <= high) {
+            val middle = (low + high) / 2
+            val candidate = pack(middle)
+            if (candidate.toByteArray(Charsets.UTF_8).size <= bytes) {
+                result = candidate
+                low = middle + 1
+            } else high = middle - 1
+        }
+    } else {
+        var count = items.size
+        do { result = pack(7, --count) } while (count > 0 && result.toByteArray(Charsets.UTF_8).size > bytes)
+    }
+    return result
 }
 
 internal class DeadChannels(private val file: File, scope: CoroutineScope,

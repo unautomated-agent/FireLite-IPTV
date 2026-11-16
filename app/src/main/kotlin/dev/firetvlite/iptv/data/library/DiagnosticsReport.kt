@@ -15,6 +15,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import dev.firetvlite.iptv.playback.utf8Limit
+import dev.firetvlite.iptv.playback.compactDeadSummary
 
 data class SourceDiagnostics(val channelCount: Int = 0, val matched: Int = 0,
     val archiveTypes: Map<String, Int> = emptyMap(), val secrets: Set<String> = emptySet()) {
@@ -235,9 +236,27 @@ object DiagnosticsReport {
         val masked = shareable(text)
         if (masked.toByteArray(Charsets.UTF_8).size <= QR_BYTES) return masked
         val suffix = "\n[…raport skrócony]"
-        val dead = masked.lines().firstOrNull { it.startsWith("Martwe (") }
-        val remaining = if (dead == null) masked else masked.lines().filterNot { it == dead }.joinToString("\n")
-        val prefix = dead?.let { "${utf8Limit(it, QR_BYTES - 150)}\n" }.orEmpty()
+        val lines = masked.lines()
+        val dead = lines.firstOrNull { it.startsWith("Martwe (") }
+        val stalls = lines.filter { it.startsWith("Zawieszenie:") }.map { utf8Limit(it, 120) }
+        fun stallSummary(count: Int): String = (stalls.take(count) +
+            if (count < stalls.size) listOf("Zawieszenie: +${stalls.size - count} więcej") else emptyList())
+            .joinToString("\n")
+        val minimumStalls = stallSummary(minOf(2, stalls.size))
+        val deadBudget = QR_BYTES - 150 - minimumStalls.toByteArray(Charsets.UTF_8).size -
+            suffix.toByteArray(Charsets.UTF_8).size - 2
+        val compactDead = dead?.let {
+            val total = Regex("^Martwe \\((\\d+)\\):").find(it)?.groupValues?.get(1)?.toIntOrNull()
+            val items = it.substringAfter(": ").split("; ").filter { row -> row.isNotBlank() && !row.startsWith("+") }
+                .map { row -> row.substringBeforeLast(' ') to row.substringAfterLast(' ') }
+            if (total != null) compactDeadSummary(total, items, deadBudget) else utf8Limit(it, deadBudget)
+        }.orEmpty()
+        val allStalls = stallSummary(stalls.size)
+        val reservedStalls = if ((allStalls + compactDead).toByteArray(Charsets.UTF_8).size <= QR_BYTES - 150 -
+            suffix.toByteArray(Charsets.UTF_8).size - 2) allStalls else minimumStalls
+        val prefix = listOf(reservedStalls, compactDead).filter { it.isNotBlank() }.joinToString("\n")
+            .let { if (it.isEmpty()) "" else "$it\n" }
+        val remaining = lines.filterNot { it == dead || it.startsWith("Zawieszenie:") }.joinToString("\n")
         return prefix + compact(remaining, QR_BYTES - prefix.toByteArray(Charsets.UTF_8).size -
             suffix.toByteArray(Charsets.UTF_8).size) + suffix
     }

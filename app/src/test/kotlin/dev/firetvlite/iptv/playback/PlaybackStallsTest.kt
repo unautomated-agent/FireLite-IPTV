@@ -13,6 +13,25 @@ import org.junit.rules.TemporaryFolder
 import dev.firetvlite.iptv.data.library.DiagnosticsReport
 
 class PlaybackStallsTest {
+    @Test fun largeDeadRegistryCannotCrowdOutRecentStalls() {
+        val dead = ChannelHealthState((1..100).map {
+            DeadChannel("$it", "Kanał Żółć $it".repeat(10), 1, 1, 1, "HTTP 404", "playback")
+        })
+        val stalls = (5 downTo 1).map {
+            PlaybackStall(it.toLong(), "Stall TV $it", it * 4_000L, "decoder/app", "buffered media not rendering")
+        }.joinToString("\n") { it.line(true) }
+        val report = dead.qrSummary() + "\n" + stalls + "\n" + "Transport pending: waiting response\n".repeat(300)
+        val payload = DiagnosticsReport.payload(report)
+        assertTrue(payload.toByteArray(Charsets.UTF_8).size <= DiagnosticsReport.QR_BYTES)
+        assertTrue(payload, payload.contains("Stall TV 5 20s decoder/app"))
+        assertTrue(payload, payload.contains("Stall TV 4 16s decoder/app"))
+        assertTrue(payload, payload.contains("Zawieszenie: +3 więcej"))
+        assertTrue(payload, payload.contains("Martwe (100):"))
+        assertTrue(payload, payload.contains("więcej"))
+        assertFalse(payload.contains('\uFFFD'))
+        assertEquals(payload, DiagnosticsReport.payload(payload))
+    }
+
     @get:Rule val folder = TemporaryFolder()
     private fun sample(now: Long = 1_000) = StallSample(now, 1_700_000_000_000 + now, "TV Test",
         active = true, buffering = true, ready = false, frames = 5, positionMs = 1_000,

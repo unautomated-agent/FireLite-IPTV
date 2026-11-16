@@ -1,6 +1,8 @@
 package dev.firetvlite.iptv.playback
 
 import dev.firetvlite.iptv.reporting.ReportSink
+import dev.firetvlite.iptv.reporting.ReportText
+import dev.firetvlite.iptv.data.library.DiagnosticRedactor
 
 import android.content.Context
 import android.util.Log
@@ -396,8 +398,12 @@ class PlaybackController internal constructor(
 
     private fun saveDiagnostic(failed: Boolean, record: String) {
         recordPlayback(failed, record)
-        if (failed) runCatching { reports.enqueue("playback_error", activeRequest?.channelName.orEmpty(),
-            record.lineSequence().firstOrNull().orEmpty().substringAfter(" · "), record) }
+        if (failed) runCatching {
+            val request = activeRequest
+            val known = DiagnosticRedactor.secrets(listOfNotNull(request?.url))
+            reports.enqueue("playback_error", ReportText.safe(request?.channelName.orEmpty(), 120, known),
+                record.lineSequence().firstOrNull().orEmpty().substringAfter(" · "), record)
+        }
     }
 
     private fun startupDetails(): List<String> = startupTiming?.let { timing ->

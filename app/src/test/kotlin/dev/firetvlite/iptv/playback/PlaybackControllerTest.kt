@@ -33,6 +33,27 @@ import dev.firetvlite.iptv.reporting.ReportSink
 class PlaybackControllerTest {
     private val request = StreamRequest("https://example.org/live", "FireLite")
 
+    @Test fun playbackReportChannelRedactsStandaloneStreamSecretsAndUnsafeText() = runBlocking {
+        val fake = FakePlayer()
+        val channels = mutableListOf<String>()
+        val sink = object : ReportSink {
+            override fun enqueue(kind: String, channel: String, summary: String, detail: String) { channels += channel }
+        }
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY }, evictConnections = {}, reports = sink)
+        try {
+            controller.play(request.copy(url = "https://provider.test/live/fixture-user/fixture-password/1.m3u8?token=fixture-token",
+                channelName = "TV fixture-user fixture-password fixture-token https://other.test/private/123456789 token=private"))
+            delay(450)
+            fake.listener!!.onPlayerError(TestError(2001))
+            val channel = channels.single()
+            listOf("fixture-user", "fixture-password", "fixture-token", "https://", "/private/", "123456789", "token=private").forEach {
+                assertEquals(it, false, channel.contains(it))
+            }
+            assertTrue(channel.startsWith("TV "))
+            assertTrue(channel.contains("other[.]test"))
+        } finally { controller.stop() }
+    }
+
     @Test fun reportingIsBlockedDuringStartupAndFailuresSendTheExistingDiagnosticDetail() = runBlocking {
         val fake = FakePlayer()
         val recorded = mutableListOf<String>()

@@ -107,7 +107,8 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
         FLText(stringResource(R.string.settings_last_error, lastError ?: stringResource(R.string.settings_no_report)),
             style = FireLiteTheme.typography.body, maxLines = 1)
         FLText(stringResource(R.string.settings_dead_count, channelHealth.entries.size), style = FireLiteTheme.typography.body)
-        FLText(stringResource(R.string.settings_stall_count, stalls.size), style = FireLiteTheme.typography.body)
+        FLText(stringResource(R.string.settings_stall_count, stalls.size, settingsWatchdogStallCount(crash)),
+            style = FireLiteTheme.typography.body)
         FLText(stringResource(R.string.settings_health_summary, channelHealth.check.ifBlank { stringResource(R.string.settings_no_report) }),
             style = FireLiteTheme.typography.body, maxLines = 2)
         PrimaryButton(stringResource(R.string.diagnostics_open), { opened = true }, Modifier.settingsControl("diagnostics-open"))

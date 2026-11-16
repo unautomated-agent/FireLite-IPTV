@@ -11,6 +11,17 @@ import org.junit.rules.TemporaryFolder
 class SettingsNavigationTest {
     @get:Rule val folder = TemporaryFolder()
 
+    @Test fun watchdogCountIncludesRecordedHangsEvenWithoutAnyPlaybackStallHistory() {
+        assertEquals(0, settingsWatchdogStallCount(null))
+        assertEquals(0, settingsWatchdogStallCount(""))
+        assertEquals(0, settingsWatchdogStallCount("Uncaught crash: fixture failure\nStack"))
+        val store = CrashReportStore(File(folder.root, "watchdog.txt"))
+        store.stall("test", 3500, "blocked method")
+        assertEquals(1, settingsWatchdogStallCount(store.read()))
+        store.stall("test", 4500, "another blocked method")
+        assertEquals(2, settingsWatchdogStallCount(store.read()))
+    }
+
     @Test fun updateActionOpensUpdatesRegardlessOfSavedSectionWhileNormalEntryRestores() {
         SettingsSection.entries.forEach {
             assertEquals(SettingsSection.Updates, settingsEntrySection(it.name, true))

@@ -13,7 +13,7 @@
     <string name="settings_updates">Aktualizacje</string>
     <string name="settings_last_error">Ostatni błąd: %1$s</string>
     <string name="settings_dead_count">Martwe kanały: %1$d</string>
-    <string name="settings_stall_count">Zawieszenia w raporcie: %1$d</string>
+    <string name="settings_stall_count">Zawieszenia odtwarzania: %1$d · wątku głównego: %2$d</string>
     <string name="settings_health_summary">Zdrowie kanałów: %1$s</string>
     <string name="settings_no_report">Brak</string>
     <string name="update_new_build">Dostępna aktualizacja: build %1$d</string>

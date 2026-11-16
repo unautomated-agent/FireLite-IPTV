@@ -16,6 +16,8 @@ import dev.firetvlite.iptv.data.library.LibraryRepository
 import dev.firetvlite.iptv.data.playlist.PlaylistImporter
 import dev.firetvlite.iptv.playback.PlaybackController
 import dev.firetvlite.iptv.playback.DeadChannels
+import dev.firetvlite.iptv.reporting.ErrorReporting
+import dev.firetvlite.iptv.reporting.CrashReportHandoff
 import dev.firetvlite.iptv.playback.StallHistory
 import dev.firetvlite.iptv.update.LaunchUpdateCheck
 import dev.firetvlite.iptv.update.UpdateRepository
@@ -45,10 +47,14 @@ class AppContainer(application: Application) {
         epg = epg,
     )
 
-    internal val deadChannels = DeadChannels(File(application.filesDir, "dead-channels.json"), applicationScope)
+    internal val errorReports: ErrorReporting = ErrorReporting(application, database.reportDao(), applicationScope,
+        allowed = ::reportUploadsAllowed)
+    internal val deadChannels: DeadChannels = DeadChannels(File(application.filesDir, "dead-channels.json"), applicationScope, reports = errorReports)
     internal val stalls = StallHistory(File(application.filesDir, "playback-stalls.json"), applicationScope)
     /** The one object that may open a stream. */
-    val playback = PlaybackController(application, applicationScope, deadChannels, stalls)
+    val playback: PlaybackController = PlaybackController(application, applicationScope, deadChannels, stalls, errorReports)
+
+    private fun reportUploadsAllowed(): Boolean = playback.reportUploadsAllowed
     internal val launchUpdate = LaunchUpdateCheck(applicationScope, playback.firstFrame, BuildConfig.VERSION_CODE.toLong(),
         streamActive = { playback.hasActiveStream }) {
         if (BuildConfig.UPDATE_REPOSITORY.isBlank()) ReleaseParser.Result.NoApk
@@ -92,14 +98,19 @@ class FireLiteApplication : Application() {
         if (BuildConfig.DEBUG) {
             StrictMode.setThreadPolicy(StrictMode.ThreadPolicy.Builder().detectNetwork().penaltyDeath().build())
         }
-        val reports = CrashReportStore(File(filesDir, "last-crash.txt"))
+        val reports = CrashReportStore(File(filesDir, "last-crash.txt"),
+            CrashReportHandoff(File(filesDir, "report-crash-handoff")))
+        val previousHandler = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler(
             reports.handler(
                 "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})",
-                Thread.getDefaultUncaughtExceptionHandler(),
+                previousHandler,
             ),
         )
-        AppHealthMonitor(this, reports).start("${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
         container = AppContainer(this)
+        val connectedReports = CrashReportStore(File(filesDir, "last-crash.txt"), container.errorReports)
+        Thread.setDefaultUncaughtExceptionHandler(connectedReports.handler(
+            "${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", previousHandler))
+        AppHealthMonitor(this, connectedReports).start("${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
     }
 }

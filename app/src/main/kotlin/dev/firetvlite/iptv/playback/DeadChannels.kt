@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
+import dev.firetvlite.iptv.reporting.ReportSink
 
 internal data class DeadChannel(val key: String, val name: String, val first: Long, val last: Long,
     val count: Int, val reason: String, val source: String)
@@ -71,6 +72,7 @@ internal fun compactDeadSummary(total: Int, items: List<Pair<String, String>>, b
 }
 
 internal class DeadChannels(private val file: File, scope: CoroutineScope,
+    private val reports: ReportSink = ReportSink.None,
     private val clock: () -> Long = System::currentTimeMillis) {
     private val mutableState = MutableStateFlow(ChannelHealthState())
     val state = mutableState.asStateFlow()
@@ -102,11 +104,19 @@ internal class DeadChannels(private val file: File, scope: CoroutineScope,
                 safeName(request.channelName.ifBlank { "Nieznany kanał" }, request.url), previous?.first ?: now,
                 now, ((previous?.count ?: 0) + 1).coerceAtMost(9999), safeName(reason, request.url).take(64), source)
             save(mutableState.value.copy(entries = entries.sortedByDescending { it.last }.take(100)))
+            if (reason != null) runCatching {
+                val entry = entries.last()
+                reports.enqueue("dead_channel", entry.name, entry.reason,
+                    "${entry.name} · ${entry.reason} · ×${entry.count} · ${entry.source}")
+            }
         }
     }
 
     fun checkSummary(summary: String) {
-        commands.trySend { save(mutableState.value.copy(check = summary.take(180))) }
+        commands.trySend {
+            save(mutableState.value.copy(check = summary.take(180)))
+            if (!summary.endsWith(" · running")) runCatching { reports.enqueue("health", "", summary, summary) }
+        }
     }
 
     suspend fun flush() {

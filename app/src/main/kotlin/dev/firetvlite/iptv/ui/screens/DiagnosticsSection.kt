@@ -57,6 +57,9 @@ import dev.firetvlite.iptv.ui.components.requestFocusWhenReady
 import dev.firetvlite.iptv.ui.components.minuteClock
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 import java.io.File
+import java.time.Instant
+import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 import dev.firetvlite.iptv.playback.PlaybackDiagnosticsStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
@@ -68,6 +71,8 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
     val stats by diagnostics.collectAsState(SourceDiagnostics())
     val context = LocalContext.current
     val channelHealth by (context.applicationContext as FireLiteApplication).container.deadChannels.state.collectAsState()
+    val reporting = (context.applicationContext as FireLiteApplication).container.errorReports
+    val reportingStatus by reporting.state.collectAsState()
     val stalls by (context.applicationContext as FireLiteApplication).container.stalls.state.collectAsState()
     val store = remember(context) { CrashReportStore(File(context.filesDir, "last-crash.txt")) }
     var crash by remember { mutableStateOf<String?>(null) }
@@ -107,6 +112,16 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
         FLText(stringResource(R.string.settings_health_summary, channelHealth.check.ifBlank { stringResource(R.string.settings_no_report) }),
             style = FireLiteTheme.typography.body, maxLines = 2)
         PrimaryButton(stringResource(R.string.diagnostics_open), { opened = true }, Modifier.settingsControl("diagnostics-open"))
+        SecondaryButton(stringResource(R.string.reports_automatic,
+            stringResource(if (reportingStatus.enabled) R.string.reports_on else R.string.reports_off)),
+            { reporting.setEnabled(!reportingStatus.enabled) }, Modifier.settingsControl("reports-toggle"))
+        val lastSent = if (reportingStatus.lastSent == 0L) stringResource(R.string.reports_never) else
+            DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.systemDefault())
+                .format(Instant.ofEpochMilli(reportingStatus.lastSent))
+        FLText(stringResource(R.string.reports_status, reportingStatus.pending, lastSent,
+            reportingStatus.lastError.ifBlank { "—" }), style = FireLiteTheme.typography.body)
+        if (reportingStatus.blocked) FLText(stringResource(R.string.reports_blocked), style = FireLiteTheme.typography.body)
+        PrimaryButton(stringResource(R.string.reports_send_now), reporting::sendNow, Modifier.settingsControl("reports-send"))
     }
     if (opened) {
         val text = DiagnosticsReport.payload(qrReport)

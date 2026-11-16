@@ -1,5 +1,9 @@
 package dev.firetvlite.iptv.playback
 
+import dev.firetvlite.iptv.reporting.ReportSink
+import dev.firetvlite.iptv.reporting.ReportText
+import dev.firetvlite.iptv.data.library.DiagnosticRedactor
+
 import android.content.Context
 import android.util.Log
 import androidx.media3.common.AudioAttributes
@@ -116,11 +120,13 @@ class PlaybackController internal constructor(
     private val healthProbe: (StreamRequest, (okhttp3.Call?) -> Unit, () -> Unit) -> String? = { request, call, active ->
         ChannelHealthProbe().check(request, call, active)
     },
+    private val reports: ReportSink = ReportSink.None,
 ) {
     internal constructor(scope: CoroutineScope, createPlayer: (HttpDataSource.Factory) -> ExoPlayer) :
         this(scope, createPlayer, {})
 
-    internal constructor(context: Context, scope: CoroutineScope, deadChannels: DeadChannels, stalls: StallHistory) : this(scope, { httpFactory ->
+    internal constructor(context: Context, scope: CoroutineScope, deadChannels: DeadChannels, stalls: StallHistory,
+        reports: ReportSink = ReportSink.None) : this(scope, { httpFactory ->
         val renderers = DefaultRenderersFactory(context)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
             .setEnableDecoderFallback(true)
@@ -135,7 +141,7 @@ class PlaybackController internal constructor(
         player.setMediaSource(PlaybackMediaSourceFactory(factory).createMediaSource(item))
     }, recordPlayback = diagnosticRecorder(context, scope), channelResult = { request, reason -> deadChannels.result(request, reason) },
         healthResult = { request, reason -> deadChannels.result(request, reason, "health check") },
-        healthSummary = deadChannels::checkSummary, recordStall = stalls::record)
+        healthSummary = deadChannels::checkSummary, recordStall = stalls::record, reports = reports)
 
     private val gate = StreamGate()
     private val evictionMutex = Mutex()
@@ -148,7 +154,15 @@ class PlaybackController internal constructor(
     private var healthGeneration = 0L
     private val mutableHealthCheck = MutableStateFlow(ChannelCheckProgress())
     val healthCheck: StateFlow<ChannelCheckProgress> = mutableHealthCheck.asStateFlow()
-    private var rendered = false
+    @Volatile private var rendered = false
+    @Volatile private var reportSwitching = false
+    @Volatile private var reportSteadyAfter = Long.MAX_VALUE
+    internal val reportUploadsAllowed: Boolean
+        get() = !reportSwitching && when (status.value) {
+            PlaybackStatus.Connecting, PlaybackStatus.Buffering -> false
+            PlaybackStatus.Playing, PlaybackStatus.Paused -> rendered && System.nanoTime() >= reportSteadyAfter
+            else -> true
+        }
     private var sessionFirstFrame = false
     private var stallJob: Job? = null
     private val lastMediaByteMs = AtomicLong(0)
@@ -201,7 +215,7 @@ class PlaybackController internal constructor(
                         (snapshot.status?.let { it >= 400 } == true || snapshot.phase == TransportPhase.Failed)) {
                         scope.launch {
                             if (session == activeSession && activeRequest === request)
-                                recordPlayback(true, diagnostic(code = if (startupTimedOut) "START_TIMEOUT" else "PROVIDER_RESPONSE",
+                                saveDiagnostic(true, diagnostic(code = if (startupTimedOut) "START_TIMEOUT" else "PROVIDER_RESPONSE",
                                     details = startupDetails()))
                         }
                     }
@@ -373,7 +387,7 @@ class PlaybackController internal constructor(
             }
             if (!rendered || startupTimedOut) {
                 val failure = PlaybackException("HTTP load failed", error, PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS)
-                recordPlayback(true, diagnostic(failure, code = if (startupTimedOut) "START_TIMEOUT" else "HLS_LOAD_HTTP_$status",
+                saveDiagnostic(true, diagnostic(failure, code = if (startupTimedOut) "START_TIMEOUT" else "HLS_LOAD_HTTP_$status",
                     details = startupDetails()))
             }
         }
@@ -435,6 +449,16 @@ class PlaybackController internal constructor(
                         hlsSession.lines() else emptyList())
     }
 
+    private fun saveDiagnostic(failed: Boolean, record: String) {
+        recordPlayback(failed, record)
+        if (failed) runCatching {
+            val request = activeRequest
+            val known = DiagnosticRedactor.secrets(listOfNotNull(request?.url))
+            reports.enqueue("playback_error", ReportText.safe(request?.channelName.orEmpty(), 120, known),
+                record.lineSequence().firstOrNull().orEmpty().substringAfter(" · "), record)
+        }
+    }
+
     private fun startupDetails(): List<String> = startupTiming?.let { timing ->
         val player = exo
         listOf("Channel: ${activeRequest?.channelName.orEmpty()}", *timing.detail().lines().toTypedArray(),
@@ -467,6 +491,7 @@ class PlaybackController internal constructor(
         val request = activeRequest ?: return
         val detector = StallDetector()
         val channel = DeadChannels.safeName(request.channelName, request.url)
+        val known = DiagnosticRedactor.secrets(listOf(request.url))
         stallJob = scope.launch {
             var previousTick = System.nanoTime() / 1_000_000
             while (activeRequest === request) {
@@ -490,7 +515,14 @@ class PlaybackController internal constructor(
                     decoderError = now - decoderErrorAt in 0..10_000,
                     jankMs = if (PlaybackJank.atMs in previousTick..now)
                         maxOf(PlaybackJank.durationMs, now - previousTick) else 0,
-                ))?.let(recordStall)
+                ))?.let { stall ->
+                    recordStall(stall)
+                    runCatching {
+                        reports.midPlaybackStall(ReportText.safe(stall.channel, 120, known),
+                            ReportText.safe("${stall.kind} · ${stall.evidence.substringBefore(';')}", 500, known),
+                            ReportText.safe(stall.line(), 16_000, known), stall.time)
+                    }
+                }
                 previousTick = now
             }
         }
@@ -523,7 +555,7 @@ class PlaybackController internal constructor(
                     since = System.nanoTime()
                     mutableStartupDelayed.value = false
                 } else if (!reported && (System.nanoTime() - since) / 1_000_000 >= startupTimeoutMs) {
-                    recordPlayback(true, diagnostic(code = code, details = listOf(
+                    saveDiagnostic(true, diagnostic(code = code, details = listOf(
                         "Channel: ${request.channelName.ifBlank { "unknown" }}",
                         *TimeoutEvidence.lines(player, rendererReadiness).toTypedArray(),
                         "Player: ${player.playbackState}; pos=${player.currentPosition}; buffered=${player.bufferedPosition}",
@@ -571,7 +603,7 @@ class PlaybackController internal constructor(
                         Player.STATE_ENDED -> "ENDED"
                         else -> "IDLE"
                     }
-                    recordPlayback(true, diagnostic(startupError, code = "START_TIMEOUT", details = listOf(
+                    saveDiagnostic(true, diagnostic(startupError, code = "START_TIMEOUT", details = listOf(
                         "Channel: ${request.channelName.ifBlank { "unknown" }}",
                         *TimeoutEvidence.lines(player, rendererReadiness).toTypedArray(),
                         *timing.detail().lines().toTypedArray(),
@@ -593,7 +625,7 @@ class PlaybackController internal constructor(
         val signature = "$audioDecoder|${selectedFormats()}|$preview"
         if (signature == successfulSignature) return
         successfulSignature = signature
-        recordPlayback(false, diagnostic())
+        saveDiagnostic(false, diagnostic())
     }
 
     fun audioTracks(): List<AudioTrackChoice> = exo?.currentTracks?.groups.orEmpty().flatMapIndexed { groupIndex, group ->
@@ -634,6 +666,7 @@ class PlaybackController internal constructor(
     /** Plays [request]. A request for the stream that is already active does nothing. */
     fun play(request: StreamRequest) {
         if (gate.onRequest(request.url) == StreamGate.Action.Ignore) return
+        reportSwitching = true
         stopHealthCheck()
         val previousCheck = healthJob
         clearProgressWatch()
@@ -679,6 +712,7 @@ class PlaybackController internal constructor(
         activeSession = session
         trace("STOP before switch")
         mutableStatus.value = PlaybackStatus.Connecting
+        reportSwitching = false
 
         startupTiming?.enter(StartupTiming.Phase.WAITING_PREVIOUS_CONNECTION)
 
@@ -721,15 +755,17 @@ class PlaybackController internal constructor(
         clearProgressWatch()
         clearStartupWatch()
         val error = preparationError(cause)
-        recordPlayback(true, diagnostic(error, details = startupDetails()))
+        saveDiagnostic(true, diagnostic(error, details = startupDetails()))
         activeRequest = null
         gate.onStopped()
         mutableStatus.value = failed(error)
+        reportSwitching = false
         runCatching { exo?.stop() }
     }
 
     /** Closes the stream for good. */
     fun stop() {
+        reportSwitching = false
         stopHealthCheck()
         clearProgressWatch()
         rendered = false
@@ -923,6 +959,8 @@ class PlaybackController internal constructor(
             }
             Player.STATE_READY -> {
                 recovery.onReady()
+                if (mutableStatus.value != PlaybackStatus.Playing && player.playWhenReady)
+                    reportSteadyAfter = System.nanoTime() + 3_000_000_000L
                 mutableStatus.value =
                     if (player.playWhenReady) PlaybackStatus.Playing else PlaybackStatus.Paused
             }
@@ -933,16 +971,18 @@ class PlaybackController internal constructor(
 
     private fun handleError(error: PlaybackException) {
         if (activeRequest == null) return
+        reportSwitching = true
         markStartupFailure(PlaybackHttpError.status(error)?.let { "HTTP $it" } ?: error.errorCodeName)
         clearProgressWatch()
         startupError = error
-        recordPlayback(true, diagnostic(error, details = startupDetails()))
+        saveDiagnostic(true, diagnostic(error, details = startupDetails()))
         if (retries < MAX_RETRIES) {
             retries++
             val request = activeRequest ?: return
             val session = activeSession
             val action = recovery.action(error.errorCode, request.url, error.cause)
             mutableStatus.value = PlaybackStatus.Connecting
+            reportSwitching = false
             startJob?.cancel()
             exo?.stop()
             startupTiming?.enter(StartupTiming.Phase.RECOVERY_DELAY)
@@ -974,6 +1014,7 @@ class PlaybackController internal constructor(
         } else {
             clearStartupWatch()
             mutableStatus.value = failed(error)
+            reportSwitching = false
             activeRequest = null
             gate.onStopped() // lets the user try the same channel again
             exo?.stop()

@@ -1,6 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Default (and only) UI language: Polish. Resource names are English. -->
 <resources>
+    <string name="reports_automatic">Automatyczne wysyłanie błędów: %1$s</string>
+    <string name="reports_on">włączone</string>
+    <string name="reports_off">wyłączone</string>
+    <string name="reports_never">nigdy</string>
+    <string name="reports_status">W kolejce: %1$d · ostatnio wysłano: %2$s · ostatni błąd wysyłki: %3$s</string>
+    <string name="reports_blocked">Wstrzymane do końca startu kanału</string>
+    <string name="reports_send_now">Wyślij teraz</string>
     <string name="settings_sources">Źródła kanałów</string>
     <string name="settings_omdb">IMDb/OMDb</string>
     <string name="settings_updates">Aktualizacje</string>

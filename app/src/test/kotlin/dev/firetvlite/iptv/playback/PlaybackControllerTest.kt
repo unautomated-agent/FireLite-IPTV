@@ -28,9 +28,100 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import dev.firetvlite.iptv.reporting.ReportSink
 
 class PlaybackControllerTest {
     private val request = StreamRequest("https://example.org/live", "FireLite")
+
+    @Test fun playbackReportChannelRedactsStandaloneStreamSecretsAndUnsafeText() = runBlocking {
+        val fake = FakePlayer()
+        val channels = mutableListOf<String>()
+        val sink = object : ReportSink {
+            override fun enqueue(kind: String, channel: String, summary: String, detail: String) { channels += channel }
+        }
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY }, evictConnections = {}, reports = sink)
+        try {
+            controller.play(request.copy(url = "https://provider.test/live/fixture-user/fixture-password/1.m3u8?token=fixture-token",
+                channelName = "TV fixture-user fixture-password fixture-token https://other.test/private/123456789 token=private"))
+            delay(450)
+            fake.listener!!.onPlayerError(TestError(2001))
+            val channel = channels.single()
+            listOf("fixture-user", "fixture-password", "fixture-token", "https://", "/private/", "123456789", "token=private").forEach {
+                assertEquals(it, false, channel.contains(it))
+            }
+            assertTrue(channel.startsWith("TV "))
+            assertTrue(channel.contains("other[.]test"))
+        } finally { controller.stop() }
+    }
+
+    @Test fun reportingIsBlockedDuringStartupAndFailuresSendTheExistingDiagnosticDetail() = runBlocking {
+        val fake = FakePlayer()
+        val recorded = mutableListOf<String>()
+        val uploaded = mutableListOf<List<String>>()
+        val sink = object : ReportSink {
+            override fun enqueue(kind: String, channel: String, summary: String, detail: String) {
+                uploaded += listOf(kind, channel, summary, detail)
+            }
+        }
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            recordPlayback = { failed, detail -> if (failed) recorded += detail }, evictConnections = {}, reports = sink)
+        try {
+            assertTrue(controller.reportUploadsAllowed)
+            controller.play(request.copy(channelName = "Test channel"))
+            assertEquals(false, controller.reportUploadsAllowed)
+            delay(450)
+            fake.listener!!.onPlayerError(TestError(2001))
+            assertEquals(false, controller.reportUploadsAllowed)
+            assertEquals("playback_error", uploaded.single()[0])
+            assertEquals("Test channel", uploaded.single()[1])
+            assertEquals(recorded.single(), uploaded.single()[3])
+            controller.stop()
+            assertTrue(controller.reportUploadsAllowed)
+        } finally { controller.stop() }
+    }
+
+    @Test fun midPlaybackStallReportsClassificationReasonAndRedactedRecordWithoutRestart(): Unit = runBlocking {
+        val fake = FakePlayer()
+        val stalls = mutableListOf<PlaybackStall>()
+        val sent = mutableListOf<List<String>>()
+        val started = mutableListOf<Long>()
+        val sink = object : ReportSink {
+            override fun midPlaybackStall(channel: String, summary: String, detail: String, startedAt: Long) {
+                started += startedAt
+                enqueue("stall", channel, summary, detail)
+            }
+            override fun enqueue(kind: String, channel: String, summary: String, detail: String) {
+                sent += listOf(kind, channel, summary, detail)
+                throw IllegalStateException("reporting fixture")
+            }
+        }
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            evictConnections = {}, recordStall = { stalls += it }, startupTimeoutMs = 60_000, reports = sink)
+        try {
+            controller.play(request.copy(url = "https://provider.test/live/fixture-user/fixture-password/1.m3u8?token=fixture-token",
+                channelName = "TV fixture-user fixture-password fixture-token 123456789 https://other.test/private"))
+            delay(450)
+            assertTrue(sent.isEmpty())
+            fake.state = Player.STATE_READY
+            fake.listener!!.onRenderedFirstFrame()
+            fake.state = Player.STATE_BUFFERING
+            fake.listener!!.onPlaybackStateChanged(fake.state)
+            withTimeout(5_000) { while (sent.isEmpty()) delay(50) }
+            val event = sent.first()
+            val stall = stalls.first()
+            assertEquals(stall.time, started.first())
+            assertEquals("stall", event[0])
+            assertEquals("${stall.kind} · ${stall.evidence.substringBefore(';')}", event[2])
+            assertTrue(event[3].startsWith("Zawieszenie:"))
+            assertTrue(event[3].contains("buffer="))
+            listOf("fixture-user", "fixture-password", "fixture-token", "123456789", "https://", "/private").forEach {
+                assertEquals(it, false, event.joinToString().contains(it))
+            }
+            assertEquals(1, fake.calls.count { it == "prepare" })
+            assertEquals(1, fake.calls.count { it == "stop" })
+            assertTrue(controller.hasActiveStream)
+        } finally { controller.stop() }
+    }
 
     @Test fun midPlaybackStallsOnlyObserveAfterRenderAndCancelOnSwitch(): Unit = runBlocking {
         val fake = FakePlayer()

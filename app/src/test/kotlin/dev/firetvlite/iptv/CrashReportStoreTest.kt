@@ -8,8 +8,49 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import dev.firetvlite.iptv.reporting.ReportSink
 
 class CrashReportStoreTest {
+    @Test fun forwardsCrashAndStallAndRetriesUnacknowledgedExitsWithoutBlockingDelegation() {
+        val events = mutableListOf<String>()
+        val sink = object : ReportSink {
+            override fun enqueue(kind: String, channel: String, summary: String, detail: String) {
+                events += kind
+                throw IllegalStateException("sink fixture")
+            }
+        }
+        val store = CrashReportStore(File(folder.root, "reporting.txt"), sink)
+        var delegated = false
+        store.handler("test") { _, _ -> delegated = true }.uncaughtException(Thread.currentThread(), IllegalStateException("fixture"))
+        store.stall("test", 3500, "stack")
+        val exit = ProcessExitRecord(3000, "ANR", 0, "fixture exit", 0, 0)
+        store.processExits(listOf(exit))
+        store.processExits(listOf(exit))
+        org.junit.Assert.assertEquals(listOf("crash", "anr", "exit", "exit"), events)
+        assertTrue(delegated)
+    }
+
+    @Test fun failedExitHandoffDoesNotAdvancePastAnyUncapturedExit() {
+        var durable = false
+        val attempts = mutableListOf<Long>()
+        val sink = object : ReportSink {
+            override fun enqueue(kind: String, channel: String, summary: String, detail: String) = Unit
+            override fun processExit(occurredAt: Long, summary: String, detail: String): Boolean {
+                attempts += occurredAt
+                return durable
+            }
+        }
+        val store = CrashReportStore(File(folder.root, "retry.txt"), sink)
+        val exits = listOf(1000L, 2000L).map { ProcessExitRecord(it, "ANR", 0, "fixture", 0, 0) }
+        store.processExits(exits)
+        assertTrue(!File(folder.root, "process-exits-seen.txt").exists())
+        org.junit.Assert.assertEquals(listOf(1000L), attempts)
+        durable = true
+        store.processExits(exits)
+        org.junit.Assert.assertEquals(listOf(1000L, 1000L, 2000L), attempts)
+        org.junit.Assert.assertEquals("2000", File(folder.root, "process-exits-seen.txt").readText())
+    }
+
     @Test fun failedWritePreservesThePreviousReportAndStillDelegates() {
         val file = File(folder.root, "atomic.txt").apply { writeText("previous report") }
         File(folder.root, "atomic.txt.new").mkdir()

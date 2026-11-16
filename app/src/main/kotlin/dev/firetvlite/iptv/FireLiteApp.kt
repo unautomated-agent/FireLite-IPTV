@@ -4,6 +4,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
@@ -19,6 +21,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import dev.firetvlite.iptv.playback.PlayerMode
 import dev.firetvlite.iptv.ui.components.FLText
+import dev.firetvlite.iptv.ui.components.SecondaryButton
 import dev.firetvlite.iptv.ui.components.LocalFilmRatings
 import dev.firetvlite.iptv.ui.components.WarsawClockBox
 import dev.firetvlite.iptv.ui.navigation.StreamPanel
@@ -50,6 +53,8 @@ fun FireLiteApp(updateViewModel: UpdateViewModel, libraryViewModel: LibraryViewM
 @Composable
 private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: LibraryViewModel, playerViewModel: PlayerViewModel) {
     val updateState by updateViewModel.state.collectAsState()
+    val automaticUpdate by updateViewModel.automaticUpdate.collectAsState()
+    var dismissedUpdate by rememberSaveable { mutableStateOf<String?>(null) }
     val source by libraryViewModel.source.collectAsState()
     val sources by libraryViewModel.sources.collectAsState()
     val channelCount by libraryViewModel.channelCount.collectAsState()
@@ -103,5 +108,20 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
         PlayerLayer(viewModel = playerViewModel, library = libraryViewModel, previewBounds = null,
             onFilms = { navigate(StreamPanel.Films) }, onSettings = { navigate(StreamPanel.Settings) })
         WarsawClockBox(Modifier.align(Alignment.TopStart).padding(16.dp))
+        automaticUpdate?.takeIf { it.tag != dismissedUpdate }?.let { release ->
+            Column(Modifier.align(Alignment.TopEnd).padding(24.dp)
+                .background(FireLiteTheme.colors.surfaceHigh).padding(16.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                FLText(stringResource(R.string.update_new_build, release.buildNumber), style = FireLiteTheme.typography.title)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SecondaryButton(stringResource(R.string.update_view), {
+                        dismissedUpdate = release.tag
+                        updateViewModel.showAutomaticUpdate(release)
+                        navigate(StreamPanel.Settings)
+                    })
+                    SecondaryButton(stringResource(R.string.update_later), { dismissedUpdate = release.tag })
+                }
+            }
+        }
     }
 }

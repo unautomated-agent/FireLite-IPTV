@@ -37,6 +37,8 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.ConcurrentHashMap
 import java.io.Closeable
 import java.io.IOException
 import java.util.Locale
@@ -110,6 +112,7 @@ class PlaybackController internal constructor(
     private val channelResult: (StreamRequest, String?) -> Unit = { _, _ -> },
     private val healthResult: (StreamRequest, String?) -> Unit = { _, _ -> },
     private val healthSummary: (String) -> Unit = {},
+    private val recordStall: (PlaybackStall) -> Unit = {},
     private val healthProbe: (StreamRequest, (okhttp3.Call?) -> Unit, () -> Unit) -> String? = { request, call, active ->
         ChannelHealthProbe().check(request, call, active)
     },
@@ -117,7 +120,7 @@ class PlaybackController internal constructor(
     internal constructor(scope: CoroutineScope, createPlayer: (HttpDataSource.Factory) -> ExoPlayer) :
         this(scope, createPlayer, {})
 
-    internal constructor(context: Context, scope: CoroutineScope, deadChannels: DeadChannels) : this(scope, { httpFactory ->
+    internal constructor(context: Context, scope: CoroutineScope, deadChannels: DeadChannels, stalls: StallHistory) : this(scope, { httpFactory ->
         val renderers = DefaultRenderersFactory(context)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
             .setEnableDecoderFallback(true)
@@ -132,7 +135,7 @@ class PlaybackController internal constructor(
         player.setMediaSource(PlaybackMediaSourceFactory(factory).createMediaSource(item))
     }, recordPlayback = diagnosticRecorder(context, scope), channelResult = { request, reason -> deadChannels.result(request, reason) },
         healthResult = { request, reason -> deadChannels.result(request, reason, "health check") },
-        healthSummary = deadChannels::checkSummary)
+        healthSummary = deadChannels::checkSummary, recordStall = stalls::record)
 
     private val gate = StreamGate()
     private val evictionMutex = Mutex()
@@ -146,6 +149,18 @@ class PlaybackController internal constructor(
     private val mutableHealthCheck = MutableStateFlow(ChannelCheckProgress())
     val healthCheck: StateFlow<ChannelCheckProgress> = mutableHealthCheck.asStateFlow()
     private var rendered = false
+    private var sessionFirstFrame = false
+    private var stallJob: Job? = null
+    private val lastMediaByteMs = AtomicLong(0)
+    private val mediaLoads = ConcurrentHashMap<Long, Long>()
+    private var lastLoadMs = 0L
+    private var lastLoadAt = 0L
+    private var bandwidth = 0L
+    private var loadErrorAt = 0L
+    private var loadErrorStatus: Int? = null
+    private var decoderErrorAt = 0L
+    private val mutableFirstFrame = MutableStateFlow(false)
+    val firstFrame: StateFlow<Boolean> = mutableFirstFrame.asStateFlow()
     private var startupFailureMarked = false
     private var startupUserInitiated = false
     private val rendererReadiness = mutableMapOf<Int, Boolean>()
@@ -209,6 +224,7 @@ class PlaybackController internal constructor(
                 override fun open(dataSpec: DataSpec): Long {
                     connection = connectionGate.acquire(session)
                     requestId = hls.begin(dataSpec.uri.toString(), dataType)
+                    if (dataType == C.DATA_TYPE_MEDIA) mediaLoads[requestId] = System.nanoTime() / 1_000_000
                     stream = dataSpec.uri.toString().hashCode()
                     connected = true
                     trace("HTTP_OPEN session=$session stream=$stream active=${connections.incrementAndGet()}")
@@ -227,11 +243,19 @@ class PlaybackController internal constructor(
                         if (connected) {
                             connected = false
                             hls.end(requestId)
+                            mediaLoads.remove(requestId)
                             trace("HTTP_CLOSE session=$session stream=$stream active=${connections.decrementAndGet()}")
                             connection?.close()
                             connection = null
                         }
                     }
+                }
+
+                override fun read(buffer: ByteArray, offset: Int, length: Int): Int {
+                    val read = delegate.read(buffer, offset, length)
+                    if (read > 0 && session == activeSession && dataType != C.DATA_TYPE_MANIFEST)
+                        lastMediaByteMs.set(System.nanoTime() / 1_000_000)
+                    return read
                 }
             }
         }
@@ -261,11 +285,20 @@ class PlaybackController internal constructor(
         override fun onTracksChanged(tracks: Tracks) { recordSuccess() }
 
         override fun onRenderedFirstFrame() {
+            mutableFirstFrame.value = true
+            sessionFirstFrame = true
             if (exo?.playbackState == Player.STATE_READY) renderingStarted()
+        }
+
+        override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
+            if (rendered) watchStalls()
         }
     }
 
     private val analytics = object : AnalyticsListener {
+        override fun onBandwidthEstimate(eventTime: AnalyticsListener.EventTime, totalLoadTimeMs: Int,
+            totalBytesLoaded: Long, bitrateEstimate: Long) { bandwidth = bitrateEstimate }
+
         override fun onRendererReadyChanged(eventTime: AnalyticsListener.EventTime, rendererIndex: Int,
             trackType: Int, isRendererReady: Boolean) {
             rendererReadiness[trackType] = isRendererReady
@@ -273,11 +306,20 @@ class PlaybackController internal constructor(
         override fun onAudioPositionAdvancing(eventTime: AnalyticsListener.EventTime, playoutStartSystemTimeMs: Long) {
             val player = exo ?: return
             if (player.playbackState == Player.STATE_READY && player.audioFormat != null &&
-                player.currentTracks.groups.none { it.type == C.TRACK_TYPE_VIDEO }) renderingStarted()
+                player.currentTracks.groups.none { it.type == C.TRACK_TYPE_VIDEO }) {
+                sessionFirstFrame = true
+                mutableFirstFrame.value = true
+                renderingStarted()
+            }
         }
         override fun onLoadCompleted(eventTime: AnalyticsListener.EventTime, loadEventInfo: LoadEventInfo,
             mediaLoadData: MediaLoadData) {
             if (!hlsSession.owns(loadEventInfo.dataSpec.uri.toString())) return
+            if (mediaLoadData.dataType == C.DATA_TYPE_MEDIA || mediaLoadData.dataType == C.DATA_TYPE_UNKNOWN) {
+                lastLoadMs = loadEventInfo.loadDurationMs
+                lastLoadAt = System.nanoTime() / 1_000_000
+                if (lastLoadMs > 0) bandwidth = loadEventInfo.bytesLoaded * 8_000 / lastLoadMs
+            }
             if (activeRequest != null) hlsSession.loaded(loadEventInfo.uri.toString())
             if (activeRequest != null && mediaLoadData.dataType == C.DATA_TYPE_MANIFEST)
                 recovery.onManifestLoaded()
@@ -295,6 +337,8 @@ class PlaybackController internal constructor(
             val status = PlaybackHttpError.status(error) ?: return
             val failedUri = PlaybackHttpError.requestUri(error) ?: loadEventInfo.uri.toString()
             if (!hlsSession.owns(failedUri)) return
+            loadErrorAt = System.nanoTime() / 1_000_000
+            loadErrorStatus = status
             if (status in 400..599) markStartupFailure("HTTP $status")
             hlsSession.failedRequest(failedUri, status)
             val kind = hlsSession.kind(failedUri, mediaLoadData.dataType)
@@ -349,6 +393,14 @@ class PlaybackController internal constructor(
 
         override fun onVideoInputFormatChanged(eventTime: AnalyticsListener.EventTime, format: Format,
             decoderReuseEvaluation: DecoderReuseEvaluation?) { recordSuccess() }
+
+        override fun onVideoCodecError(eventTime: AnalyticsListener.EventTime, videoCodecError: Exception) {
+            decoderErrorAt = System.nanoTime() / 1_000_000
+        }
+
+        override fun onAudioCodecError(eventTime: AnalyticsListener.EventTime, audioCodecError: Exception) {
+            decoderErrorAt = System.nanoTime() / 1_000_000
+        }
     }
 
     private fun describe(format: Format): String =
@@ -401,12 +453,47 @@ class PlaybackController internal constructor(
     private fun renderingStarted() {
         if (activeRequest == null) return
         if (!rendered) activeRequest?.let { channelResult(it, null) }
+        if (!rendered) watchStalls()
         rendered = true
         startupTimedOut = false
         lastHttpFailure = null
         startupError = null
         retries = 0
         clearStartupWatch()
+    }
+
+    private fun watchStalls() {
+        stallJob?.cancel()
+        val request = activeRequest ?: return
+        val detector = StallDetector()
+        val channel = DeadChannels.safeName(request.channelName, request.url)
+        stallJob = scope.launch {
+            var previousTick = System.nanoTime() / 1_000_000
+            while (activeRequest === request) {
+                delay(500)
+                val player = exo ?: break
+                val now = System.nanoTime() / 1_000_000
+                val counters = player.videoDecoderCounters
+                counters?.ensureUpdated()
+                detector.sample(StallSample(now, System.currentTimeMillis(), channel,
+                    active = rendered && sessionFirstFrame && player.playWhenReady && !player.isPlayingAd &&
+                        player.playbackState in setOf(Player.STATE_READY, Player.STATE_BUFFERING) &&
+                        player.playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_NONE,
+                    buffering = player.playbackState == Player.STATE_BUFFERING, ready = player.playbackState == Player.STATE_READY,
+                    frames = if (player.videoFormat != null) counters?.renderedOutputBufferCount else null,
+                    positionMs = progressPosition(player), bufferedMs = player.totalBufferedDuration,
+                    byteAgeMs = if (lastMediaByteMs.get() == 0L) 0 else (now - lastMediaByteMs.get()).coerceAtLeast(0),
+                    httpError = loadErrorStatus.takeIf { now - loadErrorAt in 0..10_000 },
+                    loadMs = maxOf(mediaLoads.values.minOrNull()?.let { now - it } ?: 0,
+                        lastLoadMs.takeIf { now - lastLoadAt in 0..10_000 } ?: 0),
+                    bandwidth = bandwidth, dropped = counters?.droppedBufferCount ?: 0,
+                    decoderError = now - decoderErrorAt in 0..10_000,
+                    jankMs = if (PlaybackJank.atMs in previousTick..now)
+                        maxOf(PlaybackJank.durationMs, now - previousTick) else 0,
+                ))?.let(recordStall)
+                previousTick = now
+            }
+        }
     }
 
     private fun clearProgressWatch() {
@@ -551,6 +638,16 @@ class PlaybackController internal constructor(
         val previousCheck = healthJob
         clearProgressWatch()
         rendered = false
+        stallJob?.cancel()
+        sessionFirstFrame = false
+        lastMediaByteMs.set(0)
+        mediaLoads.clear()
+        lastLoadAt = 0
+        lastLoadMs = 0
+        bandwidth = 0
+        loadErrorAt = 0
+        loadErrorStatus = null
+        decoderErrorAt = 0
         startupFailureMarked = false
         startupUserInitiated = request.userInitiated
         rendererReadiness.clear()
@@ -636,6 +733,8 @@ class PlaybackController internal constructor(
         stopHealthCheck()
         clearProgressWatch()
         rendered = false
+        stallJob?.cancel()
+        sessionFirstFrame = false
         clearStartupWatch()
         startJob?.cancel()
         startJob = null

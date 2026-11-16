@@ -67,6 +67,7 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
     val stats by diagnostics.collectAsState(SourceDiagnostics())
     val context = LocalContext.current
     val channelHealth by (context.applicationContext as FireLiteApplication).container.deadChannels.state.collectAsState()
+    val stalls by (context.applicationContext as FireLiteApplication).container.stalls.state.collectAsState()
     val store = remember(context) { CrashReportStore(File(context.filesDir, "last-crash.txt")) }
     var crash by remember { mutableStateOf<String?>(null) }
     var playback by remember { mutableStateOf("") }
@@ -88,8 +89,13 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
                 if (omdbKey.isBlank()) "NO_KEY" else today.lastError) +
             "\n" + today.missSummary() + "\n" + DiagnosticsReport.text(source, state, stats, crash, playback)
     }
-    val report = remember(baseReport, channelHealth) { channelHealth.summary() + "\n" + baseReport }
-    val qrReport = remember(baseReport, channelHealth) { channelHealth.qrSummary() + "\n" + baseReport }
+    val report = remember(baseReport, channelHealth, stalls) {
+        channelHealth.summary() + "\n" + stalls.joinToString("\n") { it.line() } + "\n" + baseReport
+    }
+    val qrReport = remember(baseReport, channelHealth, stalls) {
+        channelHealth.qrSummary() + "\n" +
+            stalls.joinToString("\n") { it.line(compact = true) } + "\n" + baseReport
+    }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         FLText(stringResource(R.string.diagnostics_title), style = FireLiteTheme.typography.headline)
         PrimaryButton(stringResource(R.string.diagnostics_open), { opened = true })

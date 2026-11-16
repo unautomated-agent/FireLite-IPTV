@@ -4,6 +4,9 @@ import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
+import java.util.concurrent.TimeUnit
+import okhttp3.OkHttpClient
+import okhttp3.Request
 
 /**
  * Talks to GitHub: finds the newest release and downloads its APK.
@@ -15,6 +18,19 @@ class UpdateRepository(
     private val repository: String,
     private val versionCodeOffset: Int,
 ) {
+    private val backgroundClient by lazy {
+        OkHttpClient.Builder().connectTimeout(3, TimeUnit.SECONDS).readTimeout(3, TimeUnit.SECONDS)
+            .callTimeout(5, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false).build()
+    }
+
+    fun fetchLatestBackground(): ReleaseParser.Result {
+        val request = Request.Builder().url("https://api.github.com/repos/$repository/releases/latest")
+            .header("Accept", "application/vnd.github+json").header("User-Agent", "FireLite").build()
+        return backgroundClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) throw IOException("GitHub answered HTTP ${response.code}")
+            ReleaseParser.parse(response.body?.string() ?: throw IOException("Empty GitHub response"), versionCodeOffset)
+        }
+    }
 
     @Throws(IOException::class, org.json.JSONException::class)
     fun fetchLatest(): ReleaseParser.Result {

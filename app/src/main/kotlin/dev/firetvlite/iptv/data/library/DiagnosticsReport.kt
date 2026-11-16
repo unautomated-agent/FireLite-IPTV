@@ -104,6 +104,7 @@ object DiagnosticsReport {
         "Provider wait:", "Provider response:", "Transport redirects:",
         "OMDb braki wg typu:",
         "Martwe kanały:", "Zdrowie kanałów:",
+        "Zawieszenie:",
         "FireLite ·", "Ostatni błąd odtwarzania:", "Ostatnie poprawne odtwarzanie:", "Channel:",
         "Startup:", "STOPPING_PREVIOUS=", "CLOSE_GRACE=", "WAITING_PREVIOUS_CONNECTION=",
         "PREPARING_BUFFERING=", "RECOVERY_DELAY=", "WAITING_RECOVERY_CONNECTION=",
@@ -120,6 +121,7 @@ object DiagnosticsReport {
         }.toMutableSet()
         val failureEnd = lines.indexOfFirst { it == "Ostatnie poprawne odtwarzanie:" }.takeIf { it >= 0 } ?: lines.size
         lines.indices.filter { lines[it].startsWith("Martwe:") }.take(4).forEach { required.add(it) }
+        lines.indices.filter { lines[it].startsWith("Zawieszenie:") }.take(5).forEach { required.add(it) }
         lines.take(failureEnd).forEachIndexed { index, line ->
             if (line.startsWith("HLS request:") || line.startsWith("HLS variant:") || line.startsWith("HLS rendition:"))
                 required.add(index)
@@ -134,6 +136,7 @@ object DiagnosticsReport {
         }
         if (required.isEmpty()) return utf8Limit(text, bytes)
         val priority = required.filter { lines[it].startsWith("Transport pending:") ||
+            lines[it].startsWith("Zawieszenie:") ||
             lines[it].startsWith("Martwe") || lines[it].startsWith("Zdrowie kanałów:") ||
             lines[it].startsWith("Provider wait:") || lines[it].startsWith("Provider response:") ||
             lines[it].startsWith("Transport redirects:") ||
@@ -145,7 +148,11 @@ object DiagnosticsReport {
         if (used > bytes) {
             selected.clear()
             used = 0
-            val ordered = priority.sortedBy { if (lines[it].startsWith("Zdrowie kanałów:")) 0 else 1 } + (required - priority)
+            val ordered = priority.sortedBy { when {
+                lines[it].startsWith("Zawieszenie:") -> 0
+                lines[it].startsWith("Zdrowie kanałów:") -> 1
+                else -> 2
+            } } + (required - priority)
             ordered.forEach { index ->
                 val remaining = bytes - used - if (selected.isEmpty()) 0 else 1
                 if (remaining >= 4) {

@@ -73,6 +73,7 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
     val channelHealth by (context.applicationContext as FireLiteApplication).container.deadChannels.state.collectAsState()
     val reporting = (context.applicationContext as FireLiteApplication).container.errorReports
     val reportingStatus by reporting.state.collectAsState()
+    val stalls by (context.applicationContext as FireLiteApplication).container.stalls.state.collectAsState()
     val store = remember(context) { CrashReportStore(File(context.filesDir, "last-crash.txt")) }
     var crash by remember { mutableStateOf<String?>(null) }
     var playback by remember { mutableStateOf("") }
@@ -94,15 +95,19 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
                 if (omdbKey.isBlank()) "NO_KEY" else today.lastError) +
             "\n" + today.missSummary() + "\n" + DiagnosticsReport.text(source, state, stats, crash, playback)
     }
-    val report = remember(baseReport, channelHealth) { channelHealth.summary() + "\n" + baseReport }
-    val qrReport = remember(baseReport, channelHealth) { channelHealth.qrSummary() + "\n" + baseReport }
+    val report = remember(baseReport, channelHealth, stalls) {
+        channelHealth.summary() + "\n" + stalls.joinToString("\n") { it.line() } + "\n" + baseReport
+    }
+    val qrReport = remember(baseReport, channelHealth, stalls) {
+        channelHealth.qrSummary() + "\n" +
+            stalls.joinToString("\n") { it.line(compact = true) } + "\n" + baseReport
+    }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         val lastError = settingsLastError(report)
         FLText(stringResource(R.string.settings_last_error, lastError ?: stringResource(R.string.settings_no_report)),
             style = FireLiteTheme.typography.body, maxLines = 1)
         FLText(stringResource(R.string.settings_dead_count, channelHealth.entries.size), style = FireLiteTheme.typography.body)
-        FLText(stringResource(R.string.settings_stall_count,
-            crash.orEmpty().lineSequence().count { it.startsWith("Main-thread stall:") }), style = FireLiteTheme.typography.body)
+        FLText(stringResource(R.string.settings_stall_count, stalls.size), style = FireLiteTheme.typography.body)
         FLText(stringResource(R.string.settings_health_summary, channelHealth.check.ifBlank { stringResource(R.string.settings_no_report) }),
             style = FireLiteTheme.typography.body, maxLines = 2)
         PrimaryButton(stringResource(R.string.diagnostics_open), { opened = true }, Modifier.settingsControl("diagnostics-open"))

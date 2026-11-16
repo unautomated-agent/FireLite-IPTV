@@ -26,7 +26,6 @@ import dev.firetvlite.iptv.data.db.ChannelEntity
 import dev.firetvlite.iptv.data.epg.CurrentAndNext
 import dev.firetvlite.iptv.playback.PlaybackFrame
 import dev.firetvlite.iptv.playback.PlaybackTime
-import dev.firetvlite.iptv.playback.SeekPreview
 import dev.firetvlite.iptv.ui.components.ChannelLogo
 import dev.firetvlite.iptv.ui.components.ArchiveIcon
 import dev.firetvlite.iptv.ui.components.DeadChannelIcon
@@ -37,11 +36,10 @@ import dev.firetvlite.iptv.ui.components.clockTime
 import dev.firetvlite.iptv.ui.components.minuteClock
 import dev.firetvlite.iptv.ui.components.programmeTimes
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
-import kotlin.math.abs
 
 @Composable
 internal fun PlayerInfoBanner(channel: ChannelEntity?, frame: PlaybackFrame, guide: CurrentAndNext,
-    expanded: Boolean, scroll: ScrollState, archive: Boolean, seekPreview: SeekPreview? = null, seekTargetMs: Long? = null) {
+    expanded: Boolean, scroll: ScrollState, archive: Boolean, seekTargetMs: Long? = null) {
     val colors = FireLiteTheme.colors
     val type = FireLiteTheme.typography
     val now by minuteClock()
@@ -67,11 +65,6 @@ internal fun PlayerInfoBanner(channel: ChannelEntity?, frame: PlaybackFrame, gui
                         .background(colors.accent.copy(alpha = 0.15f)).padding(horizontal = 12.dp, vertical = 6.dp))
                 FLText(clockTime(now), style = type.headline)
             }
-            seekPreview?.let { pending ->
-                val offset = (if (pending.offsetMs < 0) "−" else "+") + formatClock(abs(pending.offsetMs))
-                FLText(stringResource(R.string.player_seek_preview, offset, pending.multiplier),
-                    style = type.title, color = colors.accent)
-            }
             val current = guide.current
             FLText(current?.title ?: "Brak informacji o programie",
                 style = type.headline.copy(fontSize = 28.sp, fontWeight = FontWeight.Bold), maxLines = 2)
@@ -79,13 +72,13 @@ internal fun PlayerInfoBanner(channel: ChannelEntity?, frame: PlaybackFrame, gui
                 ImdbRating(current, showVotes = expanded)
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                     FLText(programmeTimes(current), style = type.body)
-                    FLText("jeszcze ${((current.stop - frame.watchedMs).coerceAtLeast(0) + 59_999) / 60_000} min",
-                        style = type.label, color = colors.textSecondary)
+                    FLText(seekTargetMs?.let { stringResource(R.string.player_seek_target, clockTime(it)) }
+                        ?: "jeszcze ${((current.stop - frame.watchedMs).coerceAtLeast(0) + 59_999) / 60_000} min",
+                        style = type.label, color = if (seekTargetMs == null) colors.textSecondary else colors.accent,
+                        maxLines = 1)
                 }
                 ProgressBar(PlaybackTime.progress(frame.watchedMs, current.start, current.stop),
                     liveProgress = seekTargetMs?.let { PlaybackTime.progress(it, current.start, current.stop) })
-                seekTargetMs?.let { FLText(stringResource(R.string.player_seek_target, clockTime(it)),
-                    style = type.label, color = colors.accent) }
             }
             guide.next?.let { FLText(stringResource(R.string.channel_next_programme, clockTime(it.start), it.title),
                 style = type.body, maxLines = 1, color = colors.accent) }

@@ -105,6 +105,8 @@ fun SettingsScreen(
     canWatch: Boolean,
     onWatch: () -> Unit,
     modifier: Modifier = Modifier,
+    openUpdates: Boolean = false,
+    onUpdatesOpened: () -> Unit = {},
 ) {
     var savedSection by rememberSaveable { mutableStateOf(SettingsSection.Sources.name) }
     val section = SettingsSection.restored(savedSection)
@@ -119,7 +121,12 @@ fun SettingsScreen(
         changed = { lastControls = HashMap(lastControls).apply { put(section.name, it) } },
     ) }
     fun enterPane() { scope.launch { pane.requestFocusWhenReady() } }
-    LaunchedEffect(Unit) { rail.getValue(section).requestFocusWhenReady() }
+    LaunchedEffect(openUpdates) {
+        val target = settingsEntrySection(savedSection, openUpdates)
+        savedSection = target.name
+        rail.getValue(target).requestFocusWhenReady()
+        if (openUpdates) onUpdatesOpened()
+    }
     BackHandler(enabled = paneFocused) { rail.getValue(section).requestFocus() }
     SettingsLayout(modifier) {
         Column(Modifier.width(220.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {

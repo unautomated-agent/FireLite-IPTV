@@ -16,6 +16,10 @@
     <string name="settings_stall_count">Zawieszenia w raporcie: %1$d</string>
     <string name="settings_health_summary">Zdrowie kanałów: %1$s</string>
     <string name="settings_no_report">Brak</string>
+    <string name="update_new_build">Dostępna aktualizacja: build %1$d</string>
+    <string name="update_hint">Nowa wersja dostępna — Ustawienia → Aktualizacja</string>
+    <string name="update_view">Zobacz aktualizację</string>
+    <string name="update_later">Później</string>
     <string name="channel_dead">Kanał oznaczony jako niedziałający</string>
     <string name="health_title">Zdrowie kanałów</string>
     <string name="health_start">Sprawdź zdrowie kanałów</string>

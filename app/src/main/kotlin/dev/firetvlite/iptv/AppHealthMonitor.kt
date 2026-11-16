@@ -9,6 +9,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import dev.firetvlite.iptv.playback.PlaybackJank
 
 internal class AppHealthMonitor(private val application: Application, private val reports: CrashReportStore) {
     @Volatile private var foreground = false
@@ -19,7 +20,11 @@ internal class AppHealthMonitor(private val application: Application, private va
         val watchdog = MainThreadWatchdog(
             post = { handler.post(it) },
             stack = { main.thread.stackTrace.take(32).joinToString("\n") },
-            report = { duration, stack -> reports.stall(version, duration, stack) },
+            report = { duration, stack ->
+                PlaybackJank.durationMs = duration
+                PlaybackJank.atMs = System.nanoTime() / 1_000_000
+                reports.stall(version, duration, stack)
+            },
         )
         application.registerActivityLifecycleCallbacks(object : Application.ActivityLifecycleCallbacks {
             private var started = 0

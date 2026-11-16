@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.firetvlite.iptv.BuildConfig
+import dev.firetvlite.iptv.FireLiteApplication
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
@@ -28,6 +29,7 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
 
     private val mutableState = MutableStateFlow<UpdateState>(UpdateState.Idle)
     val state: StateFlow<UpdateState> = mutableState.asStateFlow()
+    val automaticUpdate = (application as FireLiteApplication).container.launchUpdate.available
 
     val installed: InstalledVersion = readInstalledVersion()
 
@@ -36,7 +38,10 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
     init {
         // A finished update leaves its APK behind; it is no longer needed once this build runs.
         viewModelScope.launch(Dispatchers.IO) { updateFile.parentFile?.deleteRecursively() }
-        checkForUpdate()
+    }
+
+    fun showAutomaticUpdate(release: ReleaseInfo) {
+        if (mutableState.value !is UpdateState.Downloading) mutableState.value = UpdateState.Available(release)
     }
 
     fun checkForUpdate() {

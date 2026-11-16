@@ -15,6 +15,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import dev.firetvlite.iptv.playback.utf8Limit
+import dev.firetvlite.iptv.playback.compactDeadSummary
 
 data class SourceDiagnostics(val channelCount: Int = 0, val matched: Int = 0,
     val archiveTypes: Map<String, Int> = emptyMap(), val secrets: Set<String> = emptySet()) {
@@ -104,6 +105,7 @@ object DiagnosticsReport {
         "Provider wait:", "Provider response:", "Transport redirects:",
         "OMDb braki wg typu:",
         "Martwe kanały:", "Zdrowie kanałów:",
+        "Zawieszenie:",
         "FireLite ·", "Ostatni błąd odtwarzania:", "Ostatnie poprawne odtwarzanie:", "Channel:",
         "Startup:", "STOPPING_PREVIOUS=", "CLOSE_GRACE=", "WAITING_PREVIOUS_CONNECTION=",
         "PREPARING_BUFFERING=", "RECOVERY_DELAY=", "WAITING_RECOVERY_CONNECTION=",
@@ -120,6 +122,7 @@ object DiagnosticsReport {
         }.toMutableSet()
         val failureEnd = lines.indexOfFirst { it == "Ostatnie poprawne odtwarzanie:" }.takeIf { it >= 0 } ?: lines.size
         lines.indices.filter { lines[it].startsWith("Martwe:") }.take(4).forEach { required.add(it) }
+        lines.indices.filter { lines[it].startsWith("Zawieszenie:") }.take(5).forEach { required.add(it) }
         lines.take(failureEnd).forEachIndexed { index, line ->
             if (line.startsWith("HLS request:") || line.startsWith("HLS variant:") || line.startsWith("HLS rendition:"))
                 required.add(index)
@@ -134,6 +137,7 @@ object DiagnosticsReport {
         }
         if (required.isEmpty()) return utf8Limit(text, bytes)
         val priority = required.filter { lines[it].startsWith("Transport pending:") ||
+            lines[it].startsWith("Zawieszenie:") ||
             lines[it].startsWith("Martwe") || lines[it].startsWith("Zdrowie kanałów:") ||
             lines[it].startsWith("Provider wait:") || lines[it].startsWith("Provider response:") ||
             lines[it].startsWith("Transport redirects:") ||
@@ -145,7 +149,11 @@ object DiagnosticsReport {
         if (used > bytes) {
             selected.clear()
             used = 0
-            val ordered = priority.sortedBy { if (lines[it].startsWith("Zdrowie kanałów:")) 0 else 1 } + (required - priority)
+            val ordered = priority.sortedBy { when {
+                lines[it].startsWith("Zawieszenie:") -> 0
+                lines[it].startsWith("Zdrowie kanałów:") -> 1
+                else -> 2
+            } } + (required - priority)
             ordered.forEach { index ->
                 val remaining = bytes - used - if (selected.isEmpty()) 0 else 1
                 if (remaining >= 4) {
@@ -228,9 +236,29 @@ object DiagnosticsReport {
         val masked = shareable(text)
         if (masked.toByteArray(Charsets.UTF_8).size <= QR_BYTES) return masked
         val suffix = "\n[…raport skrócony]"
-        val dead = masked.lines().firstOrNull { it.startsWith("Martwe (") }
-        val remaining = if (dead == null) masked else masked.lines().filterNot { it == dead }.joinToString("\n")
-        val prefix = dead?.let { "${utf8Limit(it, QR_BYTES - 150)}\n" }.orEmpty()
+        val lines = masked.lines()
+        val dead = lines.firstOrNull { it.startsWith("Martwe (") }
+        val stalls = lines.filter { it.startsWith("Zawieszenie:") }.map { utf8Limit(it, 120) }
+        fun stallSummary(count: Int): String = (stalls.take(count) +
+            if (count < stalls.size) listOf("Zawieszenie: +${stalls.size - count} więcej") else emptyList())
+            .joinToString("\n")
+        val minimumStalls = stallSummary(minOf(2, stalls.size))
+        val deadBudget = QR_BYTES - 150 - minimumStalls.toByteArray(Charsets.UTF_8).size -
+            suffix.toByteArray(Charsets.UTF_8).size - 2
+        val compactDead = dead?.let {
+            val total = Regex("^Martwe \\((\\d+)\\):").find(it)?.groupValues?.get(1)?.toIntOrNull()
+            val items = it.substringAfter(": ").split("; ").filter { row ->
+                row.isNotBlank() && !Regex("\\+\\d+ więcej").matches(row)
+            }
+                .map { row -> row.substringBeforeLast(' ') to row.substringAfterLast(' ') }
+            if (total != null) compactDeadSummary(total, items, deadBudget) else utf8Limit(it, deadBudget)
+        }.orEmpty()
+        val allStalls = stallSummary(stalls.size)
+        val reservedStalls = if ((allStalls + compactDead).toByteArray(Charsets.UTF_8).size <= QR_BYTES - 150 -
+            suffix.toByteArray(Charsets.UTF_8).size - 2) allStalls else minimumStalls
+        val prefix = listOf(reservedStalls, compactDead).filter { it.isNotBlank() }.joinToString("\n")
+            .let { if (it.isEmpty()) "" else "$it\n" }
+        val remaining = lines.filterNot { it == dead || it.startsWith("Zawieszenie:") }.joinToString("\n")
         return prefix + compact(remaining, QR_BYTES - prefix.toByteArray(Charsets.UTF_8).size -
             suffix.toByteArray(Charsets.UTF_8).size) + suffix
     }

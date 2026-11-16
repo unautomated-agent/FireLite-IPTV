@@ -8,8 +8,28 @@ import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import dev.firetvlite.iptv.reporting.ReportSink
 
 class CrashReportStoreTest {
+    @Test fun forwardsCrashStallAndOnlyNewExitsWithoutBlockingDelegationOnSinkFailure() {
+        val events = mutableListOf<String>()
+        val sink = object : ReportSink {
+            override fun enqueue(kind: String, channel: String, summary: String, detail: String) {
+                events += kind
+                throw IllegalStateException("sink fixture")
+            }
+        }
+        val store = CrashReportStore(File(folder.root, "reporting.txt"), sink)
+        var delegated = false
+        store.handler("test") { _, _ -> delegated = true }.uncaughtException(Thread.currentThread(), IllegalStateException("fixture"))
+        store.stall("test", 3500, "stack")
+        val exit = ProcessExitRecord(3000, "ANR", 0, "fixture exit", 0, 0)
+        store.processExits(listOf(exit))
+        store.processExits(listOf(exit))
+        org.junit.Assert.assertEquals(listOf("crash", "anr", "exit"), events)
+        assertTrue(delegated)
+    }
+
     @Test fun failedWritePreservesThePreviousReportAndStillDelegates() {
         val file = File(folder.root, "atomic.txt").apply { writeText("previous report") }
         File(folder.root, "atomic.txt.new").mkdir()

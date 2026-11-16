@@ -13,10 +13,32 @@ import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import dev.firetvlite.iptv.reporting.ReportSink
 
 class DeadChannelsTest {
     @get:Rule val folder = TemporaryFolder()
     private val request = StreamRequest("https://provider.test/live/123456789/password/1.m3u8", "TV", channelName = "Republika HD")
+
+    @Test fun reportsDeadResultsAndOnlyTheFinalHealthSummary() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val reports = java.util.Collections.synchronizedList(mutableListOf<List<String>>())
+        val sink = object : ReportSink {
+            override fun enqueue(kind: String, channel: String, summary: String, detail: String) {
+                reports += listOf(kind, channel, summary, detail)
+            }
+        }
+        val registry = DeadChannels(File(folder.root, "reporting.json"), scope, reports = sink)
+        try {
+            registry.result(request, "HTTP 404", "health check")
+            registry.result(request, null)
+            registry.checkSummary("time · Kino · 1/2 · martwe 1 · running")
+            registry.checkSummary("time · Kino · 2/2 · martwe 1 · complete")
+            registry.flush()
+            assertEquals(listOf("dead_channel", "health"), reports.map { it[0] })
+            assertEquals("Republika HD", reports.first()[1])
+            assertTrue(reports.first()[3].contains("health check"))
+        } finally { scope.cancel() }
+    }
 
     @Test fun marksCountsPersistsAndClearsLiveIdentityFromArchive() = runBlocking {
         val file = File(folder.root, "channels.json")

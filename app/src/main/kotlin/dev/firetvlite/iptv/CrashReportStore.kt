@@ -4,11 +4,12 @@ import java.io.File
 import java.time.Instant
 import dev.firetvlite.iptv.data.library.DiagnosticRedactor
 import dev.firetvlite.iptv.playback.utf8Limit
+import dev.firetvlite.iptv.reporting.ReportSink
 
 internal data class ProcessExitRecord(val timestamp: Long, val reason: String, val status: Int,
     val description: String, val pss: Long, val rss: Long)
 
-class CrashReportStore(private val file: File) {
+class CrashReportStore(private val file: File, private val reports: ReportSink = ReportSink.None) {
     @Synchronized fun read(): String? = runCatching {
         if (!file.exists()) null else file.reader().use { reader ->
             val buffer = CharArray(16_384)
@@ -27,15 +28,20 @@ class CrashReportStore(private val file: File) {
         check(temporary.renameTo(file)) { "Cannot save app diagnostics" }
     }
 
-    internal fun stall(version: String, durationMs: Long, stack: String) = record(
-        "Main-thread stall: ${durationMs}ms (ANR-like) · ${Instant.now()} · FireLite $version\nMain thread: $stack")
+    internal fun stall(version: String, durationMs: Long, stack: String) {
+        val detail = "Main-thread stall: ${durationMs}ms (ANR-like) · ${Instant.now()} · FireLite $version\nMain thread: $stack"
+        record(detail)
+        runCatching { reports.enqueue("anr", "", detail.lineSequence().first(), detail) }
+    }
 
     @Synchronized internal fun processExits(exits: List<ProcessExitRecord>) {
         val marker = File(file.parentFile, "process-exits-seen.txt")
         val seen = runCatching { marker.readText().trim().toLong() }.getOrDefault(0L)
         exits.filter { it.timestamp > seen }.sortedBy { it.timestamp }.takeLast(4).forEach { exit ->
-            record("Process exit: ${exit.reason} · ${Instant.ofEpochMilli(exit.timestamp)} · status=${exit.status}" +
-                " · pss=${exit.pss}KB rss=${exit.rss}KB\n${exit.description.take(512)}")
+            val detail = "Process exit: ${exit.reason} · ${Instant.ofEpochMilli(exit.timestamp)} · status=${exit.status}" +
+                " · pss=${exit.pss}KB rss=${exit.rss}KB\n${exit.description.take(512)}"
+            record(detail)
+            runCatching { reports.processExit(exit.timestamp, detail.lineSequence().first(), detail) }
             marker.writeText(exit.timestamp.toString())
         }
     }
@@ -43,8 +49,10 @@ class CrashReportStore(private val file: File) {
     fun handler(version: String, previous: Thread.UncaughtExceptionHandler?) =
         Thread.UncaughtExceptionHandler { thread, error ->
             try {
-                record("FireLite $version\n${Instant.now()}\nThread: ${thread.name}\n" +
-                    "Uncaught crash: ${error.javaClass.name}: ${error.message.orEmpty().take(512)}\n${error.stackTraceToString()}")
+                val summary = "Uncaught crash: ${error.javaClass.name}: ${error.message.orEmpty().take(512)}"
+                val detail = "FireLite $version\n${Instant.now()}\nThread: ${thread.name}\n$summary\n${error.stackTraceToString()}"
+                runCatching { record(detail) }
+                runCatching { reports.crash(summary, detail) }
             } catch (_: Throwable) {
                 // Reporting must not prevent Android's normal crash handling.
             } finally {

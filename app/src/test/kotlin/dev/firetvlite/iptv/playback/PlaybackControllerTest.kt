@@ -28,9 +28,36 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import dev.firetvlite.iptv.reporting.ReportSink
 
 class PlaybackControllerTest {
     private val request = StreamRequest("https://example.org/live", "FireLite")
+
+    @Test fun reportingIsBlockedDuringStartupAndFailuresSendTheExistingDiagnosticDetail() = runBlocking {
+        val fake = FakePlayer()
+        val recorded = mutableListOf<String>()
+        val uploaded = mutableListOf<List<String>>()
+        val sink = object : ReportSink {
+            override fun enqueue(kind: String, channel: String, summary: String, detail: String) {
+                uploaded += listOf(kind, channel, summary, detail)
+            }
+        }
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            recordPlayback = { failed, detail -> if (failed) recorded += detail }, evictConnections = {}, reports = sink)
+        try {
+            assertTrue(controller.reportUploadsAllowed)
+            controller.play(request.copy(channelName = "Test channel"))
+            assertEquals(false, controller.reportUploadsAllowed)
+            delay(450)
+            fake.listener!!.onPlayerError(TestError(2001))
+            assertEquals(false, controller.reportUploadsAllowed)
+            assertEquals("playback_error", uploaded.single()[0])
+            assertEquals("Test channel", uploaded.single()[1])
+            assertEquals(recorded.single(), uploaded.single()[3])
+            controller.stop()
+            assertTrue(controller.reportUploadsAllowed)
+        } finally { controller.stop() }
+    }
 
     @Test fun selectedPlaybackCanRestartAfterRunningOrCompletedHealthChecks(): Unit = runBlocking {
         for (complete in listOf(false, true)) {

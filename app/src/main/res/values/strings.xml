@@ -2,6 +2,7 @@
 <!-- Default (and only) UI language: Polish. Resource names are English. -->
 <resources>
     <string name="update_new_build">Dostępna aktualizacja: build %1$d</string>
+    <string name="update_hint">Nowa wersja dostępna — Ustawienia → Aktualizacja</string>
     <string name="update_view">Zobacz aktualizację</string>
     <string name="update_later">Później</string>
     <string name="channel_dead">Kanał oznaczony jako niedziałający</string>

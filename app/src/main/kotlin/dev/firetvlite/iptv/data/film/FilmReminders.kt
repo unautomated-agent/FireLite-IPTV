@@ -11,7 +11,10 @@ data class ReminderShowing(val channelId: Long, val channelName: String, val sta
 
 sealed interface FilmReminderCard {
     data class Daily(val date: Long, val showings: List<ReminderShowing>) : FilmReminderCard
-    data class Soon(val showing: ReminderShowing) : FilmReminderCard
+    /** One card for everything starting within ten minutes, so the same film on several channels asks once. */
+    data class Soon(val showing: ReminderShowing, val others: List<ReminderShowing> = emptyList()) : FilmReminderCard {
+        val showings: List<ReminderShowing> get() = listOf(showing) + others
+    }
 }
 
 object FilmReminders {
@@ -43,10 +46,10 @@ object FilmReminders {
     fun next(showings: List<ReminderShowing>, now: Long, acknowledgedDate: Long?, shown: Set<String>,
         watchingLiveChannelId: Long? = null): FilmReminderCard? {
         val candidates = candidates(showings, now)
-        val soon = candidates.firstOrNull {
+        val soon = candidates.filter {
             now >= it.start - TEN_MINUTES && now < it.start && it.key !in shown && it.channelId != watchingLiveChannelId
         }
-        if (soon != null) return FilmReminderCard.Soon(soon)
+        if (soon.isNotEmpty()) return FilmReminderCard.Soon(soon.first(), soon.drop(1))
         val matches = daily(candidates, now)
         return if (matches.isNotEmpty() && acknowledgedDate != day(now)) FilmReminderCard.Daily(day(now), matches) else null
     }

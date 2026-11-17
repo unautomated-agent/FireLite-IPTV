@@ -135,7 +135,9 @@ class FilmRemindersTest {
         val second = showing(now + 120_000)
         val otherChannel = first.copy(channelId = 2)
         val all = listOf(second, first, otherChannel, first)
-        assertEquals(FilmReminderCard.Soon(otherChannel),
+        assertEquals(FilmReminderCard.Soon(first, listOf(otherChannel, second)),
+            FilmReminders.next(all, now, FilmReminders.day(now), emptySet()))
+        assertEquals(FilmReminderCard.Soon(otherChannel, listOf(second)),
             FilmReminders.next(all, now, FilmReminders.day(now), setOf(first.key)))
         assertEquals(FilmReminderCard.Soon(second),
             FilmReminders.next(all, now, FilmReminders.day(now), setOf(first.key, otherChannel.key)))

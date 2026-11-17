@@ -37,7 +37,7 @@ class ReminderPreferencesTest {
         val now = 10 * Films.DAY
         val showing = ReminderShowing(1, "Polsat", now + 60_000, now + 7_200_000, "Harry Potter", null)
         first.acknowledge(FilmReminders.day(now))
-        first.markShown(showing, now)
+        first.markShown(listOf(showing), now)
         val reopened = ReminderPreferences(preferences)
         assertEquals(first.state.value, reopened.state.value)
         assertEquals(setOf(showing.key), reopened.state.value.shown)

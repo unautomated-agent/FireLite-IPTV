@@ -85,7 +85,7 @@ internal fun FilmReminderOverlay(library: LibraryViewModel, eligible: Boolean, w
         } else if (card == null) {
             val now = System.currentTimeMillis()
             card = FilmReminders.next(showings, now, acknowledgements.date, acknowledgements.shown, watchingLiveChannelId)
-            (card as? FilmReminderCard.Soon)?.let { preferences.markShown(it.showing, now) }
+            (card as? FilmReminderCard.Soon)?.let { preferences.markShown(it.showings, now) }
         }
     }
     if (eligible && foreground) card?.let { current ->
@@ -119,7 +119,7 @@ private fun ReminderCard(card: FilmReminderCard, onDismiss: () -> Unit) {
                     style = FireLiteTheme.typography.headline)
                 val showings = when (card) {
                     is FilmReminderCard.Daily -> card.showings
-                    is FilmReminderCard.Soon -> listOf(card.showing)
+                    is FilmReminderCard.Soon -> card.showings
                 }
                 showings.take(4).forEach { showing ->
                     val text = if (card is FilmReminderCard.Daily)

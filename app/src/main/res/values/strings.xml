@@ -195,6 +195,9 @@
     <string name="player_connecting">Łączenie…</string>
     <string name="player_error">Ten kanał nie działa (%1$s).\nGóra/Dół – inny kanał, Wstecz – lista.</string>
     <string name="player_http_error">Kanał niedostępny u dostawcy. Wybierz inny kanał. (kod %1$d)</string>
+    <string name="player_error_denied">Dostawca odmówił dostępu do kanału. Spróbuj za chwilę lub wybierz inny kanał. (kod %1$d)</string>
+    <string name="player_error_connection">Brak połączenia z dostawcą. Sprawdź internet.\nGóra/Dół – inny kanał, Wstecz – lista.</string>
+    <string name="player_error_unsupported">Tego kanału nie da się odtworzyć na tym urządzeniu.\nGóra/Dół – inny kanał, Wstecz – lista.</string>
     <string name="player_ended">Transmisja się zakończyła.</string>
     <string name="player_reconnecting">Połączenie zerwane — łączę ponownie…</string>
     <string name="player_hint">Góra/Dół lub CH±: kanał · Lewo/Prawo: ±10 s · ⏩: +30 s · Play/Pause: pauza\nMenu/⏪: historia · OK: kanały · Przytrzymaj OK: ulubione · Przytrzymaj Lewo: początek audycji</string>

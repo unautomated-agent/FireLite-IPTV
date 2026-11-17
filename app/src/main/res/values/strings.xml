@@ -248,6 +248,7 @@
     <string name="import_done">Wczytano listę: %1$s</string>
     <string name="import_error_network">Nie udało się pobrać listy. Sprawdź adres i internet.</string>
     <string name="import_error_empty">Lista jest pusta albo to nie jest plik M3U.</string>
+    <string name="import_error_unexpected">Nie udało się wczytać listy. Spróbuj ponownie.</string>
     <string name="import_error_no_source">Najpierw dodaj adres listy.</string>
 
     <string name="player_start_delayed">Odtwarzanie trwa dłużej niż zwykle. Zapisano diagnostykę; nadal czekamy na wznowienie.</string>

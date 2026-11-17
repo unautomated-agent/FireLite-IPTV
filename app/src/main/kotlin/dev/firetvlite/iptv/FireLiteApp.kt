@@ -6,6 +6,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
@@ -30,6 +32,7 @@ import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import dev.firetvlite.iptv.playback.PlayerMode
 import dev.firetvlite.iptv.ui.components.FLText
+import dev.firetvlite.iptv.ui.components.programmeTimes
 import dev.firetvlite.iptv.ui.components.SecondaryButton
 import dev.firetvlite.iptv.ui.components.LocalFilmRatings
 import dev.firetvlite.iptv.ui.components.LocalChannelLogosEnabled
@@ -40,6 +43,7 @@ import dev.firetvlite.iptv.ui.navigation.canChooseChannel
 import dev.firetvlite.iptv.ui.navigation.visiblePanel
 import dev.firetvlite.iptv.ui.navigation.screenBackReturnsToPlayback
 import dev.firetvlite.iptv.ui.screens.FilmRankingsScreen
+import dev.firetvlite.iptv.ui.screens.GuideDetails
 import dev.firetvlite.iptv.ui.screens.LiveTvScreen
 import dev.firetvlite.iptv.ui.screens.PlayerLayer
 import dev.firetvlite.iptv.ui.screens.SettingsScreen
@@ -129,10 +133,11 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
             }
         }
         if (mode == PlayerMode.Guide) Column(Modifier.fillMaxSize().background(FireLiteTheme.colors.background)) {
-            FLText(stringResource(R.string.nav_guide), style = FireLiteTheme.typography.headline,
-                modifier = Modifier.padding(start = 32.dp, top = 60.dp, bottom = 60.dp))
+            var details by remember { mutableStateOf<GuideDetails?>(null) }
+            GuideHeader(details)
             LiveTvScreen(libraryViewModel, playerViewModel, active = true, guideOnly = true,
-                returnTarget = browserTarget, onPreviewBounds = {}, onOpenSettings = { navigate(StreamPanel.Settings) })
+                returnTarget = browserTarget, onPreviewBounds = {}, onOpenSettings = { navigate(StreamPanel.Settings) },
+                onGuideDetails = { details = it })
         }
         PlayerLayer(viewModel = playerViewModel, library = libraryViewModel, previewBounds = null,
             onFilms = { navigate(StreamPanel.Films) }, onSettings = { navigate(StreamPanel.Settings) })
@@ -171,5 +176,25 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
             }
         }
         if (searchVisible) SearchDialog(source?.id, playerViewModel)
+    }
+}
+
+/** Fills the band beside the small video with the programme under the cursor; its height never changes. */
+@Composable
+private fun GuideHeader(details: GuideDetails?) {
+    val type = FireLiteTheme.typography
+    Column(Modifier.fillMaxWidth().height(148.dp).padding(start = 32.dp, top = 52.dp, end = 264.dp),
+        verticalArrangement = Arrangement.spacedBy(2.dp)) {
+        if (details == null) {
+            FLText(stringResource(R.string.nav_guide), style = type.headline, modifier = Modifier.padding(top = 8.dp))
+        } else {
+            val programme = details.programme
+            FLText("${details.channelName} · ${programmeTimes(programme)}", style = type.label,
+                color = FireLiteTheme.colors.accent, maxLines = 1)
+            FLText(programme.title, style = type.headline, maxLines = 1)
+            programme.description?.takeIf { it.isNotBlank() }?.let {
+                FLText(it, style = type.label, color = FireLiteTheme.colors.textSecondary, maxLines = 2)
+            }
+        }
     }
 }

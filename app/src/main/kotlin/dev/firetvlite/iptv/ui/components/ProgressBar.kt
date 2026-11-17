@@ -26,8 +26,8 @@ fun ProgressBar(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .height(3.dp)
-            .clip(RoundedCornerShape(2.dp))
+            .height(6.dp)
+            .clip(RoundedCornerShape(3.dp))
             .background(Color(0x33FFFFFF)),
     ) {
         if (liveProgress != null) {

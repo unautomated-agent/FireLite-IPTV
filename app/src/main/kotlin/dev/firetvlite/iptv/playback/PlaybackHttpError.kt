@@ -25,7 +25,7 @@ internal object PlaybackHttpError {
 
     fun displayedStatus(code: String, error: Throwable?, recordedStatus: Int? = null): Int? =
         (status(error) ?: recordedStatus?.takeIf { code.startsWith("ERROR_CODE_IO_") })
-            ?.takeIf { it in setOf(403, 404, 410) }
+            ?.takeIf { it in setOf(401, 403, 404, 410) }
 
     fun message(code: String, error: Throwable?, recordedStatus: Int? = null): String =
         displayedStatus(code, error, recordedStatus)?.let { "Kanał niedostępny u dostawcy (HTTP $it)" } ?: code

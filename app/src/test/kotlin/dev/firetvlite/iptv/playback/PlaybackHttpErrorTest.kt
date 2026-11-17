@@ -16,7 +16,7 @@ internal fun httpFailure(status: Int): HttpDataSource.InvalidResponseCodeExcepti
 
 class PlaybackHttpErrorTest {
     @Test fun typedHttpStatusSurvivesNestedSourceErrorsAndMapsToPolish() {
-        for (status in listOf(403, 404, 410)) {
+        for (status in listOf(401, 403, 404, 410)) {
             val cause = IllegalStateException("Source error", httpFailure(status))
             assertEquals(status, PlaybackHttpError.status(cause))
             assertEquals("Kanał niedostępny u dostawcy (HTTP $status)", PlaybackHttpError.message("NETWORK_FAILED", cause))

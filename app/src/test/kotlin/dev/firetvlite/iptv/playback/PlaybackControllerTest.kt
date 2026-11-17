@@ -374,7 +374,7 @@ class PlaybackControllerTest {
         } finally { fixture.controller.stop() }
     }
 
-    @Test fun reconnectCancellationOnBackgroundDoesNotResumeALateAttempt() = runBlocking {
+    @Test fun backgroundDuringReconnectCancelsItAndReturnOpensTheChannelOnce() = runBlocking {
         val fixture = ReconnectFixture(this)
         try {
             fixture.controller.play(request)
@@ -382,9 +382,16 @@ class PlaybackControllerTest {
             fixture.ready()
             fixture.drop()
             fixture.controller.suspendStream()
-            fixture.controller.resumeStream()
             delay(500)
             assertEquals(1, fixture.fake.calls.count { it == "prepare" })
+            assertEquals(listOf("auto-reconnect: cancelled"), fixture.outcomes)
+            fixture.controller.releasePlayer()
+            fixture.controller.resumeStream()
+            fixture.prepared(2)
+            fixture.ready()
+            fixture.drop()
+            delay(500)
+            assertEquals(2, fixture.fake.calls.count { it == "prepare" })
             assertEquals(listOf("auto-reconnect: cancelled"), fixture.outcomes)
         } finally { fixture.controller.stop() }
     }

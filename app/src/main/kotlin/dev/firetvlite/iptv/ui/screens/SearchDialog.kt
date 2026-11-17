@@ -17,6 +17,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -55,6 +56,7 @@ import dev.firetvlite.iptv.FireLiteApplication
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.LocalSearch
 import dev.firetvlite.iptv.data.SearchResults
+import dev.firetvlite.iptv.data.SearchSuggestions
 import dev.firetvlite.iptv.data.SearchText
 import dev.firetvlite.iptv.data.SearchWindow
 import dev.firetvlite.iptv.data.db.ChannelEntity
@@ -72,8 +74,6 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.util.Locale
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 private data class SearchHit(val channel: ChannelEntity, val programme: SearchProgramme? = null) {
@@ -84,39 +84,27 @@ private data class SearchHit(val channel: ChannelEntity, val programme: SearchPr
 @OptIn(ExperimentalComposeUiApi::class)
 internal fun SearchDialog(sourceId: Long?, viewModel: PlayerViewModel) {
     val app = LocalContext.current.applicationContext as FireLiteApplication
-    val search = remember(app) { LocalSearch(app.container.database.searchDao()) }
+    val search = remember(app) { LocalSearch(app.container.database.searchDao(), app.container.database.channelUsageDao()::all) }
     var query by rememberSaveable { mutableStateOf("") }
-    var results by remember { mutableStateOf(SearchResults()) }
-    var loading by remember { mutableStateOf(false) }
-    var failed by remember { mutableStateOf(false) }
-    var resultTime by remember { mutableStateOf(System.currentTimeMillis()) }
     val fieldFocus = remember { FocusRequester() }
     val firstFocus = remember { FocusRequester() }
     val scroll = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    val suggestions = remember(search, scope) { SearchSuggestions(scope, search::search) }
+    val suggestion by suggestions.state.collectAsState()
+    val current = suggestion.query == query && suggestion.sourceId == sourceId
+    val results = if (current) suggestion.results else SearchResults()
+    val loading = current && suggestion.loading
+    val failed = current && suggestion.failed
+    val resultTime = suggestion.at
     var keyboard by remember { mutableStateOf<SoftwareKeyboardController?>(null) }
     var focusedKey by remember { mutableStateOf<String?>(null) }
     var fieldFocused by remember { mutableStateOf(false) }
     val hits = remember(results) {
         results.channels.map { SearchHit(it) } + results.programmes.map { SearchHit(it.channel, it) }
     }
-    LaunchedEffect(query, sourceId) {
-        results = SearchResults()
-        failed = false
-        loading = sourceId != null && SearchText.normalize(query).isNotEmpty()
-        if (!loading) return@LaunchedEffect
-        delay(250)
-        try {
-            val now = System.currentTimeMillis()
-            results = search.search(sourceId!!, query, now)
-            resultTime = now
-            scroll.scrollToItem(0)
-        } catch (cancelled: CancellationException) {
-            throw cancelled
-        } catch (_: Exception) {
-            failed = true
-        } finally { loading = false }
-    }
+    LaunchedEffect(sourceId) { suggestions.request(sourceId, query) }
+    LaunchedEffect(query, sourceId) { scroll.scrollToItem(0) }
     LaunchedEffect(hits) {
         if (focusedKey != null && hits.none { it.key == focusedKey }) {
             focusedKey = null
@@ -147,7 +135,10 @@ internal fun SearchDialog(sourceId: Long?, viewModel: PlayerViewModel) {
                 SecondaryButton(stringResource(R.string.diagnostics_close), viewModel::closeSearch,
                     Modifier.focusProperties { down = fieldFocus })
             }
-            BasicTextField(query, { query = it.take(256) }, singleLine = true,
+            BasicTextField(query, {
+                query = it.take(256)
+                suggestions.request(sourceId, query)
+            }, singleLine = true,
                 textStyle = FireLiteTheme.typography.title.copy(color = colors.textPrimary),
                 cursorBrush = SolidColor(colors.accent),
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Text, imeAction = ImeAction.Search),

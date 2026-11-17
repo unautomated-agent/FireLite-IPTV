@@ -113,4 +113,5 @@ dependencies {
     // Android's own org.json is only a stub in local unit tests; this is the real implementation.
     testImplementation(libs.json)
     testImplementation("net.sf.kxml:kxml2:2.3.0")
+    testImplementation("org.xerial:sqlite-jdbc:3.47.1.0")
 }

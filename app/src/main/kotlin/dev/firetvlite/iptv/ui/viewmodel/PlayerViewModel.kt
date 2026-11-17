@@ -38,6 +38,7 @@ import dev.firetvlite.iptv.playback.PlaybackWork
 import dev.firetvlite.iptv.playback.AudioTrackChoice
 import dev.firetvlite.iptv.data.library.QueryZapContext
 import dev.firetvlite.iptv.data.library.ChannelSelection
+import dev.firetvlite.iptv.data.ChannelUsageKey
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -291,7 +292,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             playingGroup = group
             val sameChannel = mutableMode.value != PlayerMode.Closed && mutableChannel.value?.streamUrl == first.streamUrl &&
                 status.value != PlaybackStatus.Idle
-            setMode(mode)
+            setMode(mode, retainPreviewUsage = sameChannel)
             show(first, archive = archiveTime != null)
             if (sameChannel) {
                 activeChannel = first
@@ -307,10 +308,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun setMode(mode: PlayerMode) {
+    private fun setMode(mode: PlayerMode, retainPreviewUsage: Boolean = true) {
         cancelAutoReconnect()
         mutableMode.value = mode
-        playback.setPreview(mode == PlayerMode.Preview || mode == PlayerMode.Guide || mode == PlayerMode.Panel)
+        playback.setPreview(mode == PlayerMode.Preview || mode == PlayerMode.Guide || mode == PlayerMode.Panel,
+            retainUsage = retainPreviewUsage)
     }
 
     fun cancelStartupResume() {
@@ -657,7 +659,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         mutableLiveChannelId.value = null
         val request = StreamRequest(url, userAgent, archive = true, channelName = channel.name,
             headers = PlaylistHttpHeaders.decode(channel.requestHeaders), channelKey = DeadChannels.key(channel.streamUrl),
-            userInitiated = userInitiated)
+            userInitiated = userInitiated, usageKey = ChannelUsageKey(channel.sourceId, channel.streamUrl),
+            countUsageSelection = restartIfActive)
         if (restartIfActive) playback.playArchiveFromStart(request) else playback.play(request)
         updateFrame()
     }
@@ -677,7 +680,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         fallbackStartMs = System.currentTimeMillis()
         mutableLiveChannelId.value = channel.id
         playback.play(StreamRequest(channel.streamUrl, userAgent, channelName = channel.name,
-            headers = PlaylistHttpHeaders.decode(channel.requestHeaders), userInitiated = userInitiated, coldStart = coldStart))
+            headers = PlaylistHttpHeaders.decode(channel.requestHeaders), userInitiated = userInitiated, coldStart = coldStart,
+            usageKey = ChannelUsageKey(channel.sourceId, channel.streamUrl)))
         updateFrame()
     }
 

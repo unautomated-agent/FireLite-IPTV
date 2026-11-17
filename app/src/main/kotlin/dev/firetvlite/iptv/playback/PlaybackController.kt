@@ -218,6 +218,7 @@ class PlaybackController internal constructor(
     private var stableSince: Long? = null
     internal val hasActiveStream: Boolean get() = activeRequest != null
     private var suspendedRequest: StreamRequest? = null
+    private var suspendedReconnectUsed = false
     private var preview = false
     private var audioDecoder: String? = null
     private var successfulSignature: String? = null
@@ -856,6 +857,7 @@ class PlaybackController internal constructor(
         startJob = null
         activeRequest = null
         suspendedRequest = null
+        suspendedReconnectUsed = false
         gate.onStopped()
         connectionGate.nextSession()
         exo?.let {
@@ -953,24 +955,32 @@ class PlaybackController internal constructor(
 
     /** Called when the app goes to the background: closes the stream but remembers it. */
     fun suspendStream() {
-        val request = if (reconnectAttempt != null) null else activeRequest ?: suspendedRequest
+        val request = activeRequest ?: suspendedRequest
+        val reconnecting = reconnectAttempt != null || suspendedReconnectUsed
         stop()
         suspendedRequest = request
+        suspendedReconnectUsed = reconnecting && request != null
     }
 
     /** Called when the app returns: reconnects the stream that was running before, if any. */
     fun resumeStream() {
         val request = suspendedRequest ?: return
         suspendedRequest = null
+        val reconnectSpent = suspendedReconnectUsed
+        suspendedReconnectUsed = false
         play(request.copy(userInitiated = false))
+        // The drop that was being retried already had its one automatic attempt.
+        if (reconnectSpent) reconnectUsed = true
     }
 
     /** Frees the decoder. The player is created again when needed. */
     fun releasePlayer() {
         loudness?.release()
         val request = suspendedRequest
+        val reconnectSpent = suspendedReconnectUsed
         stop()
         suspendedRequest = request
+        suspendedReconnectUsed = reconnectSpent
         mutablePlayer.value = null
         exo?.let {
             it.removeListener(listener)

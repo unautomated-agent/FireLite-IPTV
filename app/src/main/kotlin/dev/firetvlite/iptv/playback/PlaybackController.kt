@@ -866,8 +866,9 @@ class PlaybackController internal constructor(
         trace("STOP closed")
     }
 
-    fun setPreview(enabled: Boolean) {
+    fun setPreview(enabled: Boolean, retainUsage: Boolean = true) {
         cancelAutoReconnect()
+        if (preview && !enabled && !retainUsage) usage.stop()
         if (preview == enabled) return
         preview = enabled
         updateUsage(exo?.isPlaying == true)

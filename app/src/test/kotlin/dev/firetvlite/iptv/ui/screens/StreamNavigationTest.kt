@@ -9,6 +9,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class StreamNavigationTest {
+    @Test fun selectionRetainsPreviewUsageOnlyForTheSelectedChannel() {
+        val model = File("src/main/kotlin/dev/firetvlite/iptv/ui/viewmodel/PlayerViewModel.kt").readText()
+        val select = model.substringAfter("private fun select(").substringBefore("private fun setMode(")
+        assertTrue(select.contains("setMode(mode, retainPreviewUsage = sameChannel)"))
+        val mode = model.substringAfter("private fun setMode(").substringBefore("fun cancelStartupResume(")
+        assertTrue(mode.contains("retainUsage = retainPreviewUsage"))
+    }
+
     @Test fun reminderExclusionUsesRequestedLiveChannelBeforeFramesOrPlaybackAreReady() {
         val screen = File("src/main/kotlin/dev/firetvlite/iptv/ui/screens/PlayerScreen.kt").readText()
             .substringAfter("fun PlayerLayer(").substringBefore("private fun PlayerContent(")

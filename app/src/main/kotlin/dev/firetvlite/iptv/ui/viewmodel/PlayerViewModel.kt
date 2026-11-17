@@ -292,7 +292,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             playingGroup = group
             val sameChannel = mutableMode.value != PlayerMode.Closed && mutableChannel.value?.streamUrl == first.streamUrl &&
                 status.value != PlaybackStatus.Idle
-            setMode(mode)
+            setMode(mode, retainPreviewUsage = sameChannel)
             show(first, archive = archiveTime != null)
             if (sameChannel) {
                 activeChannel = first
@@ -308,10 +308,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         }
     }
 
-    private fun setMode(mode: PlayerMode) {
+    private fun setMode(mode: PlayerMode, retainPreviewUsage: Boolean = true) {
         cancelAutoReconnect()
         mutableMode.value = mode
-        playback.setPreview(mode == PlayerMode.Preview || mode == PlayerMode.Guide || mode == PlayerMode.Panel)
+        playback.setPreview(mode == PlayerMode.Preview || mode == PlayerMode.Guide || mode == PlayerMode.Panel,
+            retainUsage = retainPreviewUsage)
     }
 
     fun cancelStartupResume() {

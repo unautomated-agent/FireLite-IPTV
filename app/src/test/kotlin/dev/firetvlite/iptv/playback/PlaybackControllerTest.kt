@@ -29,6 +29,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertSame
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 import dev.firetvlite.iptv.data.ChannelUsageKey
 import dev.firetvlite.iptv.data.ChannelUsageSink
@@ -142,6 +143,42 @@ class PlaybackControllerTest {
             controller.stop()
             assertEquals(1L, selections)
             assertEquals(3000L, watchMs)
+        } finally { controller.stop() }
+    }
+
+    @Test fun selectingDifferentChannelDoesNotPromotePlayingPreviewUsage(): Unit = runBlocking {
+        val fake = FakePlayer()
+        var now = 0L
+        val selections = mutableMapOf<ChannelUsageKey, Long>()
+        val times = mutableMapOf<ChannelUsageKey, Long>()
+        val previewKey = ChannelUsageKey(1, "preview")
+        val selectedKey = ChannelUsageKey(1, "selected")
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            evictConnections = {}, monotonicMs = { now }, usageSink = ChannelUsageSink { key, count, elapsed ->
+                selections[key] = (selections[key] ?: 0) + count
+                times[key] = (times[key] ?: 0) + elapsed
+            })
+        suspend fun start(count: Int) {
+            withTimeout(3000) { while (fake.calls.count { it == "prepare" } < count) delay(10) }
+            fake.state = Player.STATE_READY
+            fake.actualPlaying = true
+            fake.listener!!.onIsPlayingChanged(true)
+        }
+        try {
+            controller.setPreview(true)
+            controller.play(request.copy(usageKey = previewKey))
+            start(1)
+            now = 1000
+            controller.setPreview(false, retainUsage = false)
+            now = 2000
+            controller.play(request.copy(url = "https://example.org/selected", usageKey = selectedKey))
+            start(2)
+            now = 3000
+            controller.stop()
+            assertFalse(selections.containsKey(previewKey))
+            assertFalse(times.containsKey(previewKey))
+            assertEquals(1L, selections[selectedKey])
+            assertEquals(1000L, times[selectedKey])
         } finally { controller.stop() }
     }
 

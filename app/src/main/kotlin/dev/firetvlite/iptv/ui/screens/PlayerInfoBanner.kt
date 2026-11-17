@@ -1,5 +1,8 @@
 package dev.firetvlite.iptv.ui.screens
 
+import dev.firetvlite.iptv.FireLiteApplication
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -43,6 +46,8 @@ internal fun PlayerInfoBanner(channel: ChannelEntity?, frame: PlaybackFrame, gui
     val colors = FireLiteTheme.colors
     val type = FireLiteTheme.typography
     val now by minuteClock()
+    val cornerClock by (LocalContext.current.applicationContext as FireLiteApplication).container
+        .clockPreferences.visible.collectAsState()
     Column(Modifier.fillMaxWidth()
         .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = if (expanded) 0f else 0.7f))))
         .padding(start = 32.dp, end = 32.dp, top = 36.dp, bottom = 24.dp)) {
@@ -63,7 +68,7 @@ internal fun PlayerInfoBanner(channel: ChannelEntity?, frame: PlaybackFrame, gui
                 if (!archive) FLText(stringResource(R.string.player_live_mode), style = type.label,
                     color = colors.accent, modifier = Modifier.clip(RoundedCornerShape(6.dp))
                         .background(colors.accent.copy(alpha = 0.15f)).padding(horizontal = 12.dp, vertical = 6.dp))
-                FLText(clockTime(now), style = type.headline)
+                if (!cornerClock) FLText(clockTime(now), style = type.headline)
             }
             val current = guide.current
             FLText(current?.title ?: "Brak informacji o programie",

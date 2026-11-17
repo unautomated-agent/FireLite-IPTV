@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """FireLite emulator fixture: 300-channel M3U, XMLTV and one looping live HLS. Emulator URL: http://10.0.2.2:8780/playlist.m3u"""
-import time, os, html, datetime as dt
+import time, os, re, html, datetime as dt
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 ROOT = os.path.dirname(os.path.abspath(__file__)); N = 30; DUR = 2
 GROUPS = {"Ogólne": ["TVP 1 HD","TVP 2 HD","Polsat HD","TVN HD","TV4 HD","TV Puls HD","TVN 7 HD","TV6 HD","Super Polsat HD","TTV HD"],
@@ -27,6 +27,7 @@ def channels():
         out.append((f"Kanał tematyczny {i:03d} HD" if i % 7 else f"+Kanał bardzo długa nazwa do sprawdzenia ucinania tekstu {i:03d}", ["Pozostałe","Zagraniczne","4K UHD"][i % 3])); i += 1
     return out
 CH = channels()
+SEGMENT = re.compile(r"/seg/s\d{3}\.ts")  # only the generated segments, never a path
 def playlist(host):
     lines = [f'#EXTM3U url-tvg="http://{host}/epg.xml"']
     for i, (n, g) in enumerate(CH):
@@ -63,7 +64,8 @@ class H(BaseHTTPRequestHandler):
         if p == "/playlist.m3u": self.send(200, playlist(host).encode(), "audio/x-mpegurl")
         elif p == "/epg.xml": self.send(200, epg().encode(), "application/xml")
         elif p.startswith("/live/"): self.send(200, live().encode(), "application/vnd.apple.mpegurl")
-        elif p.startswith("/seg/") and os.path.isfile(ROOT + p): self.send(200, open(ROOT + p, "rb").read(), "video/mp2t")
+        elif SEGMENT.fullmatch(p) and os.path.isfile(ROOT + p):
+            with open(ROOT + p, "rb") as f: self.send(200, f.read(), "video/mp2t")
         else: self.send(404, b"not found")
     def log_message(self, f, *a): print(time.strftime("%H:%M:%S"), self.address_string(), f % a, flush=True)
-ThreadingHTTPServer(("0.0.0.0", 8780), H).serve_forever()
+ThreadingHTTPServer(("127.0.0.1", 8780), H).serve_forever()

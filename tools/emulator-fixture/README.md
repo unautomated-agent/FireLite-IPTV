@@ -8,7 +8,7 @@ Nothing here contacts a real provider.
 mkdir -p seg && ffmpeg -f lavfi -i "testsrc2=size=1280x720:rate=25" -f lavfi -i "sine=frequency=440:sample_rate=48000" \
   -t 60 -c:v libx264 -preset veryfast -g 50 -keyint_min 50 -sc_threshold 0 -b:v 1500k -c:a aac \
   -f hls -hls_time 2 -hls_list_size 0 -hls_segment_filename 'seg/s%03d.ts' seg/vod.m3u8
-python3 server.py          # serves on port 8780
+python3 server.py          # serves on 127.0.0.1:8780 (the emulator reaches it as 10.0.2.2)
 ```
 
 In the app add the playlist `http://10.0.2.2:8780/playlist.m3u`.

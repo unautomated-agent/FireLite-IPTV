@@ -1,12 +1,14 @@
 name: Build APK
 
-# Every push (and a manual run) builds the app and publishes it as a GitHub release.
+# Every push to main (and a manual run) builds the app and publishes it as a GitHub release.
+# Pull requests run the same tests and build, without publishing.
 # The link to the newest APK never changes:
 #   https://github.com/<OWNER>/<REPO>/releases/latest/download/firelite.apk
 
 on:
   push:
     branches: [main, master]
+  pull_request:
   workflow_dispatch:
 
 permissions:
@@ -48,6 +50,7 @@ jobs:
 
   release:
     needs: build
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: write

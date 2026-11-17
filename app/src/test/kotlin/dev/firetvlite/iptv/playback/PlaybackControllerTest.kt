@@ -182,6 +182,32 @@ class PlaybackControllerTest {
         } finally { controller.stop() }
     }
 
+    @Test fun liveArchiveAndFurtherSameChannelSeeksAddTimeWithoutAnotherSelection(): Unit = runBlocking {
+        val fake = FakePlayer()
+        var now = 0L
+        var selections = 0L
+        var time = 0L
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            evictConnections = {}, monotonicMs = { now },
+            usageSink = ChannelUsageSink { _, count, elapsed -> selections += count; time += elapsed })
+        val live = request.copy(usageKey = ChannelUsageKey(1, request.url))
+        val requests = listOf(live, live.copy(url = "https://example.org/archive1", archive = true),
+            live.copy(url = "https://example.org/archive2", archive = true), live)
+        try {
+            for ((index, next) in requests.withIndex()) {
+                if (next.archive) controller.playArchiveFromStart(next) else controller.play(next)
+                withTimeout(3000) { while (fake.calls.count { it == "prepare" } < index + 1) delay(10) }
+                fake.state = Player.STATE_READY
+                fake.actualPlaying = true
+                fake.listener!!.onIsPlayingChanged(true)
+                now += 1000
+            }
+            controller.stop()
+            assertEquals(1L, selections)
+            assertEquals(4000L, time)
+        } finally { controller.stop() }
+    }
+
     private class ReconnectFixture(scope: CoroutineScope, startupTimeout: Long = 10_000) {
         val fake = FakePlayer()
         val outcomes = mutableListOf<String>()

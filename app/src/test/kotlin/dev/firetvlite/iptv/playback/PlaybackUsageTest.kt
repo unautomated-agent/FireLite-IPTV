@@ -8,6 +8,29 @@ import org.junit.Test
 class PlaybackUsageTest {
     private val key = ChannelUsageKey(1, "local:channel")
 
+    @Test fun sameChannelRequestsContinueSelectionAcrossSeeksAndExcludedReconnects() {
+        var now = 0L
+        var count = 0L
+        var time = 0L
+        val usage = PlaybackUsage({ now }, ChannelUsageSink { _, selections, elapsed -> count += selections; time += elapsed })
+        for (automatic in listOf(false, false, true, false)) {
+            usage.request(key, userInitiated = true, automatic = automatic)
+            usage.playing(true)
+            now += 1000
+        }
+        usage.stop()
+        assertEquals(1L, count)
+        assertEquals(3000L, time)
+        usage.request(key, userInitiated = true, automatic = false)
+        usage.playing(true)
+        usage.stop()
+        assertEquals(2L, count)
+        usage.request(key.copy(sourceId = 2), userInitiated = true, automatic = false)
+        usage.playing(true)
+        usage.stop()
+        assertEquals(3L, count)
+    }
+
     @Test fun countsOnlyFirstActualStartAndAccumulatesOnlyPlayingIntervals() {
         var now = 0L
         val counts = mutableListOf<Long>()

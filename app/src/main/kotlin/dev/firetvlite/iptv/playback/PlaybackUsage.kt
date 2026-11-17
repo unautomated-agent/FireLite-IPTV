@@ -7,19 +7,22 @@ internal class PlaybackUsage(private val clock: () -> Long, private val sink: Ch
     private var key: ChannelUsageKey? = null
     private var countSelection = false
     private var started = false
+    private var eligible = false
     private var since: Long? = null
 
     fun request(key: ChannelUsageKey?, userInitiated: Boolean, automatic: Boolean) {
+        val continuing = key != null && this.key == key && started
         stop()
-        this.key = key.takeUnless { automatic }
+        this.key = key
+        eligible = !automatic
         countSelection = userInitiated
-        started = false
+        started = continuing
     }
 
     fun playing(active: Boolean) {
         sample()
         val key = key
-        if (active && key != null) {
+        if (active && key != null && eligible) {
             if (!started) {
                 started = true
                 if (countSelection) emit(key, 1, 0)

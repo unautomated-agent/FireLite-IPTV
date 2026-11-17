@@ -60,6 +60,7 @@ import androidx.media3.ui.PlayerView
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.ui.navigation.screenBackReturnsToPlayback
 import dev.firetvlite.iptv.playback.BannerState
+import dev.firetvlite.iptv.playback.PlaybackFailureKind
 import dev.firetvlite.iptv.playback.PlaybackStatus
 import dev.firetvlite.iptv.playback.PlayerMode
 import dev.firetvlite.iptv.playback.ScreenAwakePolicy
@@ -295,9 +296,13 @@ private fun StatusLayer(status: PlaybackStatus) {
         when (status) {
             PlaybackStatus.Reconnecting -> FLText(stringResource(R.string.player_reconnecting), style = FireLiteTheme.typography.title)
             PlaybackStatus.Connecting, PlaybackStatus.Buffering -> Spinner()
-            is PlaybackStatus.Failed -> FLText(if (status.httpStatus != null)
-                stringResource(R.string.player_http_error, status.httpStatus)
-                else stringResource(R.string.player_error, status.code), style = FireLiteTheme.typography.headline)
+            is PlaybackStatus.Failed -> FLText(when (PlaybackFailureKind.of(status.code, status.httpStatus)) {
+                PlaybackFailureKind.NotFound -> stringResource(R.string.player_http_error, status.httpStatus ?: 0)
+                PlaybackFailureKind.Denied -> stringResource(R.string.player_error_denied, status.httpStatus ?: 0)
+                PlaybackFailureKind.NoConnection -> stringResource(R.string.player_error_connection)
+                PlaybackFailureKind.Unsupported -> stringResource(R.string.player_error_unsupported)
+                PlaybackFailureKind.Other -> stringResource(R.string.player_error, status.code)
+            }, style = FireLiteTheme.typography.headline)
             PlaybackStatus.Ended -> FLText(stringResource(R.string.player_ended), style = FireLiteTheme.typography.headline)
             else -> Unit
         }

@@ -21,7 +21,8 @@ class ReminderPreferences(private val preferences: SharedPreferences) {
         mutableState.value = mutableState.value.copy(date = date)
     }
 
-    fun markShown(showing: ReminderShowing, now: Long) = saveKeys(FilmReminders.recentKeys(state.value.shown, now) + showing.key)
+    fun markShown(showings: List<ReminderShowing>, now: Long) =
+        saveKeys(FilmReminders.recentKeys(state.value.shown, now) + showings.map { it.key })
 
     fun prune(now: Long) {
         val keys = FilmReminders.recentKeys(state.value.shown, now)

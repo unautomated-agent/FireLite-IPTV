@@ -8,17 +8,21 @@ import androidx.lifecycle.LifecycleOwner
  * Pausing (Home, screensaver, a system dialog) closes the stream, stopping frees the decoder,
  * and coming back reconnects the channel that was running.
  */
-class PlaybackLifecycle(private val playback: PlaybackController) : DefaultLifecycleObserver {
+class PlaybackLifecycle(private val playback: PlaybackController,
+    private val pauseWork: () -> Unit = {}, private val resumeWork: () -> Unit = {}) : DefaultLifecycleObserver {
 
     override fun onPause(owner: LifecycleOwner) {
+        pauseWork()
         playback.suspendStream()
     }
 
     override fun onStop(owner: LifecycleOwner) {
+        pauseWork()
         playback.releasePlayer()
     }
 
     override fun onResume(owner: LifecycleOwner) {
         playback.resumeStream()
+        resumeWork()
     }
 }

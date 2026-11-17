@@ -155,7 +155,7 @@ class StartupRecorderTest {
         assertTrue(app.contains("withContext(Dispatchers.IO)"))
         assertTrue(app.contains("awaitStartup = startup::awaitReady"))
         val vm = File(root, "ui/viewmodel/PlayerViewModel.kt").readText()
-        val resume = vm.substringAfter("startupJob = viewModelScope.launch {").substringBefore("startupPending = false")
+        val resume = vm.substringAfter("startupJob = playbackWork.launch {").substringBefore("startupPending = false")
         assertTrue(resume.contains("channelDao.startupRecent(sourceId).first()"))
         assertFalse(resume.contains("awaitRecent("))
         assertFalse(resume.contains("epg.refresh("))

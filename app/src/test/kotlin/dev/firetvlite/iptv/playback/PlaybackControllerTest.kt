@@ -174,6 +174,35 @@ class PlaybackControllerTest {
         } finally { fixture.controller.stop() }
     }
 
+    @Test fun suppressedTimeDoesNotRearmReconnectButGoodPlayAfterSuppressionDoes(): Unit = runBlocking {
+        for (goodPlay in listOf(false, true)) {
+            val fixture = ReconnectFixture(this)
+            try {
+                fixture.controller.play(request)
+                fixture.prepared(1)
+                fixture.ready()
+                fixture.drop()
+                fixture.prepared(2)
+                fixture.ready()
+                fixture.now = 1000
+                fixture.fake.suppression = Player.PLAYBACK_SUPPRESSION_REASON_TRANSIENT_AUDIO_FOCUS_LOSS
+                fixture.fake.listener!!.onPlaybackSuppressionReasonChanged(fixture.fake.suppression)
+                fixture.fake.listener!!.onIsPlayingChanged(false)
+                fixture.ready()
+                fixture.now = 61_000
+                if (goodPlay) {
+                    fixture.fake.suppression = Player.PLAYBACK_SUPPRESSION_REASON_NONE
+                    fixture.fake.listener!!.onPlaybackSuppressionReasonChanged(fixture.fake.suppression)
+                    fixture.fake.listener!!.onIsPlayingChanged(true)
+                    fixture.now += 60_000
+                }
+                fixture.drop()
+                if (goodPlay) assertEquals(PlaybackStatus.Reconnecting, fixture.controller.status.value)
+                else assertTrue(fixture.controller.status.value is PlaybackStatus.Failed)
+            } finally { fixture.controller.stop() }
+        }
+    }
+
     @Test fun bufferingAndPausedTimeDoNotRearmTheReconnectBudget() = runBlocking {
         val fixture = ReconnectFixture(this)
         try {
@@ -1537,6 +1566,7 @@ class PlaybackControllerTest {
         var position = 0L
         var seekPosition = 0L
         var playing = true
+        var suppression = Player.PLAYBACK_SUPPRESSION_REASON_NONE
         val player = Proxy.newProxyInstance(
             ExoPlayer::class.java.classLoader,
             arrayOf(ExoPlayer::class.java),
@@ -1557,6 +1587,7 @@ class PlaybackControllerTest {
                 "getCurrentPosition" -> position
                 "getCurrentTimeline" -> Timeline.EMPTY
                 "getPlayWhenReady" -> playing
+                "getPlaybackSuppressionReason" -> suppression
                 "getDuration" -> 30_000L
                 "isCurrentMediaItemSeekable" -> true
                 "seekTo" -> { seekPosition = args!![0] as Long; calls += method.name; null }

@@ -110,8 +110,12 @@ class StreamNavigationTest {
         val opening = vm.substringAfter("fun openSearch()").substringBefore("fun closeSearch()")
         assertFalse(opening.contains("playback.play("))
         val selection = vm.substringAfter("fun playSearchResult(").substringBefore("fun dismissTimeline()")
-        assertTrue(selection.contains("open(zap, index, GroupKey.All)"))
-        assertTrue(selection.contains("openArchive(zap, index, GroupKey.All, archiveStart)"))
+        assertTrue(selection.contains("archiveTime = archiveStart, expectedChannel = channel"))
+        val resolving = vm.substringAfter("private fun select(").substringBefore("private fun setMode(")
+        assertTrue(resolving.contains("container.database.withTransaction"))
+        assertTrue(resolving.contains("ChannelSelection.resolve(expectedChannel, zap)"))
+        assertTrue(resolving.contains("applyCatchup(first, archiveTime, restartIfActive = true)"))
+        assertTrue(resolving.contains("startLive(first)"))
     }
 
     @Test fun quickMenuFocusAndAudioBackAreIndependentOfTrackAndFavoriteUpdates() {

@@ -78,7 +78,7 @@ is saved locally and defaults to on. Turning it off does not change programme/ba
 - **Playlist**: Settings, section "Lista kanalow". Users of FireLite 1.x keep their playlist address automatically.
 - **Start**: recent channels and up to 30 favourites from the active playlist; OK starts fullscreen playback.
   No preview/autoplay runs on Start, Programme Guide, Favourites or Search. Back from their fullscreen player
-  stops the stream and restores the played row; only Live TV returns to a continuing preview.
+  stops the stream and restores the played row.
 - **Programme Guide**: the full-width paged Live TV grid with group switching, but without preview.
   Rewind/Fast-forward shift the window by one hour; Play/Pause jumps to now. Future/unavailable cells cannot play.
 - **Favourites**: active-playlist favourites, paged with current EPG; OK plays, long OK removes the favourite.
@@ -97,8 +97,7 @@ is saved locally and defaults to on. Turning it off does not change programme/ba
   Back at the main-menu rail returns to the same stream. Guide/main-menu presentation changes keep the
   one PlayerView/ExoPlayer mounted, with a small preview, and never reconnect. Startup resume and previous-channel
   switching use PlaybackController's existing gate: old connections close first, then the unchanged 400 ms grace.
-- **Live preview** reuses that same player. In the initial browser, focusing a channel for 800 ms switches preview;
-  OK expands it without reconnecting. Browsing the main menu while a stream is active does not preview other channels.
+- **No focus preview**: focusing a channel never opens a stream anywhere in the app; only OK does.
 - **Fullscreen remote**: Up opens the compact info banner; Up again expands the full description. Expanded Up/Down
   scroll; compact Down hides. Both banners hide eight seconds after the last key, and Back closes them.
   Down without a panel toggles the last two watched channels (including the active playlist's saved recents at startup).
@@ -149,7 +148,7 @@ grid row and programme time/window. Group changes keep focus in the group list. 
 Menu toggles the row's favourite. OK plays a current
 programme live or a retained catch-up programme from its start; future/unavailable cells only show details.
 The group determines history bounds (at most seven days); future browsing ends at the guide's end, capped
-at three days. Focusing a row always previews live, including after leaving archive playback. The fullscreen
+at three days. Focusing a row never starts a stream. The fullscreen
 overlay remains a simple channel list.
 
 ## IMDb film ratings

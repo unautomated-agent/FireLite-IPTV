@@ -116,6 +116,9 @@ internal fun channelGuideQueryMinute(time: Long): Long = Math.floorDiv(time, 60_
  *
  * Preview and fullscreen share the single player hosted by the shell.
  */
+/** The programme under the guide cursor, shown above the grid. */
+data class GuideDetails(val channelName: String, val programme: ProgrammeEntity)
+
 @Composable
 fun LiveTvScreen(
     library: LibraryViewModel,
@@ -126,6 +129,7 @@ fun LiveTvScreen(
     modifier: Modifier = Modifier,
     guideOnly: Boolean = false,
     returnTarget: BrowserTarget? = null,
+    onGuideDetails: (GuideDetails?) -> Unit = {},
 ) {
     val source by library.source.collectAsState()
     val channelCount by library.channelCount.collectAsState()
@@ -154,7 +158,7 @@ fun LiveTvScreen(
                 library = library, player = player,
                 active = active && (mode.acceptsPreview || mode == PlayerMode.Guide || mode == PlayerMode.Panel),
                 onPreviewBounds = onPreviewBounds, modifier = modifier,
-                guideOnly = guideOnly, returnTarget = returnTarget,
+                guideOnly = guideOnly, returnTarget = returnTarget, onGuideDetails = onGuideDetails,
             )
         }
     }
@@ -189,6 +193,7 @@ private fun ChannelBrowser(
     guideOnly: Boolean = false,
     returnTarget: BrowserTarget? = null,
     onQuickMenu: () -> Unit = {},
+    onGuideDetails: (GuideDetails?) -> Unit = {},
 ) {
     val groups by library.groups.collectAsState()
     val selected by library.selectedGroup.collectAsState()
@@ -347,15 +352,13 @@ private fun ChannelBrowser(
             }
         }
     }
-    LaunchedEffect(active, focusedChannel?.channel?.streamUrl, focusedIndex, selected, channelsHaveFocus) {
-        if (overlay || guideOnly) return@LaunchedEffect
-        player.cancelPreview()
-        if (active && channelsHaveFocus && focusedChannel != null) {
-            library.zapContext(selected)?.let { player.preview(it, focusedIndex, selected) }
-        }
-    }
     DisposableEffect(selected) { onDispose { focusJob?.cancel() } }
-    DisposableEffect(Unit) { onDispose { if (!overlay) player.cancelPreview() } }
+    if (guideOnly) {
+        val details = focusedProgramme?.takeIf { programmeFocus && channelsHaveFocus }
+            ?.let { GuideDetails(focusedChannel?.channel?.name.orEmpty(), it) }
+        LaunchedEffect(details) { onGuideDetails(details) }
+        DisposableEffect(Unit) { onDispose { onGuideDetails(null) } }
+    }
     LaunchedEffect(active, restore?.token, manualGuideFocus) {
         val target = restore ?: return@LaunchedEffect
         if (guideOnly && manualGuideFocus) return@LaunchedEffect
@@ -533,7 +536,10 @@ private fun ChannelBrowser(
                     val strip = categoryStrip(groups.map { it.key }, selected)
                     strip.forEachIndexed { index, group ->
                         val current = strip.size == 1 || index == 1
-                        FLText(groupLabel(group), style = if (current) FireLiteTheme.typography.title else FireLiteTheme.typography.label,
+                        // A neighbour only hints at what Left/Right selects, so a long built-in name is shortened.
+                        val label = if (!current && group == GroupKey.Recent) stringResource(R.string.group_recent_short)
+                            else groupLabel(group)
+                        FLText(label, style = if (current) FireLiteTheme.typography.title else FireLiteTheme.typography.label,
                             color = if (current) FireLiteTheme.colors.accent else FireLiteTheme.colors.textSecondary.copy(alpha = 0.55f),
                             modifier = Modifier.weight(if (current) 1.3f else 1f), maxLines = 1)
                     }

@@ -515,6 +515,7 @@ private fun importStatusText(state: ImportState): String = when (state) {
             ImportFailure.Network -> R.string.import_error_network
             ImportFailure.EmptyPlaylist -> R.string.import_error_empty
             ImportFailure.NoSource -> R.string.import_error_no_source
+            ImportFailure.Unexpected -> R.string.import_error_unexpected
         },
     )
 }

@@ -347,15 +347,7 @@ private fun ChannelBrowser(
             }
         }
     }
-    LaunchedEffect(active, focusedChannel?.channel?.streamUrl, focusedIndex, selected, channelsHaveFocus) {
-        if (overlay || guideOnly) return@LaunchedEffect
-        player.cancelPreview()
-        if (active && channelsHaveFocus && focusedChannel != null) {
-            library.zapContext(selected)?.let { player.preview(it, focusedIndex, selected) }
-        }
-    }
     DisposableEffect(selected) { onDispose { focusJob?.cancel() } }
-    DisposableEffect(Unit) { onDispose { if (!overlay) player.cancelPreview() } }
     LaunchedEffect(active, restore?.token, manualGuideFocus) {
         val target = restore ?: return@LaunchedEffect
         if (guideOnly && manualGuideFocus) return@LaunchedEffect

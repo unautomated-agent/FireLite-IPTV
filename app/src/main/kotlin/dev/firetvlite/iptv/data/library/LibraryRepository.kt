@@ -9,6 +9,7 @@ import dev.firetvlite.iptv.data.epg.EpgRepository
 import dev.firetvlite.iptv.data.playlist.EmptyPlaylistException
 import dev.firetvlite.iptv.data.playlist.PlaylistImporter
 import java.io.IOException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -22,7 +23,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
-enum class ImportFailure { Network, EmptyPlaylist, NoSource }
+enum class ImportFailure { Network, EmptyPlaylist, NoSource, Unexpected }
 
 sealed interface ImportState {
     data object Idle : ImportState
@@ -142,13 +143,7 @@ class LibraryRepository(
         }
         importJob = scope.launch {
             mutableImportState.value = ImportState.Running
-            val result = try {
-                ImportState.Done(importer.import(source))
-            } catch (e: EmptyPlaylistException) {
-                ImportState.Failed(ImportFailure.EmptyPlaylist)
-            } catch (e: IOException) {
-                ImportState.Failed(ImportFailure.Network)
-            }
+            val result = importOutcome { importer.import(source) }
             currentCoroutineContext().ensureActive()
             mutableImportState.value = result
             epg.refresh(source.id, force = result is ImportState.Done)
@@ -172,6 +167,19 @@ class LibraryRepository(
     }
 
     companion object {
+        /** An import runs in the application scope, so any error it lets through would close the app. */
+        internal suspend fun importOutcome(import: suspend () -> Int): ImportState = try {
+            ImportState.Done(import())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: EmptyPlaylistException) {
+            ImportState.Failed(ImportFailure.EmptyPlaylist)
+        } catch (e: IOException) {
+            ImportState.Failed(ImportFailure.Network)
+        } catch (e: Exception) {
+            ImportState.Failed(ImportFailure.Unexpected)
+        }
+
         const val DEFAULT_USER_AGENT = "FireLite/2.0"
         private const val DEFAULT_NAME = "M3U"
     }

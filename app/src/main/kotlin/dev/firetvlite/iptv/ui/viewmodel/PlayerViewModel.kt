@@ -109,7 +109,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     val timeline = mutableTimeline.asStateFlow()
     private var playingGroup: GroupKey = GroupKey.All
     private var targetToken = 0
-    private var previewJob: Job? = null
     private var activeChannel: ChannelEntity? = null
     private var activeIndex = 0
     private val channelDao = container.database.channelDao()
@@ -215,7 +214,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 if (startupPending && mutableMode.value == PlayerMode.Closed && sourceDao.active()?.id == sourceId) {
                     previous.seedRecent(recent)
                     watchedSourceId = sourceId
-                    cancelPreview()
                     select(allChannels(sourceId), index, GroupKey.All, PlayerMode.Fullscreen, restoring = true)
                     openJob?.join()
                 } else container.startup.finish("cancelled")
@@ -227,26 +225,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     /** Opens the player on item [startIndex] of [zap] and starts playing it. */
     fun open(zap: ZapContext, startIndex: Int, group: GroupKey) {
         startupPending = false
-        cancelPreview()
         select(zap, startIndex, group, PlayerMode.Fullscreen)
     }
 
-    fun preview(zap: ZapContext, startIndex: Int, group: GroupKey) {
-        cancelPreview()
-        if (!mutableMode.value.acceptsPreview) return
-        previewJob = playbackWork.launch {
-            delay(800)
-            select(zap, startIndex, group, PlayerMode.Preview)
-        }
-    }
-
-    fun cancelPreview() {
-        previewJob?.cancel()
-        previewJob = null
-    }
-
     fun openArchive(zap: ZapContext, startIndex: Int, group: GroupKey, time: Long) {
-        cancelPreview()
         select(zap, startIndex, group, PlayerMode.Fullscreen, time)
     }
 
@@ -322,14 +304,12 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     fun showPanel() {
-        cancelPreview()
         settlePendingZap()
         closeTimeline()
         setMode(PlayerMode.Panel)
     }
 
     fun returnToFullscreen() {
-        cancelPreview()
         closeTimeline()
         val channel = activeChannel
         if (channel != null && !playback.hasActiveStream && !reconnectCancelled) {
@@ -341,7 +321,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     fun openGuide(group: GroupKey = playingGroup, channel: ChannelEntity? = activeChannel) {
         cancelStartupResume()
-        cancelPreview()
         settlePendingZap()
         closeTimeline()
         mutableBrowserTarget.value = channel?.let { BrowserTarget(group, it, ++targetToken) }
@@ -384,7 +363,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         channel: ChannelEntity? = activeChannel,
     ) {
         if (!mutableMode.value.fullFrame || zap == null || channel == null) return
-        cancelPreview()
         settlePendingZap()
         val playing = activeChannel?.streamUrl == channel.streamUrl
         val current = updateFrame()
@@ -401,7 +379,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun openSearch() {
         cancelAutoReconnect()
         cancelStartupResume()
-        cancelPreview()
         settlePendingZap()
         closeTimeline()
         mutableSearchVisible.value = true
@@ -413,7 +390,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         closeSearch()
         settlePendingZap()
         startupPending = false
-        cancelPreview()
         select(allChannels(channel.sourceId), 0, GroupKey.All, PlayerMode.Fullscreen,
             archiveTime = archiveStart, expectedChannel = channel)
     }
@@ -516,7 +492,6 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         seekDebouncer.cancel()
         previous.clear()
         closeTimeline()
-        cancelPreview()
         openJob?.cancel()
         zapJob?.cancel()
         catchupJob?.cancel()

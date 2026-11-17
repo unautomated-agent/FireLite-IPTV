@@ -1,6 +1,7 @@
 package dev.firetvlite.iptv.ui.viewmodel
 
 import android.app.Application
+import androidx.room.withTransaction
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.media3.exoplayer.ExoPlayer
@@ -33,8 +34,10 @@ import dev.firetvlite.iptv.playback.TimelineItem
 import dev.firetvlite.iptv.playback.PreviousChannel
 import dev.firetvlite.iptv.playback.StartupResume
 import dev.firetvlite.iptv.playback.PlaybackSourcePolicy
+import dev.firetvlite.iptv.playback.PlaybackWork
 import dev.firetvlite.iptv.playback.AudioTrackChoice
 import dev.firetvlite.iptv.data.library.QueryZapContext
+import dev.firetvlite.iptv.data.library.ChannelSelection
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -83,6 +86,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private val userDao = container.database.userDao()
     private val sourceDao = container.database.sourceDao()
     private val epg = container.epg
+    private val playbackWork = PlaybackWork(viewModelScope)
 
     val player: StateFlow<ExoPlayer?> = playback.player
     val status: StateFlow<PlaybackStatus> = playback.status
@@ -141,25 +145,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                 if (PlaybackSourcePolicy.shouldClose(mutableChannel.value?.sourceId, source?.id)) close()
             }
         }
-        startupJob = viewModelScope.launch {
-            val source = sourceDao.active()
-            val sourceId = source?.id
-            val recent = if (sourceId == null) emptyList() else channelDao.startupRecent(sourceId).first()
-            val last = recent.firstOrNull()
-            container.startup.mark(LaunchPhase.Database)
-            val resume = StartupResume.allowed(true, last != null, mutableMode.value, startupPending)
-            if (resume && last != null && sourceId != null) {
-                val index = channelDao.allIndex(sourceId, last.streamUrl)
-                if (index == null) { container.startup.finish("channel_removed"); return@launch }
-                if (startupPending && mutableMode.value == PlayerMode.Closed && sourceDao.active()?.id == sourceId) {
-                    previous.seedRecent(recent)
-                    watchedSourceId = sourceId
-                    cancelPreview()
-                    select(allChannels(sourceId), index, GroupKey.All, PlayerMode.Fullscreen, restoring = true)
-                } else container.startup.finish("cancelled")
-            } else container.startup.finish("no_resume")
-            startupPending = false
-        }
+        restoreStartup()
         viewModelScope.launch {
             status.collect { state ->
                 if (state is PlaybackStatus.Failed) container.startup.finish("failed")
@@ -204,6 +190,39 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     private var catchupJob: Job? = null
     private var messageJob: Job? = null
 
+    fun pausePlaybackWork() {
+        playbackWork.pause()
+        settlePendingZap()
+    }
+
+    fun resumePlaybackWork() {
+        playbackWork.resume()
+        if (startupPending && startupJob?.isActive != true) restoreStartup()
+    }
+
+    private fun restoreStartup() {
+        startupJob = playbackWork.launch {
+            val source = sourceDao.active()
+            val sourceId = source?.id
+            val recent = if (sourceId == null) emptyList() else channelDao.startupRecent(sourceId).first()
+            val last = recent.firstOrNull()
+            container.startup.mark(LaunchPhase.Database)
+            val resume = StartupResume.allowed(true, last != null, mutableMode.value, startupPending)
+            if (resume && last != null && sourceId != null) {
+                val index = channelDao.allIndex(sourceId, last.streamUrl)
+                if (index == null) { container.startup.finish("channel_removed"); return@launch }
+                if (startupPending && mutableMode.value == PlayerMode.Closed && sourceDao.active()?.id == sourceId) {
+                    previous.seedRecent(recent)
+                    watchedSourceId = sourceId
+                    cancelPreview()
+                    select(allChannels(sourceId), index, GroupKey.All, PlayerMode.Fullscreen, restoring = true)
+                    openJob?.join()
+                } else container.startup.finish("cancelled")
+            } else container.startup.finish("no_resume")
+            startupPending = false
+        }
+    }
+
     /** Opens the player on item [startIndex] of [zap] and starts playing it. */
     fun open(zap: ZapContext, startIndex: Int, group: GroupKey) {
         startupPending = false
@@ -214,7 +233,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun preview(zap: ZapContext, startIndex: Int, group: GroupKey) {
         cancelPreview()
         if (!mutableMode.value.acceptsPreview) return
-        previewJob = viewModelScope.launch {
+        previewJob = playbackWork.launch {
             delay(800)
             select(zap, startIndex, group, PlayerMode.Preview)
         }
@@ -231,7 +250,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun select(zap: ZapContext, startIndex: Int, group: GroupKey, mode: PlayerMode, archiveTime: Long? = null,
-        restoring: Boolean = false) {
+        restoring: Boolean = false, expectedChannel: ChannelEntity? = null) {
         cancelAutoReconnect()
         reconnectCancelled = false
         seekDebouncer.cancel()
@@ -239,13 +258,32 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         zapJob?.cancel()
         catchupJob?.cancel()
         pendingSeekMs = null
-        openJob = viewModelScope.launch {
-            val count = zap.count()
-            if (count == 0) return@launch
-            val index = startIndex.coerceIn(0, count - 1)
-            val first = zap.at(index) ?: return@launch
-            val source = sourceDao.active()
-            if (source?.id != first.sourceId) return@launch
+        openJob = playbackWork.launch {
+            val selected = if (expectedChannel != null) container.database.withTransaction {
+                val source = sourceDao.active() ?: return@withTransaction null
+                if (source.id != expectedChannel.sourceId) return@withTransaction null
+                ChannelSelection.resolve(expectedChannel, zap) {
+                    container.database.channelDao().allIndexById(expectedChannel.sourceId, expectedChannel.id)
+                }?.let { it to source }
+            } else {
+                val count = zap.count()
+                if (count == 0) return@launch
+                val index = startIndex.coerceIn(0, count - 1)
+                val channel = zap.at(index) ?: return@launch
+                val source = sourceDao.active() ?: return@launch
+                ChannelSelection(count, index, channel) to source
+            } ?: return@launch
+            val (selection, source) = selected
+            val (count, index, first) = selection
+            if (source.id != first.sourceId) return@launch
+            if (expectedChannel != null && archiveTime != null) {
+                val now = System.currentTimeMillis()
+                if (!CatchupUrlBuilder.isSupported(first) || archiveTime >= now ||
+                    archiveTime < now - first.catchupDays.toLong() * ChannelTimeline.DAY) {
+                    notify(PlayerMessage.CatchupUnsupported)
+                    return@launch
+                }
+            }
             userAgent = source.userAgent
             zapContext = zap
             zapCount = count
@@ -314,7 +352,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun previousChannel() {
         val channel = previous.previous ?: return
         openJob?.cancel()
-        openJob = viewModelScope.launch {
+        openJob = playbackWork.launch {
             val source = sourceDao.active() ?: return@launch
             if (source.id != channel.sourceId) return@launch
             val index = channelDao.allIndex(source.id, channel.streamUrl) ?: return@launch
@@ -372,24 +410,10 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     fun playSearchResult(channel: ChannelEntity, archiveStart: Long? = null) {
         closeSearch()
         settlePendingZap()
-        openJob = viewModelScope.launch {
-            if (sourceDao.active()?.id != channel.sourceId) return@launch
-            val channels = container.database.channelDao()
-            val index = channels.allIndexById(channel.sourceId, channel.id) ?: return@launch
-            val fresh = channels.allAt(channel.sourceId, index) ?: return@launch
-            if (fresh.id != channel.id) return@launch
-            val zap = allChannels(channel.sourceId)
-            if (archiveStart == null) open(zap, index, GroupKey.All)
-            else {
-                val now = System.currentTimeMillis()
-                if (!CatchupUrlBuilder.isSupported(fresh) || archiveStart >= now ||
-                    archiveStart < now - fresh.catchupDays.toLong() * ChannelTimeline.DAY) {
-                    notify(PlayerMessage.CatchupUnsupported)
-                    return@launch
-                }
-                openArchive(zap, index, GroupKey.All, archiveStart)
-            }
-        }
+        startupPending = false
+        cancelPreview()
+        select(allChannels(channel.sourceId), 0, GroupKey.All, PlayerMode.Fullscreen,
+            archiveTime = archiveStart, expectedChannel = channel)
     }
 
     fun dismissTimeline() {
@@ -477,7 +501,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         catchupJob?.cancel()
         pendingSeekMs = null
         zapJob?.cancel()
-        zapJob = viewModelScope.launch {
+        zapJob = playbackWork.launch {
             val next = zap.at(zapIndex) ?: return@launch
             show(next, archive = false) // the info bar shows the new name at once
             delay(ZAP_DEBOUNCE_MS)
@@ -577,7 +601,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val watched = updateFrame().watchedMs
         catchupJob?.cancel()
         pendingSeekMs = null
-        catchupJob = viewModelScope.launch {
+        catchupJob = playbackWork.launch {
             val current = epg.programmeAt(channel.id, watched)
             catchupJob = null
             if (current == null) notify(PlayerMessage.SeekUnsupported) else seekAbsolute(current.start)
@@ -608,7 +632,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
 
     private fun scheduleArchive(channel: ChannelEntity, time: Long?) {
         pendingSeekMs = time ?: System.currentTimeMillis()
-        catchupJob = viewModelScope.launch {
+        catchupJob = playbackWork.launch {
             delay(CATCHUP_DEBOUNCE_MS)
             pendingSeekMs = null
             if (time == null) startLive(channel) else applyCatchup(channel, time)
@@ -616,6 +640,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun applyCatchup(channel: ChannelEntity, time: Long, restartIfActive: Boolean = false, userInitiated: Boolean = true) {
+        if (!playbackWork.resumed) return
         val now = System.currentTimeMillis() / 1000
         val start = time / 1000
         val url = CatchupUrlBuilder.build(
@@ -644,6 +669,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
     }
 
     private fun startLive(channel: ChannelEntity, userInitiated: Boolean = true, coldStart: Boolean = false) {
+        if (!playbackWork.resumed) return
         reconnectCancelled = false
         activeChannel = channel
         activeIndex = zapIndex

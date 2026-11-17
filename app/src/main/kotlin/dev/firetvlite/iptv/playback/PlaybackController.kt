@@ -312,7 +312,11 @@ class PlaybackController internal constructor(
         override fun onPlayerError(error: PlaybackException) = handleError(error)
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
-            if (isPlaying) { renderingStarted(); recordSuccess() }
+            if (isPlaying) { livePlaying(); renderingStarted(); recordSuccess() } else endStablePlayback()
+        }
+
+        override fun onPlaybackSuppressionReasonChanged(playbackSuppressionReason: Int) {
+            if (playbackSuppressionReason != Player.PLAYBACK_SUPPRESSION_REASON_NONE) endStablePlayback()
         }
 
         override fun onTracksChanged(tracks: Tracks) { recordSuccess() }
@@ -1129,7 +1133,9 @@ class PlaybackController internal constructor(
         val player = exo ?: return
         if (activeRequest == null || !preparedCurrent || !player.playWhenReady || player.playbackState != Player.STATE_READY) return
         reachedReady = true
-        if (stableSince == null) stableSince = monotonicMs()
+        if (player.playbackSuppressionReason == Player.PLAYBACK_SUPPRESSION_REASON_NONE) {
+            if (stableSince == null) stableSince = monotonicMs()
+        } else endStablePlayback()
         finishReconnect("ok")
     }
 

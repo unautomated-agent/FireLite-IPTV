@@ -30,6 +30,8 @@ import org.junit.Assert.assertSame
 import org.junit.Assert.assertNotSame
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import dev.firetvlite.iptv.data.ChannelUsageKey
+import dev.firetvlite.iptv.data.ChannelUsageSink
 import dev.firetvlite.iptv.reporting.ReportSink
 import dev.firetvlite.iptv.LaunchPhase
 
@@ -94,6 +96,52 @@ class PlaybackControllerTest {
             delay(450)
             fake.listener!!.onRenderedFirstFrame()
             assertEquals(captured, phases)
+        } finally { controller.stop() }
+    }
+
+    @Test fun usageComesFromActualNonPreviewPlaybackAndAutomaticReconnectIsExcluded(): Unit = runBlocking {
+        val fake = FakePlayer()
+        var now = 0L
+        var selections = 0L
+        var watchMs = 0L
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+            evictConnections = {}, reconnectDelayMs = 1, monotonicMs = { now },
+            usageSink = ChannelUsageSink { _, count, elapsed -> selections += count; watchMs += elapsed })
+        suspend fun prepared(count: Int) {
+            withTimeout(3000) { while (fake.calls.count { it == "prepare" } < count) delay(10) }
+        }
+        fun playing() {
+            fake.state = Player.STATE_READY
+            fake.actualPlaying = true
+            fake.listener!!.onPlaybackStateChanged(fake.state)
+            fake.listener!!.onIsPlayingChanged(true)
+        }
+        try {
+            controller.setPreview(true)
+            controller.play(request.copy(usageKey = ChannelUsageKey(1, request.url)))
+            prepared(1)
+            assertEquals(0L, selections)
+            playing()
+            now = 1000
+            assertEquals(0L, selections)
+            controller.setPreview(false)
+            assertEquals(1L, selections)
+            now = 3000
+            fake.listener!!.onPlayerError(TestError(2001))
+            prepared(2)
+            playing()
+            now = 6000
+            controller.stop()
+            assertEquals(1L, selections)
+            assertEquals(2000L, watchMs)
+            controller.play(request.copy(url = "https://example.org/seek", archive = true,
+                usageKey = ChannelUsageKey(1, request.url), countUsageSelection = false))
+            prepared(3)
+            playing()
+            now += 1000
+            controller.stop()
+            assertEquals(1L, selections)
+            assertEquals(3000L, watchMs)
         } finally { controller.stop() }
     }
 
@@ -1566,6 +1614,7 @@ class PlaybackControllerTest {
         var position = 0L
         var seekPosition = 0L
         var playing = true
+        var actualPlaying = false
         var suppression = Player.PLAYBACK_SUPPRESSION_REASON_NONE
         val player = Proxy.newProxyInstance(
             ExoPlayer::class.java.classLoader,
@@ -1587,6 +1636,7 @@ class PlaybackControllerTest {
                 "getCurrentPosition" -> position
                 "getCurrentTimeline" -> Timeline.EMPTY
                 "getPlayWhenReady" -> playing
+                "isPlaying" -> actualPlaying
                 "getPlaybackSuppressionReason" -> suppression
                 "getDuration" -> 30_000L
                 "isCurrentMediaItemSeekable" -> true

@@ -60,10 +60,10 @@ class LocalSearchTest {
         assertNull(SearchWindow.archiveStart(past.copy(channel = channel(days = 0)), now))
     }
 
-    @Test fun emptyQueryDoesNotTouchRoomAndMissingMatchesAreEmpty() = runBlocking {
+    @Test fun emptyQuerySuggestsChannelsWithoutScanningProgrammesAndMissingMatchesAreEmpty() = runBlocking {
         val dao = FakeDao(listOf(channel()), listOf(programme()))
-        assertEquals(SearchResults(), LocalSearch(dao).search(1, " \t ", now))
-        assertEquals(0, dao.calls)
+        assertEquals(SearchResults(channels = listOf(channel())), LocalSearch(dao).search(1, " \t ", now))
+        assertEquals(1, dao.calls)
         assertEquals(SearchResults(), LocalSearch(dao).search(1, "missing", now))
         assertTrue(dao.calls > 0)
     }
@@ -81,7 +81,7 @@ class LocalSearchTest {
         assertEquals(250L, result.channels.last().id)
         assertEquals(201L, result.programmes.first().programmeId)
         assertEquals(250L, result.programmes.last().programmeId)
-        assertEquals(4, dao.calls)
+        assertEquals(5, dao.calls)
         assertTrue(dao.threads.all { it != Thread.currentThread().name })
     }
 
@@ -117,6 +117,46 @@ class LocalSearchTest {
                 assertEquals(failure.message, actual.message)
             }
         }
+    }
+
+    @Test fun matchQualityOutranksUsageAndUsageBreaksMatchingTies(): Unit = runBlocking {
+        val substring = channel(1, "SuperTVN")
+        val word = channel(2, "Kanał TVN")
+        val prefix = channel(3, "TVN 24")
+        val favourite = channel(4, "TVN Siedem")
+        val usage = listOf(ChannelUsage(1, favourite.streamUrl).add(5, 900_000, now),
+            ChannelUsage(1, substring.streamUrl).add(1000, 999_000_000, now))
+        val result = LocalSearch(FakeDao(listOf(substring, word, prefix, favourite), emptyList())) { usage }
+            .search(1, "TVN", now)
+        assertEquals(listOf(4L, 3L, 2L, 1L), result.channels.map { it.id })
+    }
+
+    @Test fun emptySuggestionsUseDecayedUsageAndRetainDeterministicFallbacks(): Unit = runBlocking {
+        val channels = (1L..4).map { channel(it, "Kanał $it") }
+        val usage = listOf(ChannelUsage(1, channels[0].streamUrl).add(100, 0, now - 180 * day),
+            ChannelUsage(1, channels[1].streamUrl).add(1, 600_000, now),
+            ChannelUsage(2, channels[3].streamUrl).add(1000, 0, now))
+        val result = LocalSearch(FakeDao(channels, emptyList())) { usage }.search(1, "", now)
+        assertEquals(listOf(2L, 1L, 3L, 4L), result.channels.map { it.id })
+    }
+
+    @Test fun rankingFindsBetterMatchesBeyondTheFirstFiftyHitsAndPublishesChannelsFirst(): Unit = runBlocking {
+        val channels = (1L..250).map { channel(it, if (it == 250L) "Łódź" else "Radio Łódź $it") }
+        var partial = emptyList<ChannelEntity>()
+        val result = LocalSearch(FakeDao(channels, listOf(programme(title = "Łódź teraz"))))
+            .search(1, "lodz", now) { partial = it }
+        assertEquals(250L, result.channels.first().id)
+        assertEquals(50, result.channels.size)
+        assertEquals(result.channels, partial)
+        assertEquals(1, result.programmes.size)
+    }
+
+    @Test fun boundedTyposAreBelowSubstringMatchesAndShortQueriesAreNotFuzzy() {
+        assertTrue(SearchText.quality("Republika", "republka") > 0)
+        assertTrue(SearchText.quality("Republika", "republka") < SearchText.quality("TV Republka", "republka"))
+        assertEquals(0, SearchText.quality("TVN 24", "tvp"))
+        assertEquals(0, SearchText.quality("Republika", "zzzzzzzz"))
+        assertTrue(SearchText.quality("Łódź", "lodz") > SearchText.quality("Radio Łódź", "lodz"))
     }
 
     private class FakeDao(val channels: List<ChannelEntity>, val programmes: List<SearchProgramme>) : SearchDao {

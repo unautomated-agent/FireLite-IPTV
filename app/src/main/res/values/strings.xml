@@ -6,7 +6,7 @@
     <string name="search">Szukaj</string>
     <string name="search_input">Kanał lub tytuł audycji</string>
     <string name="search_hint">Wpisz tekst lub użyj mikrofonu w klawiaturze. ↓ Wyniki · ↑ Pole · Wstecz Zamknij</string>
-    <string name="search_empty_query">Szukaj w zapisanych kanałach i lokalnym programie TV.</string>
+    <string name="search_empty_query">Polecane kanały — wpisz nazwę kanału lub audycji.</string>
     <string name="search_no_results">Brak wyników</string>
     <string name="search_loading">Wyszukiwanie…</string>
     <string name="search_failed">Nie udało się odczytać wyników. Spróbuj ponownie.</string>

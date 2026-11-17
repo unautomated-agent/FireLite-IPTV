@@ -63,9 +63,10 @@ class AppContainer(application: Application, startedAt: Long = SystemClock.elaps
     internal val deadChannels: DeadChannels = DeadChannels(File(application.filesDir, "dead-channels.json"), applicationScope,
         reports = errorReports, awaitStartup = startup::awaitReady)
     internal val stalls = StallHistory(File(application.filesDir, "playback-stalls.json"), applicationScope, startup::awaitReady)
+    private val channelUsage = dev.firetvlite.iptv.data.ChannelUsageStore(database, applicationScope, startup::awaitReady)
     /** The one object that may open a stream. */
     val playback: PlaybackController = PlaybackController(application, applicationScope, deadChannels, stalls, errorReports,
-        loudness = loudness, launchEvent = startup::mark)
+        loudness = loudness, launchEvent = startup::mark, usageSink = channelUsage)
 
     private fun reportUploadsAllowed(): Boolean = playback.reportUploadsAllowed
     internal val launchUpdate = LaunchUpdateCheck(applicationScope, playback.firstFrame, BuildConfig.VERSION_CODE.toLong(),

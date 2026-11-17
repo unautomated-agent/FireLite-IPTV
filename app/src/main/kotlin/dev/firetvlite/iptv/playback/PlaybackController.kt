@@ -52,6 +52,8 @@ import java.io.Closeable
 import java.io.IOException
 import java.util.Locale
 import java.net.URI
+import dev.firetvlite.iptv.data.ChannelUsageKey
+import dev.firetvlite.iptv.data.ChannelUsageSink
 
 /** What to play. */
 data class StreamRequest(
@@ -63,6 +65,8 @@ data class StreamRequest(
     val channelKey: String = DeadChannels.key(url),
     val userInitiated: Boolean = true,
     val coldStart: Boolean = false,
+    val usageKey: ChannelUsageKey? = null,
+    val countUsageSelection: Boolean = true,
 )
 
 sealed interface PlaybackStatus {
@@ -132,13 +136,14 @@ class PlaybackController internal constructor(
     private val reconnectDelayMs: Long = 2_000L,
     private val monotonicMs: () -> Long = { System.nanoTime() / 1_000_000 },
     private val loudness: LoudnessLeveller? = null,
+    usageSink: ChannelUsageSink = ChannelUsageSink.None,
 ) {
     internal constructor(scope: CoroutineScope, createPlayer: (HttpDataSource.Factory) -> ExoPlayer) :
         this(scope, createPlayer, {})
 
     internal constructor(context: Context, scope: CoroutineScope, deadChannels: DeadChannels, stalls: StallHistory,
         reports: ReportSink = ReportSink.None, loudness: LoudnessLeveller? = null,
-        launchEvent: (LaunchPhase) -> Unit = {}) : this(scope, { httpFactory ->
+        launchEvent: (LaunchPhase) -> Unit = {}, usageSink: ChannelUsageSink = ChannelUsageSink.None) : this(scope, { httpFactory ->
         val renderers = DefaultRenderersFactory(context)
             .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_PREFER)
             .setEnableDecoderFallback(true)
@@ -154,9 +159,11 @@ class PlaybackController internal constructor(
     }, recordPlayback = diagnosticRecorder(context, scope), channelResult = { request, reason -> deadChannels.result(request, reason) },
         healthResult = { request, reason -> deadChannels.result(request, reason, "health check") },
         healthSummary = deadChannels::checkSummary, recordStall = stalls::record, reports = reports,
-        loudness = loudness, launchEvent = launchEvent)
+        loudness = loudness, launchEvent = launchEvent, usageSink = usageSink)
 
     private val gate = StreamGate()
+    private val usage = PlaybackUsage(monotonicMs, usageSink)
+    private var usageJob: Job? = null
     private val evictionMutex = Mutex()
     private var exo: ExoPlayer? = null
     private var startJob: Job? = null
@@ -312,6 +319,7 @@ class PlaybackController internal constructor(
         override fun onPlayerError(error: PlaybackException) = handleError(error)
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            updateUsage(isPlaying && exo?.isPlaying == true)
             if (isPlaying) { livePlaying(); renderingStarted(); recordSuccess() } else endStablePlayback()
         }
 
@@ -720,6 +728,8 @@ class PlaybackController internal constructor(
 
     private fun playInternal(request: StreamRequest, automatic: Boolean = false) {
         if (gate.onRequest(request.url) == StreamGate.Action.Ignore) return
+        updateUsage(false)
+        usage.request(request.usageKey, request.userInitiated && request.countUsageSelection, automatic)
         if (request.coldStart) launchEvent(LaunchPhase.Resume)
         if (!automatic) reconnectUsed = false
         reachedReady = false
@@ -829,6 +839,8 @@ class PlaybackController internal constructor(
 
     /** Closes the stream for good. */
     fun stop() {
+        updateUsage(false)
+        usage.stop()
         finishReconnect("cancelled")
         stableSince = null
         reachedReady = false
@@ -858,6 +870,7 @@ class PlaybackController internal constructor(
         cancelAutoReconnect()
         if (preview == enabled) return
         preview = enabled
+        updateUsage(exo?.isPlaying == true)
         exo?.let(::applyQuality)
         recordSuccess()
         trace("QUALITY preview=$enabled")
@@ -1055,6 +1068,7 @@ class PlaybackController internal constructor(
     }
 
     private fun handleError(error: PlaybackException) {
+        updateUsage(false)
         if (activeRequest == null) return
         val request = activeRequest!!
         val wasReady = reachedReady
@@ -1127,6 +1141,18 @@ class PlaybackController internal constructor(
         if (rendered || startupFailureMarked || !startupUserInitiated) return
         startupFailureMarked = true
         channelResult(request.copy(userInitiated = startupUserInitiated), reason)
+    }
+
+    private fun updateUsage(playing: Boolean) {
+        val active = playing && !preview && activeRequest != null && preparedCurrent
+        usage.playing(active)
+        usageJob?.cancel()
+        usageJob = if (active) scope.launch {
+            while (true) {
+                delay(15_000)
+                usage.sample()
+            }
+        } else null
     }
 
     private fun livePlaying() {

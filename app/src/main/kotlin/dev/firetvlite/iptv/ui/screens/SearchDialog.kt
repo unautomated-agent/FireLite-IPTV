@@ -165,7 +165,6 @@ internal fun SearchDialog(sourceId: Long?, viewModel: PlayerViewModel) {
                     .background(colors.surfaceHigh, FireLiteTheme.shapes.medium)
                     .border(2.dp, if (fieldFocused) colors.focusRing else colors.surfaceHigh,
                         FireLiteTheme.shapes.medium).padding(14.dp))
-            FLText(stringResource(R.string.search_hint), style = FireLiteTheme.typography.body, color = colors.textSecondary)
             val status = when {
                 loading -> R.string.search_loading
                 failed -> R.string.search_failed
@@ -173,7 +172,8 @@ internal fun SearchDialog(sourceId: Long?, viewModel: PlayerViewModel) {
                 hits.isEmpty() -> R.string.search_no_results
                 else -> null
             }
-            if (status != null) FLText(stringResource(status), style = FireLiteTheme.typography.body)
+            if (status != null) FLText(stringResource(status), style = FireLiteTheme.typography.body, maxLines = 1,
+                color = if (status == R.string.search_empty_query) colors.textSecondary else colors.textPrimary)
             LazyColumn(Modifier.fillMaxWidth().weight(1f), state = scroll, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 itemsIndexed(hits, key = { _, hit -> hit.key }) { index, hit ->
                     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

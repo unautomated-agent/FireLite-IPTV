@@ -57,7 +57,7 @@ internal fun ChannelHealthSection(source: SourceEntity?) {
                 LaunchedEffect(Unit) { focus.requestFocusWhenReady() }
                 Column(Modifier.background(FireLiteTheme.colors.surfaceHigh).verticalScroll(rememberScrollState()).padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    PrimaryButton("$all ($count)", { group = null; choosing = false },
+                    SecondaryButton("$all ($count)", { group = null; choosing = false },
                         if (selected == null) Modifier.focusRequester(focus) else Modifier)
                     groups.forEach { item ->
                         SecondaryButton("${item.groupName.ifBlank { stringResource(R.string.health_ungrouped) }} (${item.channelCount})",

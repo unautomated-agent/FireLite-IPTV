@@ -45,6 +45,7 @@ import dev.firetvlite.iptv.ui.components.ChannelLogo
 import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.FocusSurface
 import dev.firetvlite.iptv.ui.components.PrimaryButton
+import dev.firetvlite.iptv.ui.components.SecondaryButton
 import dev.firetvlite.iptv.ui.components.ProgressBar
 import dev.firetvlite.iptv.ui.components.clockTime
 import dev.firetvlite.iptv.ui.components.minuteClock
@@ -101,7 +102,7 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
                 listOf(R.string.films_live, R.string.films_archive, R.string.films_first_window,
                     R.string.films_second_window).forEachIndexed { index, resource ->
                     val title = stringResource(resource)
-                    PrimaryButton(if (tab == index) stringResource(R.string.films_selected_tab, title) else title, { tab = index },
+                    SecondaryButton(if (tab == index) stringResource(R.string.films_selected_tab, title) else title, { tab = index },
                         Modifier.focusRequester(tabFocus[index]).onFocusChanged {
                             if (active && index == Films.FUTURE_TAB && it.isFocused) {
                                 source?.id?.let { id -> library.films.requestFutureFilms(id) }

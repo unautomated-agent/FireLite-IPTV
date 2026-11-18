@@ -124,7 +124,7 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
         FLText(stringResource(R.string.reports_status, reportingStatus.pending, lastSent,
             reportingStatus.lastError.ifBlank { "—" }), style = FireLiteTheme.typography.body)
         if (reportingStatus.blocked) FLText(stringResource(R.string.reports_blocked), style = FireLiteTheme.typography.body)
-        PrimaryButton(stringResource(R.string.reports_send_now), reporting::sendNow, Modifier.settingsControl("reports-send"))
+        SecondaryButton(stringResource(R.string.reports_send_now), reporting::sendNow, Modifier.settingsControl("reports-send"))
     }
     if (opened) {
         val text = DiagnosticsReport.payload(qrReport)

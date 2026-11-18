@@ -178,11 +178,12 @@ private fun QuickMenuRow(title: String, icon: Int, subtitle: String? = null, onC
     leading: (@Composable (Color) -> Unit)? = null, extra: (@Composable (Color) -> Unit)? = null) {
     var focused by remember { mutableStateOf(false) }
     val colors = FireLiteTheme.colors
-    val background by animateColorAsState(if (focused) colors.textPrimary else Color.Transparent, tween(150), label = "menuPill")
-    val foreground by animateColorAsState(if (focused) colors.background else colors.textPrimary, tween(150), label = "menuText")
+    val background by animateColorAsState(if (focused) colors.surfaceHigh else Color.Transparent, tween(150), label = "menuPill")
+    val foreground = colors.textPrimary
+    val ring by animateColorAsState(if (focused) colors.focusRing else Color.Transparent, tween(150), label = "menuRing")
     val scale by animateFloatAsState(if (focused) 1.03f else 1f, tween(150), label = "menuScale")
     Row(modifier.fillMaxWidth().graphicsLayer { scaleX = scale; scaleY = scale }
-        .clip(RoundedCornerShape(32.dp)).background(background)
+        .clip(RoundedCornerShape(32.dp)).background(background).border(2.dp, ring, RoundedCornerShape(32.dp))
         .onFocusChanged { focused = it.isFocused }
         .clickable(enabled = active, role = if (radio) Role.RadioButton else Role.Button, onClick = onClick)
         .padding(horizontal = 14.dp, vertical = 12.dp), verticalAlignment = Alignment.CenterVertically,
@@ -195,7 +196,7 @@ private fun QuickMenuRow(title: String, icon: Int, subtitle: String? = null, onC
             FLText(title, style = FireLiteTheme.typography.title, color = foreground, maxLines = 1)
             subtitle?.let {
                 FLText(it, style = FireLiteTheme.typography.label,
-                    color = if (focused) foreground.copy(alpha = 0.7f) else colors.textSecondary, maxLines = 1)
+                    color = colors.textSecondary, maxLines = 1)
             }
             extra?.invoke(foreground)
         }

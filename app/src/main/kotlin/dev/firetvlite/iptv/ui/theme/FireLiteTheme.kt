@@ -19,6 +19,8 @@ class FireLiteColors(
     val surface: Color,
     val surfaceHigh: Color,
     val rail: Color,
+    /** Panel drawn over live video; opaque enough that secondary text stays readable on a white picture. */
+    val scrim: Color,
     val accent: Color,
     val onAccent: Color,
     val focusRing: Color,
@@ -48,6 +50,7 @@ private val DarkColors = FireLiteColors(
     surface = Color(0xFF121922),
     surfaceHigh = Color(0xFF1A2430),
     rail = Color(0xFF0E141B),
+    scrim = Color(0xE60C1219),
     accent = Color(0xFF4FC3F7),
     onAccent = Color(0xFF06222E),
     focusRing = Color(0xF2FFFFFF),

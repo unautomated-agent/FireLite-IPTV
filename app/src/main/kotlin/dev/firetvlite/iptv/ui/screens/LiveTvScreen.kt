@@ -44,7 +44,6 @@ import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -174,7 +173,7 @@ fun PlayerChannelOverlay(library: LibraryViewModel, player: PlayerViewModel, onQ
             overlay = true, showGroups = showGroups, onShowGroups = { showGroups = it },
             onQuickMenu = onQuickMenu,
             modifier = Modifier.fillMaxWidth(if (showGroups) 0.66f else 0.42f).fillMaxHeight()
-                .background(Brush.horizontalGradient(listOf(Color(0xBF101820), Color(0xD2101820))))
+                .background(FireLiteTheme.colors.scrim)
                 .focusProperties { exit = { FocusRequester.Cancel } }.focusGroup(),
         )
     }
@@ -540,7 +539,7 @@ private fun ChannelBrowser(
                         val label = if (!current && group == GroupKey.Recent) stringResource(R.string.group_recent_short)
                             else groupLabel(group)
                         FLText(label, style = if (current) FireLiteTheme.typography.title else FireLiteTheme.typography.label,
-                            color = if (current) FireLiteTheme.colors.accent else FireLiteTheme.colors.textSecondary.copy(alpha = 0.55f),
+                            color = if (current) FireLiteTheme.colors.accent else FireLiteTheme.colors.textSecondary,
                             modifier = Modifier.weight(if (current) 1.3f else 1f), maxLines = 1)
                     }
                 }

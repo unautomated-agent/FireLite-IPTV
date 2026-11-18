@@ -29,7 +29,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -103,7 +102,7 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
     val colors = FireLiteTheme.colors
     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.CenterEnd) {
         Column(Modifier.width(480.dp).fillMaxHeight()
-            .background(Brush.horizontalGradient(listOf(Color(0xBF101820), Color(0xD2101820))))
+            .background(FireLiteTheme.colors.scrim)
             .focusRequester(requester)
             .onPreviewKeyEvent { event ->
                 if (event.key == Key.Menu) {
@@ -139,7 +138,7 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
             FLText(stringResource(R.string.channel_timeline_title, target.channel.name), style = FireLiteTheme.typography.title)
             nextProgramme?.let {
                 FLText(stringResource(R.string.epg_next, "${clockTime(it.start)}–${clockTime(it.stop)}", timelineTitle(it)),
-                    style = FireLiteTheme.typography.label, maxLines = 2, color = colors.textSecondary.copy(alpha = 0.6f))
+                    style = FireLiteTheme.typography.label, maxLines = 2, color = colors.textSecondary)
             }
             FLText(dayLabel, style = FireLiteTheme.typography.title,
                 color = colors.accent)
@@ -155,7 +154,7 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
                             style = FireLiteTheme.typography.label, maxLines = 1,
                             color = when {
                                 item.live -> colors.accent
-                                item.future -> colors.textSecondary.copy(alpha = 0.6f)
+                                item.future -> colors.textSecondary
                                 else -> colors.textPrimary
                             })
                     }

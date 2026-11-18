@@ -632,7 +632,7 @@ private fun ChannelBrowser(
             }
             if (overlay) {
                 detailGuide.next?.takeIf { pendingCategoryFocus == null }?.let {
-                    Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Row(Modifier.fillMaxWidth().padding(top = 12.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         FLText(stringResource(R.string.channel_next_programme, clockTime(it.start), it.title),
                             style = FireLiteTheme.typography.label, maxLines = 1, modifier = Modifier.weight(1f))
                         ImdbRating(it)
@@ -742,7 +742,7 @@ internal fun ChannelRowItem(
                     style = FireLiteTheme.typography.label,
                     color = FireLiteTheme.colors.accent,
                     maxLines = 2,
-                    modifier = Modifier.weight(0.65f),
+                    modifier = Modifier.weight(0.8f),
                 )
             }
             if (row.isFavorite) {

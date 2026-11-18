@@ -95,7 +95,6 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
         }
         if (key.isBlank()) {
             FLText(stringResource(R.string.films_setup_hint), style = FireLiteTheme.typography.body)
-            FLText(stringResource(R.string.omdb_key_help), style = FireLiteTheme.typography.label)
             PrimaryButton(stringResource(R.string.nav_settings), onSettings, Modifier.focusRequester(settingsFocus))
         } else {
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {

@@ -148,7 +148,6 @@ internal fun PlayerQuickMenu(viewModel: PlayerViewModel, active: Boolean, onClos
                     }
                     val subtitle = when (action) {
                         QuickMenuAction.Audio -> if (tracks.isEmpty()) stringResource(R.string.quick_menu_no_audio) else null
-                        QuickMenuAction.Favorite -> stringResource(if (favorite) R.string.quick_menu_is_favorite else R.string.quick_menu_not_favorite)
                         else -> null
                     }
                     QuickMenuRow(stringResource(title), icon, subtitle, {

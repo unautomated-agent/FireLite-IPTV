@@ -72,7 +72,7 @@
     <string name="settings_loudness_unsupported">Wyrównanie niedostępne dla tego wyjścia (passthrough/offload) · dźwięk bez zmian</string>
     <string name="settings_loudness_help">Łagodzi głośne kanały i reklamy, bez podbijania cichego dźwięku. Nie zmienia głośności telewizora. Działa dla dekodowanego dźwięku PCM, także z dekodera FFmpeg.</string>
     <string name="nav_films">Najlepsze filmy</string>
-    <string name="films_setup_hint">Ustaw klucz OMDb w Ustawieniach, aby zobaczyć oceny IMDb i ranking filmów.</string>
+    <string name="films_setup_hint">Ranking filmów wymaga darmowego klucza OMDb. Wpisz go w Ustawieniach → IMDb/OMDb.</string>
     <string name="films_first_window">Najbliższe 24 h</string>
     <string name="films_second_window">Pojutrze</string>
     <string name="films_live">Na żywo</string>
@@ -122,8 +122,6 @@
     <string name="quick_menu_back">‹ Wstecz</string>
     <string name="quick_menu_no_audio">Brak dostępnych ścieżek dźwiękowych</string>
     <string name="quick_menu_no_programme">Brak informacji o audycji</string>
-    <string name="quick_menu_is_favorite">W ulubionych</string>
-    <string name="quick_menu_not_favorite">Poza ulubionymi</string>
     <string name="quick_menu_audio_selected">Wybrana ścieżka</string>
     <string name="quick_menu_add_favorite">Dodaj do ulubionych</string>
     <string name="quick_menu_remove_favorite">Usuń z ulubionych</string>

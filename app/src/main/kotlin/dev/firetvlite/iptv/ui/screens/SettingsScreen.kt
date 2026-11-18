@@ -70,6 +70,7 @@ import dev.firetvlite.iptv.ui.components.FocusSurface
 import dev.firetvlite.iptv.ui.components.LocalFocusedScale
 import dev.firetvlite.iptv.ui.components.LabeledTextField
 import dev.firetvlite.iptv.ui.components.PrimaryButton
+import dev.firetvlite.iptv.ui.components.ToggleRow
 import dev.firetvlite.iptv.ui.components.ProgressBar
 import dev.firetvlite.iptv.ui.components.SecondaryButton
 import dev.firetvlite.iptv.ui.components.pluralString
@@ -173,11 +174,11 @@ fun SettingsScreen(
                                 val container = (LocalContext.current.applicationContext as FireLiteApplication).container
                                 val preferences = container.clockPreferences
                                 val visible by preferences.visible.collectAsState()
-                                PrimaryButton(stringResource(if (visible) R.string.settings_clock_on else R.string.settings_clock_off),
+                                ToggleRow(stringResource(R.string.settings_clock), visible,
                                     { preferences.setVisible(!visible) }, Modifier.settingsControl("clock"))
                                 val levelled by container.loudnessPreferences.enabled.collectAsState()
                                 val loudnessStatus by container.loudness.status.collectAsState()
-                                PrimaryButton(stringResource(if (levelled) R.string.settings_loudness_on else R.string.settings_loudness_off),
+                                ToggleRow(stringResource(R.string.settings_loudness), levelled,
                                     { container.loudnessPreferences.setEnabled(!levelled) }, Modifier.settingsControl("loudness"))
                                 FLText(stringResource(when (loudnessStatus) {
                                     LoudnessStatus.Off -> R.string.settings_loudness_disabled

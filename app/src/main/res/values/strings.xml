@@ -15,9 +15,7 @@
     <string name="search_live">Na żywo</string>
     <string name="search_upcoming">Nadchodząca — odtwórz kanał na żywo</string>
     <string name="search_archive">Archiwum — od początku audycji</string>
-    <string name="reports_automatic">Automatyczne wysyłanie błędów: %1$s</string>
-    <string name="reports_on">włączone</string>
-    <string name="reports_off">wyłączone</string>
+    <string name="reports_automatic">Automatyczne wysyłanie błędów</string>
     <string name="reports_never">nigdy</string>
     <string name="reports_status">W kolejce: %1$d · ostatnio wysłano: %2$s · ostatni błąd wysyłki: %3$s</string>
     <string name="reports_blocked">Wstrzymane do końca startu kanału</string>
@@ -54,10 +52,10 @@
     <string name="reminder_more">I jeszcze %1$d emisji</string>
     <string name="reminder_dismiss">OK – zamknij</string>
     <string name="settings_appearance">Wygląd</string>
-    <string name="settings_clock_on">Zegar w lewym górnym rogu: włączony</string>
-    <string name="settings_clock_off">Zegar w lewym górnym rogu: wyłączony</string>
-    <string name="settings_loudness_on">Wyrównanie głośności: włączone</string>
-    <string name="settings_loudness_off">Wyrównanie głośności: wyłączone</string>
+    <string name="settings_clock">Zegar w lewym górnym rogu</string>
+    <string name="settings_loudness">Wyrównanie głośności</string>
+    <string name="toggle_on">Włączone</string>
+    <string name="toggle_off">Wyłączone</string>
     <string name="settings_loudness_disabled">Wyrównanie wyłączone</string>
     <string name="settings_loudness_waiting">Wyrównanie: oczekiwanie na dźwięk</string>
     <string name="settings_loudness_active">Wyrównanie aktywne · kompresor i limiter</string>

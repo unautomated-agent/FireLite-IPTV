@@ -53,6 +53,7 @@ import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.FocusSurface
 import dev.firetvlite.iptv.ui.components.PrimaryButton
 import dev.firetvlite.iptv.ui.components.SecondaryButton
+import dev.firetvlite.iptv.ui.components.ToggleRow
 import dev.firetvlite.iptv.ui.components.requestFocusWhenReady
 import dev.firetvlite.iptv.ui.components.minuteClock
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
@@ -115,8 +116,7 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
         FLText(stringResource(R.string.settings_health_summary, channelHealth.check.ifBlank { stringResource(R.string.settings_no_report) }),
             style = FireLiteTheme.typography.body, maxLines = 2)
         PrimaryButton(stringResource(R.string.diagnostics_open), { opened = true }, Modifier.settingsControl("diagnostics-open"))
-        SecondaryButton(stringResource(R.string.reports_automatic,
-            stringResource(if (reportingStatus.enabled) R.string.reports_on else R.string.reports_off)),
+        ToggleRow(stringResource(R.string.reports_automatic), reportingStatus.enabled,
             { reporting.setEnabled(!reportingStatus.enabled) }, Modifier.settingsControl("reports-toggle"))
         val lastSent = if (reportingStatus.lastSent == 0L) stringResource(R.string.reports_never) else
             DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.systemDefault())

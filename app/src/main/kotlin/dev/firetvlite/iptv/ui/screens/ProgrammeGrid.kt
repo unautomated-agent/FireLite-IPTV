@@ -121,7 +121,7 @@ internal fun ProgrammeGridRow(
             }
         }.focusable(), verticalAlignment = Alignment.CenterVertically) {
         Row(Modifier.width(GuideNameWidth).fillMaxHeight().background(colors.surfaceHigh)
-            .border(2.dp, if (focused && !programmeFocus) Color.White else Color.Transparent)
+            .border(2.dp, if (focused && !programmeFocus) FireLiteTheme.colors.focusRing else Color.Transparent)
             .padding(6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
             ChannelLogo(row.channel.name, row.channel.logoUrl, size = 28.dp)
             FLText((if (row.isFavorite) "♥ " else "") + row.channel.name,

@@ -29,7 +29,7 @@ Other bundled dependencies retain their respective licenses.
 
 ## Status
 
-`2.2.0-alpha.1`: live TV. An M3U playlist is imported into a local database, browsed by group (favourites,
+Live TV. An M3U playlist is imported into a local database, browsed by group (favourites,
 recently watched, all channels), played with Media3, and can be rewound and fast-forwarded where the stream
 allows it. App updates are installed from inside the app.
 

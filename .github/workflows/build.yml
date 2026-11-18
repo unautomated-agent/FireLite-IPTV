@@ -21,6 +21,22 @@ jobs:
     steps:
       - name: Check out
         uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the version name counts commits on main
+
+      # Version shown in Settings: 3.0 for the first release after VERSION_BASE, then 3.1, 3.2, ...
+      # one step per push to main. For a new major version, change VERSION_MAJOR and set
+      # VERSION_BASE to the commit main is at before that release.
+      - name: Work out the version name
+        env:
+          VERSION_MAJOR: "3"
+          VERSION_BASE: 4a69f987d659b1aaa04027842909837285283ea5
+        run: |
+          set -euo pipefail
+          releases=$(git rev-list --count --first-parent "${VERSION_BASE}..HEAD")
+          minor=$(( releases > 0 ? releases - 1 : 0 ))
+          echo "FIRELITE_VERSION_NAME=${VERSION_MAJOR}.${minor}" >> "$GITHUB_ENV"
+          echo "${VERSION_MAJOR}.${minor}" > version.txt
 
       - name: Set up Java
         uses: actions/setup-java@v6
@@ -45,7 +61,9 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: firelite-apk
-          path: firelite.apk
+          path: |
+            firelite.apk
+            version.txt
           if-no-files-found: error
 
   release:
@@ -69,5 +87,5 @@ jobs:
           set -euo pipefail
           gh release create "build-${GITHUB_RUN_NUMBER}" dist/firelite.apk \
             --target "$GITHUB_SHA" \
-            --title "FireLite build ${GITHUB_RUN_NUMBER}" \
+            --title "FireLite $(cat dist/version.txt) (build ${GITHUB_RUN_NUMBER})" \
             --notes "Sideload with Downloader: https://github.com/${GITHUB_REPOSITORY}/releases/latest/download/firelite.apk"

@@ -21,7 +21,8 @@ android {
         // GitHub's run number only ever increases, so every new build can update the installed one.
         // The offset keeps this repository's builds above those of the earlier 1.x repository.
         versionCode = versionCodeOffset + (System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1)
-        versionName = "2.2.0-alpha.1"
+        // Set by the build workflow (3.0, 3.1, ... one step per release); local builds are marked "dev".
+        versionName = System.getenv("FIRELITE_VERSION_NAME") ?: "3-dev"
 
         // The in-app updater reads releases of the repository this build was made in.
         // GITHUB_REPOSITORY is set by GitHub Actions ("owner/repo"); local builds leave it empty,

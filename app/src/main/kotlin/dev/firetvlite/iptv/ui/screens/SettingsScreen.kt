@@ -130,7 +130,7 @@ fun SettingsScreen(
     }
     BackHandler(enabled = paneFocused) { rail.getValue(section).requestFocus() }
     SettingsLayout(modifier) {
-        Column(Modifier.width(220.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.width(200.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             FLText(stringResource(R.string.nav_settings), style = FireLiteTheme.typography.headline)
             Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).focusGroup(),
                 verticalArrangement = Arrangement.spacedBy(6.dp)) {

@@ -68,6 +68,9 @@ fun FireLiteApp(updateViewModel: UpdateViewModel, libraryViewModel: LibraryViewM
     }
 }
 
+/** Width kept free on the right of a panel for the small video in its top corner. */
+private const val PANEL_VIDEO_INSET_DP = 216
+
 @Composable
 private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: LibraryViewModel, playerViewModel: PlayerViewModel) {
     val startup = (LocalContext.current.applicationContext as FireLiteApplication).container.startup
@@ -108,7 +111,8 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
                 modifier = Modifier.align(Alignment.Center))
         }
         if (startupReady) visiblePanel(mode, current)?.let { panel ->
-            Box(Modifier.fillMaxSize().padding(top = if (mode == PlayerMode.Panel) 148.dp else 56.dp)) {
+            // Content starts beside the small video instead of below it; the end inset keeps it clear of that video.
+            Box(Modifier.fillMaxSize().padding(top = 56.dp, end = if (mode == PlayerMode.Panel) PANEL_VIDEO_INSET_DP.dp else 0.dp)) {
                 when (panel) {
                     StreamPanel.Films -> FilmRankingsScreen(libraryViewModel, playerViewModel, active = true,
                         onSettings = { navigate(StreamPanel.Settings) })

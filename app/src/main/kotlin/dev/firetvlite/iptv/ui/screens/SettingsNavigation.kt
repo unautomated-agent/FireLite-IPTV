@@ -84,3 +84,17 @@ internal fun settingsLastError(report: String): String? =
             lines.firstOrNull { it.startsWith("Uncaught crash:") } else null
         (exception ?: lines.firstOrNull())?.takeUnless { it == "Brak" }
     }
+
+/** What the last error line means, in words; the raw line stays in the report. */
+internal enum class SettingsErrorKind { Crash, Refused, Missing, Network, Timeout, BehindLive, Unsupported, Other }
+
+internal fun settingsErrorKind(line: String): SettingsErrorKind = when {
+    line.startsWith("Uncaught crash:") -> SettingsErrorKind.Crash
+    Regex("""\b40[13]\b""").containsMatchIn(line) -> SettingsErrorKind.Refused
+    Regex("""\b404\b""").containsMatchIn(line) -> SettingsErrorKind.Missing
+    "BEHIND_LIVE_WINDOW" in line -> SettingsErrorKind.BehindLive
+    "TIMEOUT" in line -> SettingsErrorKind.Timeout
+    "IO_NETWORK" in line -> SettingsErrorKind.Network
+    listOf("DECOD", "PARSING", "UNSUPPORTED").any { it in line } -> SettingsErrorKind.Unsupported
+    else -> SettingsErrorKind.Other
+}

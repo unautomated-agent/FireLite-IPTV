@@ -83,4 +83,16 @@ class SettingsNavigationTest {
         assertEquals("Main-thread stall: 3500ms", settingsLastError(
             "Ostatni raport błędu:\nMain-thread stall: 3500ms\nStack\n---\nFireLite old\nUncaught crash: older failure"))
     }
+
+    @Test
+    fun lastErrorLineIsClassifiedIntoPlainMeaning() {
+        assertEquals(SettingsErrorKind.BehindLive, settingsErrorKind("11-13 18:53:17Z · live · ERROR_CODE_BEHIND_LIVE_WINDOW"))
+        assertEquals(SettingsErrorKind.Missing, settingsErrorKind("HTTP 404"))
+        assertEquals(SettingsErrorKind.Refused, settingsErrorKind("HTTP 403"))
+        assertEquals(SettingsErrorKind.Network, settingsErrorKind("ERROR_CODE_IO_NETWORK_CONNECTION_FAILED"))
+        assertEquals(SettingsErrorKind.Timeout, settingsErrorKind("ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT"))
+        assertEquals(SettingsErrorKind.Unsupported, settingsErrorKind("ERROR_CODE_DECODING_FORMAT_UNSUPPORTED"))
+        assertEquals(SettingsErrorKind.Crash, settingsErrorKind("Uncaught crash: java.lang.IllegalStateException"))
+        assertEquals(SettingsErrorKind.Other, settingsErrorKind("11-13 04:04:03Z · something"))
+    }
 }

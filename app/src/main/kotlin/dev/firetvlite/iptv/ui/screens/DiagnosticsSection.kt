@@ -96,19 +96,32 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
                 if (omdbKey.isBlank()) "NO_KEY" else today.lastError) +
             "\n" + today.missSummary() + "\n" + DiagnosticsReport.text(source, state, stats, crash, playback)
     }
-    val report = remember(baseReport, channelHealth, stalls) {
-        channelHealth.summary() + "\n" + stalls.joinToString("\n") { it.line() } + "\n" + baseReport
+    val startupLine = stringResource(R.string.startup_diagnostics, startup.total?.toString() ?: "—", startup.detail())
+    val report = remember(baseReport, channelHealth, stalls, startupLine) {
+        startupLine + "\n" + channelHealth.summary() + "\n" + stalls.joinToString("\n") { it.line() } + "\n" + baseReport
     }
     val qrReport = remember(baseReport, channelHealth, stalls) {
         channelHealth.qrSummary() + "\n" +
             stalls.joinToString("\n") { it.line(compact = true) } + "\n" + baseReport
     }
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        FLText(stringResource(R.string.startup_diagnostics, startup.total?.toString() ?: "—", startup.detail()),
-            style = FireLiteTheme.typography.body)
+        FLText(startup.total?.let { stringResource(R.string.settings_startup, it / 1000.0) }
+            ?: stringResource(R.string.settings_startup_unknown), style = FireLiteTheme.typography.body)
         val lastError = settingsLastError(report)
-        FLText(stringResource(R.string.settings_last_error, lastError ?: stringResource(R.string.settings_no_report)),
-            style = FireLiteTheme.typography.body, maxLines = 1)
+        FLText(if (lastError == null) stringResource(R.string.settings_last_error, stringResource(R.string.settings_no_report))
+            else {
+                val meaning = stringResource(when (settingsErrorKind(lastError)) {
+                    SettingsErrorKind.Crash -> R.string.settings_error_crash
+                    SettingsErrorKind.Refused -> R.string.settings_error_refused
+                    SettingsErrorKind.Missing -> R.string.settings_error_missing
+                    SettingsErrorKind.Network -> R.string.settings_error_network
+                    SettingsErrorKind.Timeout -> R.string.settings_error_timeout
+                    SettingsErrorKind.BehindLive -> R.string.settings_error_behind_live
+                    SettingsErrorKind.Unsupported -> R.string.settings_error_unsupported
+                    SettingsErrorKind.Other -> R.string.settings_error_other
+                })
+                stringResource(R.string.settings_last_error, meaning)
+            }, style = FireLiteTheme.typography.body, maxLines = 2)
         FLText(stringResource(R.string.settings_dead_count, channelHealth.entries.size), style = FireLiteTheme.typography.body)
         FLText(stringResource(R.string.settings_stall_count, stalls.size, settingsWatchdogStallCount(crash)),
             style = FireLiteTheme.typography.body)

@@ -8,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import dev.firetvlite.iptv.playback.PlaybackLifecycle
 import dev.firetvlite.iptv.playback.RemoteAlias
+import dev.firetvlite.iptv.playback.RemoteKeyMap
 import dev.firetvlite.iptv.ui.components.RemoteHome
 import dev.firetvlite.iptv.ui.navigation.GuideBackAction
 import dev.firetvlite.iptv.ui.navigation.guideBackAction
@@ -56,6 +57,10 @@ class MainActivity : ComponentActivity() {
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) playerViewModel.cancelAutoReconnect()
         remoteAlias(event)?.let { return it }
+        if (event.keyCode == RemoteKeyMap.SETTINGS_KEY) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) playerViewModel.requestSettings()
+            return true
+        }
         if (event.keyCode == KeyEvent.KEYCODE_SEARCH) {
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) playerViewModel.openSearch()
             return true

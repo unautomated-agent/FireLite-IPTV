@@ -99,6 +99,15 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
         playerViewModel.showPanel()
     }
 
+    val settingsRequested by playerViewModel.settingsRequested.collectAsState()
+    // Not held back by startup: a first stream the provider keeps waiting must not block the way to Settings.
+    LaunchedEffect(settingsRequested) {
+        if (settingsRequested) {
+            playerViewModel.requestSettings(false)
+            navigate(StreamPanel.Settings)
+        }
+    }
+
     BackHandler(enabled = mode == PlayerMode.Panel && screenBackReturnsToPlayback(mode, channel != null)) {
         playerViewModel.returnToFullscreen()
     }

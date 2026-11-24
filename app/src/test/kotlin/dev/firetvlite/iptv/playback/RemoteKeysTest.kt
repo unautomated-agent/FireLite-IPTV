@@ -26,6 +26,11 @@ class RemoteKeysTest {
             KeyEvent.KEYCODE_UNKNOWN).forEach { assertNull(map.alias(it)) }
     }
 
+    @Test fun redButtonIsKeptForSettings() {
+        assertEquals(KeyEvent.KEYCODE_PROG_RED, RemoteKeyMap.SETTINGS_KEY)
+        assertNull(RemoteKeyMap(menu = KeyEvent.KEYCODE_PROG_RED).alias(KeyEvent.KEYCODE_PROG_RED))
+    }
+
     @Test fun oneButtonHasOneFunction() {
         val map = RemoteKeyMap(menu = KeyEvent.KEYCODE_F1).with(RemoteAlias.Home, KeyEvent.KEYCODE_F1)
         assertEquals(RemoteKeyMap(menu = 0, home = KeyEvent.KEYCODE_F1), map)

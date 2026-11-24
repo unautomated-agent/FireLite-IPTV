@@ -92,6 +92,8 @@ fun PlayerLayer(viewModel: PlayerViewModel, library: LibraryViewModel, previewBo
     val liveChannelId by viewModel.liveChannelId.collectAsState()
     var quickMenu by remember { mutableStateOf(false) }
     var bannerVisible by remember { mutableStateOf(false) }
+    // The red button opens Settings from any state; the quick menu must not come back with the stream.
+    LaunchedEffect(mode) { if (mode == PlayerMode.Panel) { quickMenu = false; bannerVisible = false } }
     var playWhenReady by remember(player) { mutableStateOf(player?.playWhenReady == true) }
     DisposableEffect(player) {
         val listener = object : Player.Listener {

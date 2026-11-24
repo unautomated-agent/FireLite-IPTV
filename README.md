@@ -188,6 +188,9 @@ remote is unchanged. `KEYCODE_TV_CONTENTS_MENU` and `KEYCODE_TV_MEDIA_CONTEXT_ME
 setup. `MainActivity.dispatchKeyEvent` turns a Menu alias into a real Menu key event, so every screen
 handles it as before; the Home alias opens the launcher, which closes the stream like Home does.
 
+The red button (`KEYCODE_PROG_RED`) opens Settings from the stream, the guide and the film ranking, so a remote
+without a long Menu press can reach Settings → Pilot. It cannot be learned as Menu or Home.
+
 ## Start-time reports
 
 When the picture appears after opening the app (`cold`), after returning to it (`resume`), or after more

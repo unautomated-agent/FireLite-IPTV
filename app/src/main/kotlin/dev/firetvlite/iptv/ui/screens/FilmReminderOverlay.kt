@@ -39,6 +39,7 @@ import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.film.FilmReminderCard
 import dev.firetvlite.iptv.data.film.FilmReminders
 import dev.firetvlite.iptv.data.film.ReminderShowing
+import dev.firetvlite.iptv.ui.components.remoteHomeKey
 import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.clockTime
 import dev.firetvlite.iptv.ui.components.requestFocusWhenReady
@@ -102,7 +103,7 @@ private fun ReminderCard(card: FilmReminderCard, onDismiss: () -> Unit) {
     var dismissKey by remember(card) { mutableStateOf<Key?>(null) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(dismissOnClickOutside = false, usePlatformDefaultWidth = false)) {
         LaunchedEffect(card) { focus.requestFocusWhenReady() }
-        Box(Modifier.fillMaxSize().focusRequester(focus).onPreviewKeyEvent { event ->
+        Box(Modifier.fillMaxSize().remoteHomeKey().focusRequester(focus).onPreviewKeyEvent { event ->
             if (event.key in setOf(Key.DirectionCenter, Key.Enter, Key.NumPadEnter, Key.Back)) {
                 if (event.type == KeyEventType.KeyDown) dismissKey = event.key
                 else if (event.type == KeyEventType.KeyUp && dismissKey == event.key) {

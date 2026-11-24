@@ -65,6 +65,7 @@ data class StreamRequest(
     val channelKey: String = DeadChannels.key(url),
     val userInitiated: Boolean = true,
     val coldStart: Boolean = false,
+    val resumed: Boolean = false,
     val usageKey: ChannelUsageKey? = null,
     val countUsageSelection: Boolean = true,
 )
@@ -124,6 +125,7 @@ class PlaybackController internal constructor(
     },
     private val startupTimeoutMs: Long = 10_000L,
     private val evictConnections: () -> Unit = { PlaybackHttp.evictIdle() },
+    private val pooledConnections: () -> Int = { PlaybackHttp.pooled() },
     private val channelResult: (StreamRequest, String?) -> Unit = { _, _ -> },
     private val healthResult: (StreamRequest, String?) -> Unit = { _, _ -> },
     private val healthSummary: (String) -> Unit = {},
@@ -223,6 +225,9 @@ class PlaybackController internal constructor(
     private var audioDecoder: String? = null
     private var successfulSignature: String? = null
     private val connections = AtomicInteger()
+    private val createdAt = monotonicMs()
+    /** When the last stream request of this process ended; null while there has been none. */
+    @Volatile private var lastRequestClosedAt: Long? = null
     private val connectionGate = HttpConnectionGate()
     private fun trackedFactory(session: Long) = object : HlsSessionFactory {
         override val hls = hlsSession
@@ -285,6 +290,7 @@ class PlaybackController internal constructor(
                             connected = false
                             hls.end(requestId)
                             mediaLoads.remove(requestId)
+                            lastRequestClosedAt = monotonicMs()
                             trace("HTTP_CLOSE session=$session stream=$stream active=${connections.decrementAndGet()}")
                             connection?.close()
                             connection = null
@@ -525,6 +531,7 @@ class PlaybackController internal constructor(
     private fun renderingStarted() {
         if (activeRequest == null) return
         if (!rendered) activeRequest?.let { channelResult(it, null) }
+        if (!rendered) reportStart()
         if (!rendered) watchStalls()
         rendered = true
         livePlaying()
@@ -533,6 +540,27 @@ class PlaybackController internal constructor(
         startupError = null
         retries = 0
         clearStartupWatch()
+    }
+
+    /** Sends how long the picture took after opening the app, returning to it, or whenever it took long. */
+    private fun reportStart() {
+        val request = activeRequest ?: return
+        val timing = startupTiming ?: return
+        val total = timing.totalMs()
+        val trigger = when {
+            request.resumed -> "resume"
+            request.coldStart -> "cold"
+            total >= SLOW_START_MS -> "slow"
+            else -> return
+        }
+        runCatching {
+            val known = DiagnosticRedactor.secrets(listOf(request.url))
+            reports.enqueue("other", ReportText.safe(request.channelName, 120, known),
+                "start: ${if (request.archive) "archive" else "live"} $trigger total=${total}ms",
+                (timing.detail().lines() + hlsSession.lines().filter {
+                    it.startsWith("HLS request") || it.startsWith("Transport")
+                }).joinToString("\n"))
+        }
     }
 
     private fun watchStalls() {
@@ -790,14 +818,13 @@ class PlaybackController internal constructor(
             previousCheck?.join()
             awaitConnectionClose()
             if (activeRequest !== request || activeSession != session) return@launch
-            if (prepareSafely {
-                withContext(Dispatchers.IO) { evictionMutex.withLock { evictConnections() } }
-                true
-            } != true) return@launch
+            val pooled = prepareSafely {
+                withContext(Dispatchers.IO) { evictionMutex.withLock { pooledConnections().also { evictConnections() } } }
+            } ?: return@launch
             if (activeRequest !== request || activeSession != session) return@launch
             hlsSession.evicted()
             startupTiming?.enter(StartupTiming.Phase.CLOSE_GRACE)
-            delay(CLOSE_GRACE_MS)
+            delay(closeGraceMs(pooled))
             if (automatic) delay(reconnectDelayMs)
             if (activeRequest !== request || activeSession != session) return@launch
             startupTiming?.enter(StartupTiming.Phase.PREPARING_BUFFERING)
@@ -886,6 +913,18 @@ class PlaybackController internal constructor(
             .build()
     }
 
+    /**
+     * The pause between the old stream's last socket closing and the new stream's first request.
+     * Nothing can still be open when this process kept no socket and its last request ended longer ago
+     * than the pool keeps an idle socket, so only the part of the pause not yet served remains.
+     */
+    private fun closeGraceMs(pooled: Int): Long {
+        val now = monotonicMs()
+        val closedAt = lastRequestClosedAt
+        if (pooled > 0 || (closedAt != null && now - closedAt < POOL_IDLE_MS + CLOSE_GRACE_MS)) return CLOSE_GRACE_MS
+        return (CLOSE_GRACE_MS - (now - (closedAt?.plus(POOL_IDLE_MS) ?: createdAt))).coerceIn(0, CLOSE_GRACE_MS)
+    }
+
     private suspend fun awaitConnectionClose() {
         while (connections.get() > 0) delay(25)
     }
@@ -912,7 +951,7 @@ class PlaybackController internal constructor(
                         connectionGate.acquire(session).use {
                             connections.incrementAndGet()
                             try { healthProbe(channel, { healthCall = it }, { ensureActive() }) }
-                            finally { connections.decrementAndGet() }
+                            finally { lastRequestClosedAt = monotonicMs(); connections.decrementAndGet() }
                         }
                     }
                     ensureActive()
@@ -968,7 +1007,7 @@ class PlaybackController internal constructor(
         suspendedRequest = null
         val reconnectSpent = suspendedReconnectUsed
         suspendedReconnectUsed = false
-        play(request.copy(userInitiated = false))
+        play(request.copy(userInitiated = false, resumed = true))
         // The drop that was being retried already had its one automatic attempt.
         if (reconnectSpent) reconnectUsed = true
     }
@@ -1208,6 +1247,9 @@ class PlaybackController internal constructor(
         }
 
         const val CLOSE_GRACE_MS = 400L
+        /** OkHttp closes an idle pooled socket after five minutes. */
+        const val POOL_IDLE_MS = 5 * 60_000L
+        const val SLOW_START_MS = 3_000L
         const val RETRY_DELAY_MS = 1_500L
         const val MAX_RETRIES = 3
     }

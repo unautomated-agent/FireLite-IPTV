@@ -38,6 +38,7 @@ import dev.firetvlite.iptv.ui.components.LocalFilmRatings
 import dev.firetvlite.iptv.ui.components.LocalChannelLogosEnabled
 import dev.firetvlite.iptv.ui.components.WarsawClockBox
 import dev.firetvlite.iptv.ui.components.requestFocusWhenReady
+import dev.firetvlite.iptv.ui.components.remoteHomeKey
 import dev.firetvlite.iptv.ui.navigation.StreamPanel
 import dev.firetvlite.iptv.ui.navigation.canChooseChannel
 import dev.firetvlite.iptv.ui.navigation.visiblePanel
@@ -163,7 +164,7 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
                     properties = PopupProperties(focusable = true, dismissOnBackPress = true)) {
                     val focus = remember { FocusRequester() }
                     LaunchedEffect(Unit) { focus.requestFocusWhenReady() }
-                    Column(Modifier.padding(24.dp).background(FireLiteTheme.colors.surfaceHigh).padding(16.dp),
+                    Column(Modifier.remoteHomeKey().padding(24.dp).background(FireLiteTheme.colors.surfaceHigh).padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         FLText(stringResource(R.string.update_new_build, release.buildNumber), style = FireLiteTheme.typography.title)
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

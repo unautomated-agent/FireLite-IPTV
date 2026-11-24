@@ -7,6 +7,8 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import dev.firetvlite.iptv.playback.PlaybackLifecycle
+import dev.firetvlite.iptv.playback.RemoteAlias
+import dev.firetvlite.iptv.ui.components.RemoteHome
 import dev.firetvlite.iptv.ui.navigation.GuideBackAction
 import dev.firetvlite.iptv.ui.navigation.guideBackAction
 import dev.firetvlite.iptv.ui.navigation.OverlayBackAction
@@ -22,8 +24,38 @@ class MainActivity : ComponentActivity() {
     private val libraryViewModel: LibraryViewModel by viewModels()
     private val playerViewModel: PlayerViewModel by viewModels()
 
+    /** A key of another remote learned in Settings, e.g. Tools as Menu and Exit as Home. */
+    private fun remoteAlias(event: KeyEvent): Boolean? {
+        val remote = (application as FireLiteApplication).container.loadedRemoteKeys() ?: return null
+        if (remote.learning.value != null) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                remote.pressed(event.keyCode)
+                learnedKeyDown = event.keyCode
+            }
+            return true
+        }
+        if (event.keyCode == learnedKeyDown) {
+            // The rest of the press that was just learned.
+            if (event.action == KeyEvent.ACTION_UP) learnedKeyDown = KeyEvent.KEYCODE_UNKNOWN
+            return true
+        }
+        return when (remote.keys.value.alias(event.keyCode)) {
+            RemoteAlias.Menu -> dispatchKeyEvent(KeyEvent(event.downTime, event.eventTime, event.action,
+                KeyEvent.KEYCODE_MENU, event.repeatCount, event.metaState, event.deviceId, event.scanCode,
+                event.flags, event.source))
+            RemoteAlias.Home -> {
+                if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) RemoteHome.open(this)
+                true
+            }
+            null -> null
+        }
+    }
+
+    private var learnedKeyDown = KeyEvent.KEYCODE_UNKNOWN
+
     override fun dispatchKeyEvent(event: KeyEvent): Boolean {
         if (event.action == KeyEvent.ACTION_DOWN) playerViewModel.cancelAutoReconnect()
+        remoteAlias(event)?.let { return it }
         if (event.keyCode == KeyEvent.KEYCODE_SEARCH) {
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) playerViewModel.openSearch()
             return true

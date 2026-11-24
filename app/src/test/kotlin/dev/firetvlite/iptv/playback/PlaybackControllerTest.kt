@@ -487,6 +487,47 @@ class PlaybackControllerTest {
         } finally { controller.stop() }
     }
 
+    @Test fun firstPictureAfterOpeningOrReturningReportsHowLongItTook() = runBlocking {
+        val fake = FakePlayer()
+        val summaries = mutableListOf<String>()
+        val details = mutableListOf<String>()
+        val sink = object : ReportSink {
+            override fun enqueue(kind: String, channel: String, summary: String, detail: String) {
+                summaries += summary
+                details += detail
+            }
+        }
+        val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY }, evictConnections = {}, reports = sink)
+        try {
+            suspend fun firstPicture() {
+                delay(450)
+                fake.state = Player.STATE_READY
+                fake.listener!!.onRenderedFirstFrame()
+                fake.listener!!.onRenderedFirstFrame()
+            }
+            controller.play(request.copy(coldStart = true))
+            firstPicture()
+            assertTrue(summaries.single().startsWith("start: live cold total="))
+            assertTrue(details.single().contains("PREPARING_BUFFERING="))
+            // A quick channel change is not reported.
+            controller.play(request.copy(url = "https://example.org/manual"))
+            firstPicture()
+            assertEquals(1, summaries.size)
+            controller.suspendStream()
+            controller.resumeStream()
+            firstPicture()
+            assertTrue(summaries.last().startsWith("start: live resume total="))
+            assertEquals(2, summaries.size)
+            // The channel the app opened with is a resume, not another cold start, when the app comes back.
+            controller.play(request.copy(coldStart = true))
+            firstPicture()
+            controller.suspendStream()
+            controller.resumeStream()
+            firstPicture()
+            assertTrue(summaries.last().startsWith("start: live resume total="))
+        } finally { controller.stop() }
+    }
+
     @Test fun reportingIsBlockedDuringStartupAndFailuresSendTheExistingDiagnosticDetail() = runBlocking {
         val fake = FakePlayer()
         val recorded = mutableListOf<String>()
@@ -1373,7 +1414,8 @@ class PlaybackControllerTest {
         val fake = FakePlayer()
         val records = mutableListOf<String>()
         val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
-            recordPlayback = { failed, text -> if (failed) records += text }, startupTimeoutMs = 650)
+            recordPlayback = { failed, text -> if (failed) records += text }, startupTimeoutMs = 650,
+            pooledConnections = { 1 })
         val connections = PlaybackController::class.java.getDeclaredField("connections").let {
             it.isAccessible = true
             it.get(controller) as AtomicInteger
@@ -1400,7 +1442,7 @@ class PlaybackControllerTest {
     @Test fun sessionEvictsOnlyAfterAllOldSourcesCloseThenWaitsTheFullGraceBeforePrepare() = runBlocking {
         val fake = FakePlayer()
         val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
-            evictConnections = { fake.calls += "evict" })
+            pooledConnections = { 1 }, evictConnections = { fake.calls += "evict" })
         val connections = PlaybackController::class.java.getDeclaredField("connections").let {
             it.isAccessible = true
             it.get(controller) as AtomicInteger
@@ -1426,6 +1468,32 @@ class PlaybackControllerTest {
         controller.stop()
     }
 
+    @Test fun closeGraceIsOnlyWaitedWhileAnOldSocketCanStillBeOpen() = runBlocking {
+        suspend fun prepareDelay(pooled: Int, age: Long, closedAgo: Long?): Boolean {
+            val fake = FakePlayer()
+            var now = 1_000L
+            val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
+                pooledConnections = { pooled }, evictConnections = {}, monotonicMs = { now })
+            if (closedAgo != null) PlaybackController::class.java.getDeclaredField("lastRequestClosedAt").let {
+                it.isAccessible = true
+                it.set(controller, now)
+            }
+            now += closedAgo ?: age
+            controller.play(request)
+            delay(150)
+            return (fake.calls.count { it == "prepare" } == 1).also { controller.stop() }
+        }
+        // App just opened, no stream yet in this process: nothing to wait for.
+        assertEquals(true, prepareDelay(pooled = 0, age = 600, closedAgo = null))
+        // The process is younger than the pause, a socket is still pooled, or the last stream ended recently.
+        assertEquals(false, prepareDelay(pooled = 0, age = 0, closedAgo = null))
+        assertEquals(false, prepareDelay(pooled = 1, age = 600, closedAgo = null))
+        assertEquals(false, prepareDelay(pooled = 0, age = 0, closedAgo = 60_000))
+        assertEquals(false, prepareDelay(pooled = 0, age = 0, closedAgo = 300_000L + 100))
+        // Back after a long break: the pool closed its idle sockets long ago.
+        assertEquals(true, prepareDelay(pooled = 0, age = 0, closedAgo = 300_000L + 400))
+    }
+
     @Test fun evictionRunsOffControllerThreadAndPrepareWaitsForCompletionAndGrace(): Unit = runBlocking {
         val fake = FakePlayer()
         val mainThread = Thread.currentThread()
@@ -1434,7 +1502,7 @@ class PlaybackControllerTest {
         val release = CountDownLatch(1)
         val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
             setStream = { _, _, _ -> assertSame(mainThread, Thread.currentThread()) },
-            evictConnections = {
+            pooledConnections = { 1 }, evictConnections = {
                 evictionThread.set(Thread.currentThread())
                 started.complete(Unit)
                 check(release.await(5, TimeUnit.SECONDS))
@@ -1465,7 +1533,7 @@ class PlaybackControllerTest {
         val prepared = mutableListOf<MediaItem>()
         val controller = PlaybackController(this, { fake.player }, {}, { MediaItem.EMPTY },
             setStream = { _, item, _ -> prepared += item },
-            evictConnections = {
+            pooledConnections = { 1 }, evictConnections = {
                 if (evictions.incrementAndGet() == 1) {
                     firstStarted.complete(Unit)
                     check(release.await(5, TimeUnit.SECONDS))

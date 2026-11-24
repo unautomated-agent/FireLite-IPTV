@@ -27,6 +27,7 @@ import kotlinx.coroutines.launch
 
 internal enum class SettingsSection(val title: Int) {
     Sources(R.string.settings_sources), Appearance(R.string.settings_appearance),
+    Remote(R.string.settings_remote),
     Omdb(R.string.settings_omdb), Health(R.string.health_title),
     Diagnostics(R.string.diagnostics_title), Updates(R.string.settings_updates);
 

@@ -14,6 +14,8 @@ internal class StartupTiming(private val clock: () -> Long = { System.nanoTime()
     val waitingForPrevious: Boolean
         get() = phase in listOf(Phase.STOPPING_PREVIOUS, Phase.CLOSE_GRACE, Phase.WAITING_PREVIOUS_CONNECTION)
 
+    fun totalMs(): Long = clock() - started
+
     fun enter(next: Phase) {
         val now = clock()
         elapsed[phase] = (elapsed[phase] ?: 0) + now - phaseStarted

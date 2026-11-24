@@ -49,6 +49,7 @@ import dev.firetvlite.iptv.data.db.SourceEntity
 import dev.firetvlite.iptv.data.epg.EpgState
 import dev.firetvlite.iptv.data.library.DiagnosticsReport
 import dev.firetvlite.iptv.data.library.SourceDiagnostics
+import dev.firetvlite.iptv.ui.components.remoteHomeKey
 import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.FocusSurface
 import dev.firetvlite.iptv.ui.components.PrimaryButton
@@ -156,7 +157,7 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
         val step = with(LocalDensity.current) { 80.dp.roundToPx() }
         Dialog(onDismissRequest = { opened = false }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
             LaunchedEffect(Unit) { close.requestFocusWhenReady() }
-            Column(Modifier.width(864.dp).height(486.dp).background(FireLiteTheme.colors.surface).padding(20.dp),
+            Column(Modifier.remoteHomeKey().width(864.dp).height(486.dp).background(FireLiteTheme.colors.surface).padding(20.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 FLText(stringResource(R.string.diagnostics_title), style = FireLiteTheme.typography.headline)
                 FLText(stringResource(R.string.diagnostics_scan), style = FireLiteTheme.typography.body)

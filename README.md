@@ -33,8 +33,9 @@ Live TV. An M3U playlist is imported into a local database, browsed by group (fa
 recently watched, all channels), played with Media3, and can be rewound and fast-forwarded where the stream
 allows it. App updates are installed from inside the app.
 
-Start shows the active playlist's history and favourites. Programme Guide offers the XMLTV grid without preview;
-Search finds channels by name. Movies and Series are not exposed as placeholder destinations.
+There is no home screen: the app opens on the last watched channel, or on Settings when there is none.
+Everything else is reached from the stream: the channel overlay, the programme guide (Program TV), search,
+the film ranking and Settings.
 
 Planned (see the concept document): additional source protocols (Xtream Codes, Stalker), movies and series
 with posters, seasons, history and resume.
@@ -75,28 +76,24 @@ is saved locally and defaults to on. Turning it off does not change programme/ba
 - **Screen saver**: the shared PlayerView keeps the screen awake while visible playback is running or
   buffering, including preview/overlay. Pausing, closing or disposing it releases that request.
 
-- **Playlist**: Settings, section "Lista kanalow". Users of FireLite 1.x keep their playlist address automatically.
-- **Start**: recent channels and up to 30 favourites from the active playlist; OK starts fullscreen playback.
-  No preview/autoplay runs on Start, Programme Guide, Favourites or Search. Back from their fullscreen player
-  stops the stream and restores the played row.
-- **Programme Guide**: the full-width paged Live TV grid with group switching, but without preview.
-  Rewind/Fast-forward shift the window by one hour; Play/Pause jumps to now. Future/unavailable cells cannot play.
-- **Favourites**: active-playlist favourites, paged with current EPG; OK plays, long OK removes the favourite.
+- **Playlist**: Settings → Źródła kanałów. Saved playlists are kept and can be activated, refreshed or deleted.
+- **Programme guide**: the full-width paged grid with group switching, without preview. It opens with long OK
+  on the stream. Future/unavailable cells cannot play.
 - **Search**: OK edits the remote-first search field. Queries are debounced 300 ms, limited to 200 channels,
   and scoped to the active playlist. ASCII case and Polish diacritics are normalized on both sides of LIKE;
   SQL wildcard characters in names are literal. Other languages' Unicode case folding is not guaranteed.
 - **Browsing**: groups, favourites (Menu button), recently watched. Lists are paged from the database, so tens of
   thousands of channels stay fast.
 - **Watching**: OK starts a channel. Up/Down change the channel. Left/Right jump 10 s where the stream is seekable
-  (HLS with a server-provided time-shift window). Fast-forward jumps 30 s. Seeking before that window
+  (HLS with a server-provided time-shift window). Rewind/Fast-forward jump 60 s. Seeking before that window
   enters the **archive (catch-up)** at the requested absolute time when the playlist declares it
   (`catchup`, `catchup-source`, `catchup-days`; types default, append, shift,
   flussonic).
 - **Startup and navigation**: the active playlist's last-watched channel opens fullscreen in live mode;
-  otherwise Home is shown. During playback the rail/tabs are hidden, reachable through the quick menu.
-  Back at the main-menu rail returns to the same stream. Guide/main-menu presentation changes keep the
+  otherwise Settings is shown. Films and Settings are reachable through the quick menu.
+  Back from them returns to the same stream. Guide/main-menu presentation changes keep the
   one PlayerView/ExoPlayer mounted, with a small preview, and never reconnect. Startup resume and previous-channel
-  switching use PlaybackController's existing gate: old connections close first, then the unchanged 400 ms grace.
+  switching use PlaybackController's existing gate: old connections close first, then the 400 ms grace.
 - **No focus preview**: focusing a channel never opens a stream anywhere in the app; only OK does.
 - **Fullscreen remote**: Up opens the compact info banner; Up again expands the full description. Expanded Up/Down
   scroll; compact Down hides. Both banners hide eight seconds after the last key, and Back closes them.
@@ -182,6 +179,21 @@ not an OS job that wakes a stopped application. Network/authentication failures 
 Debug builds alone read `debug_base_url` from the private `omdb` preferences, for a local fixture;
 release builds always use `https://www.omdbapi.com/`. Never put a real key in fixture files or logs.
 
+## Other remotes
+
+Settings → Pilot lets one button of another remote act like Menu and one like Home (for example Tools and
+Exit on a TV remote whose presses the TV passes on over HDMI-CEC). The user picks the function and presses
+the button; the key code is stored locally. Buttons the app already uses cannot be taken, and the Fire TV
+remote is unchanged. `KEYCODE_TV_CONTENTS_MENU` and `KEYCODE_TV_MEDIA_CONTEXT_MENU` act like Menu without
+setup. `MainActivity.dispatchKeyEvent` turns a Menu alias into a real Menu key event, so every screen
+handles it as before; the Home alias opens the launcher, which closes the stream like Home does.
+
+## Start-time reports
+
+When the picture appears after opening the app (`cold`), after returning to it (`resume`), or after more
+than three seconds for any other start (`slow`), one `start:` report is queued with the phase timings and
+the DNS/connect/TLS/response times of the requests made. It goes out with the other reports.
+
 ## Hard rule: one stream at a time
 
 The provider allows exactly **one streaming session** (account/IP), not one HTTP request. HLS playlist
@@ -189,7 +201,10 @@ refreshes and segment downloads within that session may overlap, but a second ch
 `PlaybackController` is the only code that opens a stream:
 
 - a single player instance owns the only streaming session;
-- the old connection is closed *before* a new one opens, and a short grace period lets the server notice;
+- the old connection is closed *before* a new one opens, and a 400 ms grace period lets the server notice.
+  The grace counts from the moment the last socket closed: it is skipped only when this process holds no
+  socket and its last request ended longer ago than the pool keeps an idle socket (five minutes), or when
+  the freshly started process has made no request yet and is itself older than the grace;
 - requests within one streaming session may overlap (HLS playlists and segments); a new session waits for
   every old request to close, and late requests from superseded media sources are rejected;
 - a new prepare waits for all previous HTTP data sources to close; `FireLiteStream` logs open/close ordering
@@ -208,11 +223,13 @@ refreshes and segment downloads within that session may overlap, but a second ch
 
 ## In-app updates
 
-On start, FireLite asks GitHub for the latest release of the repository it was built in. If it is newer,
-a banner on the home screen offers **Zainstaluj teraz** (install now); Settings has a manual check.
-One press downloads the APK and opens Android's installer.
+After the first picture, FireLite asks GitHub for the latest release of the repository it was built in.
+If it is newer, a note points to Settings → Aktualizacje, where one press downloads the APK and opens
+Android's installer. Settings also has a manual check.
 
 - Release tags are `build-<N>`; the installed `versionCode` is `100 + N` (see `app/build.gradle.kts`).
+- The version name shown in Settings (3.0, 3.1, ...) is worked out in `.github/workflows/build.yml`,
+  one step per push to main. Never hardcode `versionName`.
 - The repository is baked in at build time from `GITHUB_REPOSITORY`; local builds have updates disabled.
 - The first time, Android asks you to allow FireLite to install unknown apps.
 - The repository must be public so the app can read its releases without a token.
@@ -235,9 +252,10 @@ One press downloads the APK and opens Android's installer.
   progressive attempt restores HLS only if it never reached READY. Once progressive playback succeeds,
   subsequent retries retain that source mode for the session. Recovery stops the
   old load and waits for all local HTTP connections to close before preparing again. A channel switch or
-  close cancels pending recovery. The connection gate and 400 ms grace remain unchanged; there are no probes.
+  close cancels pending recovery. The connection gate and grace apply as for any start; there are no probes.
 
-CI builds on every push (`.github/workflows/build.yml`). Locally you need JDK 17 and the Android SDK:
+CI tests and builds every pull request and publishes a release on every push to main
+(`.github/workflows/build.yml`). Locally you need JDK 17 and the Android SDK:
 
 ```
 ./gradlew :app:testDebugUnitTest :app:assembleRelease
@@ -265,7 +283,8 @@ app/src/main/kotlin/dev/firetvlite/iptv/
   ui/viewmodel/                     view models (library, player)
   ui/theme/                         colours, typography, shapes, reference density
   ui/components/                    FocusSurface, buttons, icons, logos, text helpers
-  ui/navigation/                    destinations and the navigation rail
-  ui/screens/                       home, live TV, player, settings and placeholder screens
+  reporting/                        queue and upload of error, stall and start-time reports
+  ui/navigation/                    which panel is shown over or beside the stream
+  ui/screens/                       channel overlay, guide, player, film ranking, search and settings
 gradle/libs.versions.toml           all dependency and plugin versions
 ```

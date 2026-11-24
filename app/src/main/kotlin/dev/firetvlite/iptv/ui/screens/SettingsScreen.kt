@@ -65,6 +65,7 @@ import dev.firetvlite.iptv.data.library.ImportState
 import dev.firetvlite.iptv.data.library.LibraryRepository
 import dev.firetvlite.iptv.data.library.SourceDiagnostics
 import kotlinx.coroutines.flow.Flow
+import dev.firetvlite.iptv.ui.components.remoteHomeKey
 import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.FocusSurface
 import dev.firetvlite.iptv.ui.components.LocalFocusedScale
@@ -189,6 +190,7 @@ fun SettingsScreen(
                                 }), style = FireLiteTheme.typography.body)
                                 FLText(stringResource(R.string.settings_loudness_help), style = FireLiteTheme.typography.body)
                             }
+                            SettingsSection.Remote -> SettingsCard { RemoteKeySettings() }
                             SettingsSection.Omdb -> SettingsCard { OmdbSettings() }
                             SettingsSection.Health -> SettingsCard { ChannelHealthSection(source) }
                             SettingsSection.Diagnostics -> SettingsCard { DiagnosticsSection(source, source?.id?.let { epgStates[it] }, diagnostics) }
@@ -213,9 +215,9 @@ private fun SettingsLayout(modifier: Modifier, content: @Composable RowScope.() 
 }
 
 @Composable
-private fun SettingsCard(content: @Composable () -> Unit) {
+private fun SettingsCard(modifier: Modifier = Modifier, content: @Composable () -> Unit) {
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(FireLiteTheme.shapes.large)
             .background(FireLiteTheme.colors.surface)
@@ -304,7 +306,7 @@ private fun SourceSection(
         }
         Dialog(onDismissRequest = { dismissDelete() }) {
             LaunchedEffect(Unit) { confirmFocus.requestFocusWhenReady() }
-            SettingsCard {
+            SettingsCard(Modifier.remoteHomeKey()) {
                 FLText(
                     text = stringResource(R.string.source_delete_confirm, entry.name, entry.id),
                     style = typography.headline,

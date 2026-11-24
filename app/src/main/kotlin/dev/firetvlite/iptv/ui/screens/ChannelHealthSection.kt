@@ -26,6 +26,7 @@ import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.db.SourceEntity
 import dev.firetvlite.iptv.data.playlist.PlaylistHttpHeaders
 import dev.firetvlite.iptv.playback.StreamRequest
+import dev.firetvlite.iptv.ui.components.remoteHomeKey
 import dev.firetvlite.iptv.ui.components.FLText
 import dev.firetvlite.iptv.ui.components.PrimaryButton
 import dev.firetvlite.iptv.ui.components.ProgressBar
@@ -55,7 +56,7 @@ internal fun ChannelHealthSection(source: SourceEntity?) {
             if (choosing) Dialog(onDismissRequest = { choosing = false }) {
                 val focus = remember { FocusRequester() }
                 LaunchedEffect(Unit) { focus.requestFocusWhenReady() }
-                Column(Modifier.background(FireLiteTheme.colors.surfaceHigh).verticalScroll(rememberScrollState()).padding(20.dp),
+                Column(Modifier.remoteHomeKey().background(FireLiteTheme.colors.surfaceHigh).verticalScroll(rememberScrollState()).padding(20.dp),
                     verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     SecondaryButton("$all ($count)", { group = null; choosing = false },
                         if (selected == null) Modifier.focusRequester(focus) else Modifier)

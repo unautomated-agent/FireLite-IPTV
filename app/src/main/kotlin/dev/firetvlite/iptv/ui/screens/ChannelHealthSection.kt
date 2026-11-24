@@ -106,9 +106,12 @@ internal fun ChannelHealthSection(source: SourceEntity?) {
                 FocusSurface(onClick = {}, focusedScale = 1f, background = SolidColor(FireLiteTheme.colors.surfaceHigh),
                     onFocusChanged = { focused -> if (focused) held = entry else if (held?.key == entry.key) held = null },
                     modifier = Modifier.fillMaxWidth().settingsControl("dead-${entry.key}")) {
-                    FLText(if (entry === recovered) stringResource(R.string.health_recovered, entry.name) else entry.line(now),
-                        style = FireLiteTheme.typography.body, maxLines = 2,
-                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
+                    // The name may be cut; the dates and the count on their own line never are.
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                        FLText(entry.name, style = FireLiteTheme.typography.body, maxLines = 1)
+                        FLText(if (entry === recovered) stringResource(R.string.health_recovered_detail) else entry.detail(now),
+                            style = FireLiteTheme.typography.body)
+                    }
                 }
             }
         }

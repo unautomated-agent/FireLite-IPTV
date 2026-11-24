@@ -23,10 +23,12 @@ internal data class DeadChannel(val key: String, val name: String, val first: Lo
     /** Dead in at least three health checks and for at least 30 days: safe to delete from the playlist. */
     fun removable(now: Long): Boolean = checks >= 3 && now - first >= 30 * 86_400_000L
 
-    fun line(now: Long): String {
+    fun line(now: Long): String = "$name · ${detail(now)}"
+
+    fun detail(now: Long): String {
         val since = DateTimeFormatter.ofPattern("dd.MM.yyyy").withZone(ZoneId.of("Europe/Warsaw")).format(Instant.ofEpochMilli(first))
         val days = ((now - first) / 86_400_000L).coerceAtLeast(0)
-        return "$name · martwy od $since ($days dni) · sprawdzenia: $checks" + if (removable(now)) " · do usunięcia" else ""
+        return "martwy od $since ($days dni) · sprawdzenia: $checks" + if (removable(now)) " · do usunięcia" else ""
     }
 }
 

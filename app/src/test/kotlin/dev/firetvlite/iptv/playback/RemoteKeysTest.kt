@@ -22,7 +22,8 @@ class RemoteKeysTest {
     @Test fun fireTvButtonsKeepTheirOwnFunction() {
         val map = RemoteKeyMap(menu = KeyEvent.KEYCODE_BACK, home = KeyEvent.KEYCODE_DPAD_CENTER)
         listOf(KeyEvent.KEYCODE_BACK, KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_MENU, KeyEvent.KEYCODE_DPAD_UP,
-            KeyEvent.KEYCODE_MEDIA_REWIND, KeyEvent.KEYCODE_UNKNOWN).forEach { assertNull(map.alias(it)) }
+            KeyEvent.KEYCODE_MEDIA_REWIND, KeyEvent.KEYCODE_CHANNEL_UP, KeyEvent.KEYCODE_CHANNEL_DOWN,
+            KeyEvent.KEYCODE_UNKNOWN).forEach { assertNull(map.alias(it)) }
     }
 
     @Test fun oneButtonHasOneFunction() {

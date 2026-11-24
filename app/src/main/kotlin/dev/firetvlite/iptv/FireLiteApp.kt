@@ -99,6 +99,14 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
         playerViewModel.showPanel()
     }
 
+    val settingsRequested by playerViewModel.settingsRequested.collectAsState()
+    LaunchedEffect(settingsRequested, startupReady) {
+        if (settingsRequested && startupReady) {
+            playerViewModel.requestSettings(false)
+            navigate(StreamPanel.Settings)
+        }
+    }
+
     BackHandler(enabled = mode == PlayerMode.Panel && screenBackReturnsToPlayback(mode, channel != null)) {
         playerViewModel.returnToFullscreen()
     }

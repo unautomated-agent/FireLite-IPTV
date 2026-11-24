@@ -303,6 +303,11 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         container.startup.finish("cancelled")
     }
 
+    private val mutableSettingsRequested = MutableStateFlow(false)
+    val settingsRequested = mutableSettingsRequested.asStateFlow()
+
+    fun requestSettings(requested: Boolean = true) { mutableSettingsRequested.value = requested }
+
     fun showPanel() {
         settlePendingZap()
         closeTimeline()

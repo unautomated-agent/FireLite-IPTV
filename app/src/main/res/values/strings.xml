@@ -106,6 +106,7 @@
     <string name="imdb_votes_thousands">%1$s tys. głosów</string>
     <string name="imdb_votes_millions">%1$s mln głosów</string>
     <string name="imdb_unrated">IMDb —</string>
+    <string name="omdb_films_help">Ranking filmów z programu TV według ocen IMDb. Jest też w szybkim menu: przytrzymaj Menu podczas oglądania.</string>
     <string name="omdb_key_label">Klucz OMDb (oceny IMDb)</string>
     <string name="omdb_key_help">Darmowy klucz: omdbapi.com/apikey.aspx. Limit klucza: 1000 zapytań dziennie; budżet aplikacji: 950.</string>
     <string name="omdb_key_activation_help">Darmowy klucz wymaga aktywacji linkiem z wiadomości e-mail. Po aktywacji zapisz go ponownie, aby od razu ponowić pobieranie ocen.</string>

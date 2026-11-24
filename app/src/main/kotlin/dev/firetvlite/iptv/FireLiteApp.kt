@@ -132,7 +132,7 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
                         onCheckForUpdate = updateViewModel::checkForUpdate,
                         onInstallUpdate = updateViewModel::downloadAndInstall,
                         onOpenInstallSettings = updateViewModel::openInstallSettings,
-                        source = source, sources = sources, importState = importState, epgStates = epgStates,
+                        source = source, sources = sources, importState = importState, onFilms = { navigate(StreamPanel.Films) }, epgStates = epgStates,
                         onSaveSource = libraryViewModel::saveSource,
                         onActivateSource = libraryViewModel::activateSource,
                         onDeleteSource = libraryViewModel::deleteSource,

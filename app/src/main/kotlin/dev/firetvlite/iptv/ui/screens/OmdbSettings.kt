@@ -21,13 +21,15 @@ import dev.firetvlite.iptv.ui.components.PrimaryButton
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 
 @Composable
-internal fun OmdbSettings() {
+internal fun OmdbSettings(onFilms: () -> Unit) {
     val preferences = (LocalContext.current.applicationContext as FireLiteApplication).container.films.preferences
     val key by preferences.key.collectAsState()
     val error by preferences.currentError.collectAsState()
     var draft by remember(key) { mutableStateOf(key) }
     var activationLink by remember { mutableStateOf(false) }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        PrimaryButton(stringResource(R.string.nav_films), onFilms, Modifier.settingsControl("omdb-films"))
+        FLText(stringResource(R.string.omdb_films_help), style = FireLiteTheme.typography.body)
         LabeledTextField(stringResource(R.string.omdb_key_label), draft, { draft = it; activationLink = false }, secret = true,
             modifier = Modifier.settingsControl("omdb-key"))
         FLText(stringResource(R.string.omdb_key_help), style = FireLiteTheme.typography.body)

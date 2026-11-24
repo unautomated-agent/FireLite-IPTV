@@ -93,6 +93,9 @@ internal object PlaybackHttp {
         current?.connectionPool?.evictAll()
     }
 
+    /** Sockets to the provider that are still open, in use or idle. */
+    fun pooled(): Int = if (clientDelegate.isInitialized()) client.connectionPool.connectionCount() else 0
+
     fun calls(root: String, dataType: Int, transport: OkHttpClient = client,
         channelHeaders: Map<String, String> = emptyMap(), userAgent: String? = null,
         onTransport: (TransportSnapshot) -> Unit = {},

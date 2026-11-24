@@ -43,7 +43,7 @@ class SettingsNavigationTest {
         assertEquals(SettingsSection.Sources, SettingsSection.restored(""))
         assertEquals(SettingsSection.Sources, SettingsSection.restored("obsolete"))
         SettingsSection.entries.forEach { assertEquals(it, SettingsSection.restored(it.name)) }
-        assertEquals(6, SettingsSection.entries.size)
+        assertEquals(7, SettingsSection.entries.size)
     }
 
     @Test fun paneFocusRestoresRegisteredLastControlOrUsesDefaultTraversal() {

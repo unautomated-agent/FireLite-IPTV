@@ -46,6 +46,7 @@ class AppContainer(application: Application, startedAt: Long = SystemClock.elaps
     val films by lazy { FilmRepository(database, OmdbPreferences(application), applicationScope, epg) }
     val clockPreferences by lazy { ClockPreferences(application) }
     val reminderPreferences by lazy { ReminderPreferences(application) }
+    val remoteKeys by lazy { dev.firetvlite.iptv.data.RemoteKeyPreferences(application) }
     internal val loudnessPreferences = LoudnessPreferences(application, applicationScope)
     internal val loudness = LoudnessLeveller()
 
@@ -87,6 +88,7 @@ class AppContainer(application: Application, startedAt: Long = SystemClock.elaps
             withContext(Dispatchers.IO) {
                 clockPreferences
                 reminderPreferences
+                remoteKeys
                 films
             }
             startup.backgroundReady()

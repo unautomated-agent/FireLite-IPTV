@@ -61,6 +61,17 @@
     <string name="reminder_more">I jeszcze %1$d emisji</string>
     <string name="reminder_dismiss">OK – zamknij</string>
     <string name="settings_appearance">Wygląd</string>
+    <string name="settings_remote">Pilot</string>
+    <string name="remote_help">Dla pilota od telewizora: wybierz funkcję, a potem naciśnij na nim przycisk, który ma ją wykonywać, np. Tools jako Menu i Exit jako Home. Przyciski pilota Fire TV działają bez zmian.</string>
+    <string name="remote_menu">Dodatkowy przycisk Menu</string>
+    <string name="remote_home">Dodatkowy przycisk Home</string>
+    <string name="remote_none">Nie ustawiono</string>
+    <string name="remote_set">Ustawiony (kod %1$d)</string>
+    <string name="remote_waiting">Naciśnij przycisk…</string>
+    <string name="remote_saved">Zapisano. Ten przycisk działa teraz jak wybrana funkcja.</string>
+    <string name="remote_used">Ten przycisk ma już swoją funkcję w aplikacji. Wybierz inny.</string>
+    <string name="remote_timeout">Nie odebrano żadnego przycisku. Telewizor nie przekazuje go do Fire TV albo sam go obsługuje.</string>
+    <string name="remote_clear">Usuń dodatkowe przyciski</string>
     <string name="settings_clock">Zegar w lewym górnym rogu</string>
     <string name="settings_loudness">Wyrównanie głośności</string>
     <string name="toggle_on">Włączone</string>

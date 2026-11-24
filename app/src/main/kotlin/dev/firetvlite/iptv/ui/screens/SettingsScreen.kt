@@ -189,6 +189,7 @@ fun SettingsScreen(
                                 }), style = FireLiteTheme.typography.body)
                                 FLText(stringResource(R.string.settings_loudness_help), style = FireLiteTheme.typography.body)
                             }
+                            SettingsSection.Remote -> SettingsCard { RemoteKeySettings() }
                             SettingsSection.Omdb -> SettingsCard { OmdbSettings() }
                             SettingsSection.Health -> SettingsCard { ChannelHealthSection(source) }
                             SettingsSection.Diagnostics -> SettingsCard { DiagnosticsSection(source, source?.id?.let { epgStates[it] }, diagnostics) }

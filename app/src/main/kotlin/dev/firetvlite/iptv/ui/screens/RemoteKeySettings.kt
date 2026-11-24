@@ -33,7 +33,7 @@ internal fun RemoteKeySettings() {
     listOf(RemoteAlias.Menu to R.string.remote_menu, RemoteAlias.Home to R.string.remote_home).forEach { (alias, label) ->
         val state = when {
             learning == alias -> stringResource(R.string.remote_waiting)
-            keys.key(alias) != 0 -> stringResource(R.string.remote_set, keys.key(alias))
+            keys.key(alias) != 0 -> stringResource(R.string.remote_set)
             else -> stringResource(R.string.remote_none)
         }
         SecondaryButton("${stringResource(label)}: $state", { remote.startLearning(alias) },

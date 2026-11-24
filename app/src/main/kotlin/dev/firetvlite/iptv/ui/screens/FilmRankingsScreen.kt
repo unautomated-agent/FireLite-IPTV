@@ -9,7 +9,13 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.layout.width
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.items
@@ -79,6 +85,8 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
     val status = rankingStatus(catalogue.loaded && catalogue.sourceId == source?.id,
         epgStates[source?.id] == EpgState.Running, catalogue.hasEpg, enriching, rows.isNotEmpty())
     val colors = FireLiteTheme.colors
+    var listFocused by remember { mutableStateOf(false) }
+    LaunchedEffect(rows.isEmpty()) { if (rows.isEmpty()) listFocused = false }
     LaunchedEffect(active, tab, source?.id, key) {
         if (active && tab == Films.FUTURE_TAB) source?.id?.let { library.films.requestFutureFilms(it) }
     }
@@ -127,7 +135,17 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
                 RankingStatus.Empty -> FLText(stringResource(R.string.films_empty), style = FireLiteTheme.typography.body)
                 RankingStatus.Ready -> Unit
             }
-            if (rows.isNotEmpty()) LazyColumn(state = states[tab], verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            // Back or Left anywhere in the list jumps to the tabs, so switching day never needs scrolling up.
+            BackHandler(enabled = active && listFocused) { tabFocus[tab].requestFocus() }
+            if (rows.isNotEmpty()) FLText(stringResource(R.string.films_tabs_hint), style = FireLiteTheme.typography.label,
+                color = colors.textSecondary)
+            if (rows.isNotEmpty()) LazyColumn(state = states[tab], verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.onFocusChanged { listFocused = it.hasFocus }.onPreviewKeyEvent {
+                    if (it.key == Key.DirectionLeft) {
+                        if (it.type == KeyEventType.KeyDown) tabFocus[tab].requestFocus()
+                        true
+                    } else false
+                }) {
                 items(rows, key = { it.identity }) { film ->
                     val p = film.programme
                     val ratingText = imdbRatingText(film.rating, showVotes = true)
@@ -149,28 +167,24 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
                             context.getString(R.string.films_starts_at, clockTime(p.start))
                             else context.getString(R.string.films_archive_expired), Toast.LENGTH_SHORT).show()
                     }, modifier = Modifier.fillMaxWidth(), focusedScale = 1.01f) {
-                        Row(Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically,
+                        Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.spacedBy(18.dp)) {
                             FLText(ratingText.ifEmpty { stringResource(R.string.imdb_unrated) },
                                 style = FireLiteTheme.typography.title,
                                 color = if (ratingText.isNotEmpty()) Color(0xFFF5C518) else colors.textSecondary,
-                                maxLines = 2, modifier = Modifier.widthIn(max = 220.dp))
-                            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                                FLText(p.title, style = FireLiteTheme.typography.title,
-                                    color = if (ratingText.isEmpty()) colors.textSecondary else colors.textPrimary, maxLines = 1)
-                                FLText(listOfNotNull(p.originalTitle, p.year?.toString()).joinToString(" · "),
-                                    style = FireLiteTheme.typography.label, color = colors.textSecondary, maxLines = 1)
-                                FLText(if (airing) stringResource(R.string.films_airing_time, Films.time(p.start)) else Films.time(p.start),
-                                    style = FireLiteTheme.typography.label, color = colors.accent)
-                                if (airing) ProgressBar(((now - p.start).toFloat() / (p.stop - p.start)).coerceIn(0f, 1f))
-                                archiveUntil?.let {
-                                    val minutes = ((it - now).coerceAtLeast(0) + 59_999) / 60_000
-                                    FLText(stringResource(R.string.films_archive_remaining, minutes / 60, minutes % 60),
-                                        style = FireLiteTheme.typography.label, color = colors.textSecondary)
-                                }
-                            }
-                            ChannelLogo(film.channel.name, film.channel.logoUrl, size = 44.dp)
-                            FLText(film.channel.name, style = FireLiteTheme.typography.label, maxLines = 1)
+                                maxLines = 1, modifier = Modifier.width(190.dp))
+                            FLText(listOfNotNull(p.title, p.originalTitle?.takeIf { it != p.title }, p.year?.toString()).joinToString(" · "),
+                                style = FireLiteTheme.typography.title,
+                                color = if (ratingText.isEmpty()) colors.textSecondary else colors.textPrimary,
+                                maxLines = 1, modifier = Modifier.weight(1f))
+                            val time = if (airing) stringResource(R.string.films_airing_time, Films.time(p.start)) else Films.time(p.start)
+                            FLText(archiveUntil?.let {
+                                val minutes = ((it - now).coerceAtLeast(0) + 59_999) / 60_000
+                                time + " · " + stringResource(R.string.films_archive_remaining, minutes / 60, minutes % 60)
+                            } ?: time, style = FireLiteTheme.typography.label, color = colors.accent, maxLines = 1)
+                            ChannelLogo(film.channel.name, film.channel.logoUrl, size = 32.dp)
+                            FLText(film.channel.name, style = FireLiteTheme.typography.label, maxLines = 1,
+                                modifier = Modifier.width(150.dp))
                         }
                     }
                 }

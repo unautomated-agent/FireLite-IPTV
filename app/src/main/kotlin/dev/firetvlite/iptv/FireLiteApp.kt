@@ -100,8 +100,9 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
     }
 
     val settingsRequested by playerViewModel.settingsRequested.collectAsState()
-    LaunchedEffect(settingsRequested, startupReady) {
-        if (settingsRequested && startupReady) {
+    // Not held back by startup: a first stream the provider keeps waiting must not block the way to Settings.
+    LaunchedEffect(settingsRequested) {
+        if (settingsRequested) {
             playerViewModel.requestSettings(false)
             navigate(StreamPanel.Settings)
         }

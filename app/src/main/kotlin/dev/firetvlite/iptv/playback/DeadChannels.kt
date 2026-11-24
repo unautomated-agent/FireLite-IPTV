@@ -18,7 +18,8 @@ import org.json.JSONObject
 import dev.firetvlite.iptv.reporting.ReportSink
 
 internal data class DeadChannel(val key: String, val name: String, val first: Long, val last: Long,
-    val count: Int, val reason: String, val source: String, val checks: Int = 0) {
+    val count: Int, val reason: String, val source: String, val checks: Int = 0,
+    val checked: Long = 0) {
     /** Dead in at least three health checks and for at least 30 days: safe to delete from the playlist. */
     fun removable(now: Long): Boolean = checks >= 3 && now - first >= 30 * 86_400_000L
 
@@ -100,7 +101,7 @@ internal class DeadChannels(private val file: File, scope: CoroutineScope,
                     val row = rows.getJSONObject(index)
                     DeadChannel(row.getString("key"), row.getString("name"), row.getLong("first"), row.getLong("last"),
                         row.getInt("count"), row.getString("reason"), row.getString("source"),
-                        row.optInt("checks", if (row.getString("source") == HEALTH_CHECK) 1 else 0))
+                        row.optInt("checks", if (row.getString("source") == HEALTH_CHECK) 1 else 0), row.optLong("checked"))
                 }.filter { it.key.matches(Regex("[a-f0-9]{64}")) }.sortedByDescending { it.last }.take(100)
                 ChannelHealthState(entries, saved.optString("check").replace(" · running", " · stopped"))
             }.getOrDefault(ChannelHealthState())
@@ -108,15 +109,20 @@ internal class DeadChannels(private val file: File, scope: CoroutineScope,
         }
     }
 
+    private var checkStart = 0L
+
     fun result(request: StreamRequest, reason: String?, source: String = "playback") {
         val now = clock()
         commands.trySend {
             val previous = mutableState.value.entries.firstOrNull { it.key == request.channelKey }
             val remaining = mutableState.value.entries.filterNot { it.key == request.channelKey }
+            // A playlist can list one stream twice: a health check counts it once.
+            val counted = source == HEALTH_CHECK && (previous == null || previous.checked < checkStart)
             val entries = if (reason == null) remaining else remaining + DeadChannel(request.channelKey,
                 safeName(request.channelName.ifBlank { "Nieznany kanał" }, request.url), previous?.first ?: now,
                 now, ((previous?.count ?: 0) + 1).coerceAtMost(9999), safeName(reason, request.url).take(64), source,
-                ((previous?.checks ?: 0) + if (source == HEALTH_CHECK) 1 else 0).coerceAtMost(9999))
+                ((previous?.checks ?: 0) + if (counted) 1 else 0).coerceAtMost(9999),
+                if (counted) now else previous?.checked ?: 0)
             save(mutableState.value.copy(entries = entries.sortedByDescending { it.last }.take(100)))
             if (reason != null) runCatching {
                 val entry = entries.last()
@@ -124,6 +130,11 @@ internal class DeadChannels(private val file: File, scope: CoroutineScope,
                     "${entry.name} · ${entry.reason} · ×${entry.count} · ${entry.source}")
             }
         }
+    }
+
+    fun checkStarted() {
+        val now = clock()
+        commands.trySend { checkStart = now }
     }
 
     fun checkSummary(summary: String) {
@@ -145,7 +156,7 @@ internal class DeadChannels(private val file: File, scope: CoroutineScope,
             val entries = JSONArray()
             state.entries.forEach { entry -> entries.put(JSONObject().put("key", entry.key).put("name", entry.name)
                 .put("first", entry.first).put("last", entry.last).put("count", entry.count)
-                .put("reason", entry.reason).put("source", entry.source).put("checks", entry.checks)) }
+                .put("reason", entry.reason).put("source", entry.source).put("checks", entry.checks).put("checked", entry.checked)) }
             temporary.writeText(JSONObject().put("entries", entries).put("check", state.check).toString())
             check(temporary.renameTo(file))
         }

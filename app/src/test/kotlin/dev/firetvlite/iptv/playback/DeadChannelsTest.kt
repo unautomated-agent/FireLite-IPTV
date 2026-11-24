@@ -117,16 +117,23 @@ class DeadChannelsTest {
         val request = StreamRequest("https://example.test/dead", "TV", channelName = "Dead")
         try {
             val registry = DeadChannels(file, scope, clock = { now })
+            registry.checkStarted()
             registry.result(request, "HTTP 404", DeadChannels.HEALTH_CHECK)
             now += 86_400_000L
             registry.result(request, "HTTP 404")
+            registry.checkStarted()
+            now += 1
             registry.result(request, "HTTP 404", DeadChannels.HEALTH_CHECK)
             now += 30 * 86_400_000L
+            registry.checkStarted()
+            now += 1
+            registry.result(request, "HTTP 404", DeadChannels.HEALTH_CHECK)
+            now += 1
             registry.result(request, "HTTP 404", DeadChannels.HEALTH_CHECK)
             registry.flush()
             val entry = DeadChannels(file, scope).also { it.flush() }.state.value.entries.single()
             assertEquals(1_000L, entry.first)
-            assertEquals(4, entry.count)
+            assertEquals(5, entry.count)
             assertEquals(3, entry.checks)
             assertTrue(entry.removable(now))
             assertFalse(entry.removable(now - 2 * 86_400_000L))

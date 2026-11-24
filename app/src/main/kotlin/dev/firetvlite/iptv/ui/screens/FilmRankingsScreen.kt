@@ -60,6 +60,7 @@ import dev.firetvlite.iptv.ui.components.requestFocusWhenReady
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
 import dev.firetvlite.iptv.ui.viewmodel.LibraryViewModel
 import dev.firetvlite.iptv.ui.viewmodel.PlayerViewModel
+import java.util.Locale
 import kotlinx.coroutines.launch
 
 @Composable
@@ -168,23 +169,25 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
                             else context.getString(R.string.films_archive_expired), Toast.LENGTH_SHORT).show()
                     }, modifier = Modifier.fillMaxWidth(), focusedScale = 1.01f) {
                         Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(18.dp)) {
-                            FLText(ratingText.ifEmpty { stringResource(R.string.imdb_unrated) },
+                            horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                            // Score only: the pane is about 700 dp wide, and the title needs most of it.
+                            FLText(film.rating?.imdbRating?.takeIf { ratingText.isNotEmpty() }
+                                ?.let { String.format(Locale("pl", "PL"), "%.1f", it) } ?: "—",
                                 style = FireLiteTheme.typography.title,
                                 color = if (ratingText.isNotEmpty()) Color(0xFFF5C518) else colors.textSecondary,
-                                maxLines = 1, modifier = Modifier.width(190.dp))
+                                maxLines = 1, modifier = Modifier.width(36.dp))
                             FLText(listOfNotNull(p.title, p.originalTitle?.takeIf { it != p.title }, p.year?.toString()).joinToString(" · "),
                                 style = FireLiteTheme.typography.title,
                                 color = if (ratingText.isEmpty()) colors.textSecondary else colors.textPrimary,
                                 maxLines = 1, modifier = Modifier.weight(1f))
-                            val time = if (airing) stringResource(R.string.films_airing_time, Films.time(p.start)) else Films.time(p.start)
                             FLText(archiveUntil?.let {
                                 val minutes = ((it - now).coerceAtLeast(0) + 59_999) / 60_000
-                                time + " · " + stringResource(R.string.films_archive_remaining, minutes / 60, minutes % 60)
-                            } ?: time, style = FireLiteTheme.typography.label, color = colors.accent, maxLines = 1)
+                                stringResource(R.string.films_archive_remaining, minutes / 60, minutes % 60)
+                            } ?: if (airing) clockTime(p.start) else Films.time(p.start),
+                                style = FireLiteTheme.typography.label, color = colors.accent, maxLines = 1)
                             ChannelLogo(film.channel.name, film.channel.logoUrl, size = 32.dp)
                             FLText(film.channel.name, style = FireLiteTheme.typography.label, maxLines = 1,
-                                modifier = Modifier.width(150.dp))
+                                modifier = Modifier.width(110.dp))
                         }
                     }
                 }

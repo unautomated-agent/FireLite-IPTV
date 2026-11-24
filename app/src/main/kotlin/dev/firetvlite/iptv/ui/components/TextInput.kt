@@ -1,6 +1,5 @@
 package dev.firetvlite.iptv.ui.components
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -19,9 +18,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.ExperimentalComposeUiApi
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -58,6 +57,7 @@ fun LabeledTextField(
 
     fun finishEditing() {
         keyboard?.hide()
+        runCatching { wrapperFocus.requestFocus() }
         restoreFocus = true
         editing = false
         sawKeyboard = false
@@ -85,41 +85,37 @@ fun LabeledTextField(
             style = FireLiteTheme.typography.label,
             modifier = Modifier.padding(start = 4.dp, bottom = 4.dp),
         )
-        if (editing) {
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                singleLine = true,
-                textStyle = FireLiteTheme.typography.title,
-                cursorBrush = SolidColor(colors.accent),
-                keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else KeyboardType.Uri, imeAction = ImeAction.Done),
-                visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
-                keyboardActions = KeyboardActions(onDone = { finishEditing() }),
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .focusRequester(editorFocus)
-                    .onPreInterceptKeyBeforeSoftKeyboard { event ->
-                        if (event.key == Key.Back) {
-                            if (event.type == KeyEventType.KeyUp) finishEditing()
-                            true
-                        } else false
-                    }
-                    .clip(FireLiteTheme.shapes.medium)
-                    .background(colors.surfaceHigh)
-                    .border(
-                        width = 2.dp,
-                        color = colors.focusRing,
-                        shape = FireLiteTheme.shapes.medium,
-                    )
-                    .padding(horizontal = 14.dp, vertical = 12.dp),
-            )
-        } else {
-            FocusSurface(
-                onClick = { editing = true },
-                modifier = Modifier.fillMaxWidth().focusRequester(wrapperFocus),
-                background = SolidColor(colors.surfaceHigh),
-                focusedScale = 1f,
-            ) {
+        // The surface stays composed while editing: swapping it out dropped focus to the first rail item,
+        // which in any section but the first closed the field before the keyboard opened.
+        FocusSurface(
+            onClick = { editing = true },
+            modifier = Modifier.fillMaxWidth().focusRequester(wrapperFocus)
+                .border(2.dp, if (editing) colors.focusRing else Color.Transparent, FireLiteTheme.shapes.medium),
+            background = SolidColor(colors.surfaceHigh),
+            focusedScale = 1f,
+        ) {
+            if (editing) {
+                BasicTextField(
+                    value = value,
+                    onValueChange = onValueChange,
+                    singleLine = true,
+                    textStyle = FireLiteTheme.typography.title,
+                    cursorBrush = SolidColor(colors.accent),
+                    keyboardOptions = KeyboardOptions(keyboardType = if (secret) KeyboardType.Password else KeyboardType.Uri, imeAction = ImeAction.Done),
+                    visualTransformation = if (secret) PasswordVisualTransformation() else VisualTransformation.None,
+                    keyboardActions = KeyboardActions(onDone = { finishEditing() }),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(editorFocus)
+                        .onPreInterceptKeyBeforeSoftKeyboard { event ->
+                            if (event.key == Key.Back) {
+                                if (event.type == KeyEventType.KeyUp) finishEditing()
+                                true
+                            } else false
+                        }
+                        .padding(horizontal = 14.dp, vertical = 12.dp),
+                )
+            } else {
                 FLText(
                     text = (if (secret) "•".repeat(value.length) else value).ifEmpty { " " },
                     style = FireLiteTheme.typography.title,

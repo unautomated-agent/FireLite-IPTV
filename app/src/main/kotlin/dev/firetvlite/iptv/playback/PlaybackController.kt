@@ -159,7 +159,7 @@ class PlaybackController internal constructor(
     }, { Log.d("FireLiteStream", it) }, setStream = { player, item, factory ->
         player.setMediaSource(PlaybackMediaSourceFactory(factory).createMediaSource(item))
     }, recordPlayback = diagnosticRecorder(context, scope), channelResult = { request, reason -> deadChannels.result(request, reason) },
-        healthResult = { request, reason -> deadChannels.result(request, reason, "health check") },
+        healthResult = { request, reason -> deadChannels.result(request, reason, DeadChannels.HEALTH_CHECK) },
         healthSummary = deadChannels::checkSummary, recordStall = stalls::record, reports = reports,
         loudness = loudness, launchEvent = launchEvent, usageSink = usageSink)
 

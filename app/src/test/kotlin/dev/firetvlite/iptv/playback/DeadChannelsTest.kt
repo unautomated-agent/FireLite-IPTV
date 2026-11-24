@@ -110,6 +110,31 @@ class DeadChannelsTest {
         } finally { scope.cancel() }
     }
 
+    @Test fun countsHealthChecksSeparatelyAndKeepsTheFirstDeadDate() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        val file = File(folder.root, "checks.json")
+        var now = 1_000L
+        val request = StreamRequest("https://example.test/dead", "TV", channelName = "Dead")
+        try {
+            val registry = DeadChannels(file, scope, clock = { now })
+            registry.result(request, "HTTP 404", DeadChannels.HEALTH_CHECK)
+            now += 86_400_000L
+            registry.result(request, "HTTP 404")
+            registry.result(request, "HTTP 404", DeadChannels.HEALTH_CHECK)
+            now += 30 * 86_400_000L
+            registry.result(request, "HTTP 404", DeadChannels.HEALTH_CHECK)
+            registry.flush()
+            val entry = DeadChannels(file, scope).also { it.flush() }.state.value.entries.single()
+            assertEquals(1_000L, entry.first)
+            assertEquals(4, entry.count)
+            assertEquals(3, entry.checks)
+            assertTrue(entry.removable(now))
+            assertFalse(entry.removable(now - 2 * 86_400_000L))
+            assertFalse(entry.copy(checks = 2).removable(now))
+            assertEquals("Dead · martwy od 01.01.1970 (31 dni) · sprawdzenia: 3 · do usunięcia", entry.line(now))
+        } finally { scope.cancel() }
+    }
+
     @Test fun completedHealthCheckPersistsResultsSourceAndScopeAndRemovesHealthyEntry() = runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         val registry = DeadChannels(File(folder.root, "channels.json"), scope)

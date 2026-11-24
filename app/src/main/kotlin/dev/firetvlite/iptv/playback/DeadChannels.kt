@@ -18,7 +18,16 @@ import org.json.JSONObject
 import dev.firetvlite.iptv.reporting.ReportSink
 
 internal data class DeadChannel(val key: String, val name: String, val first: Long, val last: Long,
-    val count: Int, val reason: String, val source: String)
+    val count: Int, val reason: String, val source: String, val checks: Int = 0) {
+    /** Dead in at least three health checks and for at least 30 days: safe to delete from the playlist. */
+    fun removable(now: Long): Boolean = checks >= 3 && now - first >= 30 * 86_400_000L
+
+    fun line(now: Long): String {
+        val since = DateTimeFormatter.ofPattern("dd.MM.yyyy").withZone(ZoneId.of("Europe/Warsaw")).format(Instant.ofEpochMilli(first))
+        val days = ((now - first) / 86_400_000L).coerceAtLeast(0)
+        return "$name · martwy od $since ($days dni) · sprawdzenia: $checks" + if (removable(now)) " · do usunięcia" else ""
+    }
+}
 
 internal data class ChannelHealthState(val entries: List<DeadChannel> = emptyList(), val check: String = "") {
     val keys: Set<String> = entries.mapTo(HashSet()) { it.key }
@@ -28,7 +37,8 @@ internal data class ChannelHealthState(val entries: List<DeadChannel> = emptyLis
         entries.forEach {
             val time = DateTimeFormatter.ofPattern("MM-dd HH:mm").withZone(ZoneId.of("Europe/Warsaw"))
                 .format(Instant.ofEpochMilli(it.last))
-            add("Martwe: ${it.name} · ${it.reason} · ×${it.count} · last $time · ${it.source}")
+            val first = DateTimeFormatter.ofPattern("MM-dd").withZone(ZoneId.of("Europe/Warsaw")).format(Instant.ofEpochMilli(it.first))
+            add("Martwe: ${it.name} · ${it.reason} · ×${it.count} · last $time · ${it.source} · od $first · checks ${it.checks}")
         }
         if (check.isNotBlank()) add("Zdrowie kanałów: $check")
     }.joinToString("\n")
@@ -89,7 +99,8 @@ internal class DeadChannels(private val file: File, scope: CoroutineScope,
                 val entries = (0 until rows.length()).map { index ->
                     val row = rows.getJSONObject(index)
                     DeadChannel(row.getString("key"), row.getString("name"), row.getLong("first"), row.getLong("last"),
-                        row.getInt("count"), row.getString("reason"), row.getString("source"))
+                        row.getInt("count"), row.getString("reason"), row.getString("source"),
+                        row.optInt("checks", if (row.getString("source") == HEALTH_CHECK) 1 else 0))
                 }.filter { it.key.matches(Regex("[a-f0-9]{64}")) }.sortedByDescending { it.last }.take(100)
                 ChannelHealthState(entries, saved.optString("check").replace(" · running", " · stopped"))
             }.getOrDefault(ChannelHealthState())
@@ -104,7 +115,8 @@ internal class DeadChannels(private val file: File, scope: CoroutineScope,
             val remaining = mutableState.value.entries.filterNot { it.key == request.channelKey }
             val entries = if (reason == null) remaining else remaining + DeadChannel(request.channelKey,
                 safeName(request.channelName.ifBlank { "Nieznany kanał" }, request.url), previous?.first ?: now,
-                now, ((previous?.count ?: 0) + 1).coerceAtMost(9999), safeName(reason, request.url).take(64), source)
+                now, ((previous?.count ?: 0) + 1).coerceAtMost(9999), safeName(reason, request.url).take(64), source,
+                ((previous?.checks ?: 0) + if (source == HEALTH_CHECK) 1 else 0).coerceAtMost(9999))
             save(mutableState.value.copy(entries = entries.sortedByDescending { it.last }.take(100)))
             if (reason != null) runCatching {
                 val entry = entries.last()
@@ -133,7 +145,7 @@ internal class DeadChannels(private val file: File, scope: CoroutineScope,
             val entries = JSONArray()
             state.entries.forEach { entry -> entries.put(JSONObject().put("key", entry.key).put("name", entry.name)
                 .put("first", entry.first).put("last", entry.last).put("count", entry.count)
-                .put("reason", entry.reason).put("source", entry.source)) }
+                .put("reason", entry.reason).put("source", entry.source).put("checks", entry.checks)) }
             temporary.writeText(JSONObject().put("entries", entries).put("check", state.check).toString())
             check(temporary.renameTo(file))
         }
@@ -141,6 +153,8 @@ internal class DeadChannels(private val file: File, scope: CoroutineScope,
     }
 
     companion object {
+        const val HEALTH_CHECK = "health check"
+
         fun key(url: String): String = MessageDigest.getInstance("SHA-256").digest(url.toByteArray())
             .joinToString("") { "%02x".format(it) }
 

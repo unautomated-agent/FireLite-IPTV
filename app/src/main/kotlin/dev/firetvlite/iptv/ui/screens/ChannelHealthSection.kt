@@ -3,6 +3,7 @@ package dev.firetvlite.iptv.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -17,6 +18,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -28,6 +30,7 @@ import dev.firetvlite.iptv.data.playlist.PlaylistHttpHeaders
 import dev.firetvlite.iptv.playback.StreamRequest
 import dev.firetvlite.iptv.ui.components.remoteHomeKey
 import dev.firetvlite.iptv.ui.components.FLText
+import dev.firetvlite.iptv.ui.components.FocusSurface
 import dev.firetvlite.iptv.ui.components.PrimaryButton
 import dev.firetvlite.iptv.ui.components.ProgressBar
 import dev.firetvlite.iptv.ui.components.SecondaryButton
@@ -40,6 +43,7 @@ internal fun ChannelHealthSection(source: SourceEntity?) {
     val container = (LocalContext.current.applicationContext as FireLiteApplication).container
     val playback = container.playback
     val progress by playback.healthCheck.collectAsState()
+    val dead by container.deadChannels.state.collectAsState()
     val dao = container.database.channelDao()
     var group by rememberSaveable(source?.id) { mutableStateOf<String?>(null) }
     var choosing by remember { mutableStateOf(false) }
@@ -88,6 +92,16 @@ internal fun ChannelHealthSection(source: SourceEntity?) {
                 progress.complete -> R.string.health_complete
                 else -> R.string.health_stopped
             }), style = FireLiteTheme.typography.body)
+        }
+        FLText(stringResource(R.string.settings_dead_count, dead.entries.size), style = FireLiteTheme.typography.title)
+        if (dead.entries.isNotEmpty()) FLText(stringResource(R.string.health_dead_help), style = FireLiteTheme.typography.body)
+        val now = remember(dead) { System.currentTimeMillis() }
+        dead.entries.sortedBy { it.first }.forEach { entry ->
+            FocusSurface(onClick = {}, focusedScale = 1f, background = SolidColor(FireLiteTheme.colors.surfaceHigh),
+                modifier = Modifier.fillMaxWidth().settingsControl("dead-${entry.key}")) {
+                FLText(entry.line(now), style = FireLiteTheme.typography.body, maxLines = 2,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
+            }
         }
     }
 }

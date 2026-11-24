@@ -48,6 +48,8 @@
     <string name="health_all">Wszystkie</string>
     <string name="health_ungrouped">Bez kategorii</string>
     <string name="health_progress">Sprawdzono %1$d/%2$d · martwe %3$d · ok %4$d</string>
+    <string name="health_dead_help">Od najdłużej martwych. „Do usunięcia”: martwy w co najmniej 3 sprawdzeniach i od co najmniej 30 dni. Kanał znika z listy, gdy znów zadziała.</string>
+    <string name="health_recovered_detail">znów działa</string>
     <string name="health_complete">Sprawdzanie ukończone</string>
     <string name="health_stopped">Sprawdzanie zatrzymane</string>
     <string name="health_error">Nie udało się dokończyć sprawdzania</string>
@@ -105,6 +107,7 @@
     <string name="imdb_votes_thousands">%1$s tys. głosów</string>
     <string name="imdb_votes_millions">%1$s mln głosów</string>
     <string name="imdb_unrated">IMDb —</string>
+    <string name="omdb_films_help">Ranking filmów z programu TV według ocen IMDb. Jest też w szybkim menu: przytrzymaj Menu podczas oglądania.</string>
     <string name="omdb_key_label">Klucz OMDb (oceny IMDb)</string>
     <string name="omdb_key_help">Darmowy klucz: omdbapi.com/apikey.aspx. Limit klucza: 1000 zapytań dziennie; budżet aplikacji: 950.</string>
     <string name="omdb_key_activation_help">Darmowy klucz wymaga aktywacji linkiem z wiadomości e-mail. Po aktywacji zapisz go ponownie, aby od razu ponowić pobieranie ocen.</string>

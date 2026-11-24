@@ -112,6 +112,11 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
         playerViewModel.returnToFullscreen()
     }
 
+    // Films opened from Settings with no channel to return to: Back goes to Settings instead of leaving the app.
+    BackHandler(enabled = mode == PlayerMode.Panel && current == StreamPanel.Films && channel == null) {
+        current = StreamPanel.Settings
+    }
+
     Box(Modifier.fillMaxSize().background(FireLiteTheme.colors.background).drawWithContent {
         drawContent()
         if (firstDraw.compareAndSet(false, true)) startup.mark(LaunchPhase.Compose)
@@ -132,7 +137,7 @@ private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: Library
                         onCheckForUpdate = updateViewModel::checkForUpdate,
                         onInstallUpdate = updateViewModel::downloadAndInstall,
                         onOpenInstallSettings = updateViewModel::openInstallSettings,
-                        source = source, sources = sources, importState = importState, epgStates = epgStates,
+                        source = source, sources = sources, importState = importState, onFilms = { navigate(StreamPanel.Films) }, epgStates = epgStates,
                         onSaveSource = libraryViewModel::saveSource,
                         onActivateSource = libraryViewModel::activateSource,
                         onDeleteSource = libraryViewModel::deleteSource,

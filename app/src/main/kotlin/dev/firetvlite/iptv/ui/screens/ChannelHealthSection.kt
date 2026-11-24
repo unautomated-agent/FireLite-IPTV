@@ -3,6 +3,7 @@ package dev.firetvlite.iptv.ui.screens
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -10,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -17,6 +19,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -25,9 +28,11 @@ import dev.firetvlite.iptv.FireLiteApplication
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.db.SourceEntity
 import dev.firetvlite.iptv.data.playlist.PlaylistHttpHeaders
+import dev.firetvlite.iptv.playback.DeadChannel
 import dev.firetvlite.iptv.playback.StreamRequest
 import dev.firetvlite.iptv.ui.components.remoteHomeKey
 import dev.firetvlite.iptv.ui.components.FLText
+import dev.firetvlite.iptv.ui.components.FocusSurface
 import dev.firetvlite.iptv.ui.components.PrimaryButton
 import dev.firetvlite.iptv.ui.components.ProgressBar
 import dev.firetvlite.iptv.ui.components.SecondaryButton
@@ -40,6 +45,7 @@ internal fun ChannelHealthSection(source: SourceEntity?) {
     val container = (LocalContext.current.applicationContext as FireLiteApplication).container
     val playback = container.playback
     val progress by playback.healthCheck.collectAsState()
+    val dead by container.deadChannels.state.collectAsState()
     val dao = container.database.channelDao()
     var group by rememberSaveable(source?.id) { mutableStateOf<String?>(null) }
     var choosing by remember { mutableStateOf(false) }
@@ -88,6 +94,26 @@ internal fun ChannelHealthSection(source: SourceEntity?) {
                 progress.complete -> R.string.health_complete
                 else -> R.string.health_stopped
             }), style = FireLiteTheme.typography.body)
+        }
+        FLText(stringResource(R.string.settings_dead_count, dead.entries.size), style = FireLiteTheme.typography.title)
+        if (dead.entries.isNotEmpty()) FLText(stringResource(R.string.health_dead_help), style = FireLiteTheme.typography.body)
+        val now = remember(dead) { System.currentTimeMillis() }
+        // A focused row whose channel works again stays until focus leaves it, so focus never drops out of the pane.
+        var held by remember { mutableStateOf<DeadChannel?>(null) }
+        val recovered = held?.takeIf { it.key !in dead.keys }
+        (dead.entries + listOfNotNull(recovered)).sortedBy { it.first }.forEach { entry ->
+            key(entry.key) {
+                FocusSurface(onClick = {}, focusedScale = 1f, background = SolidColor(FireLiteTheme.colors.surfaceHigh),
+                    onFocusChanged = { focused -> if (focused) held = entry else if (held?.key == entry.key) held = null },
+                    modifier = Modifier.fillMaxWidth().settingsControl("dead-${entry.key}")) {
+                    // The name may be cut; the dates and the count on their own line never are.
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 8.dp)) {
+                        FLText(entry.name, style = FireLiteTheme.typography.body, maxLines = 1)
+                        FLText(if (entry === recovered) stringResource(R.string.health_recovered_detail) else entry.detail(now),
+                            style = FireLiteTheme.typography.body)
+                    }
+                }
+            }
         }
     }
 }

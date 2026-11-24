@@ -129,6 +129,7 @@ class PlaybackController internal constructor(
     private val channelResult: (StreamRequest, String?) -> Unit = { _, _ -> },
     private val healthResult: (StreamRequest, String?) -> Unit = { _, _ -> },
     private val healthSummary: (String) -> Unit = {},
+    private val healthStarted: () -> Unit = {},
     private val recordStall: (PlaybackStall) -> Unit = {},
     private val healthProbe: (StreamRequest, (okhttp3.Call?) -> Unit, () -> Unit) -> String? = { request, call, active ->
         ChannelHealthProbe().check(request, call, active)
@@ -159,8 +160,8 @@ class PlaybackController internal constructor(
     }, { Log.d("FireLiteStream", it) }, setStream = { player, item, factory ->
         player.setMediaSource(PlaybackMediaSourceFactory(factory).createMediaSource(item))
     }, recordPlayback = diagnosticRecorder(context, scope), channelResult = { request, reason -> deadChannels.result(request, reason) },
-        healthResult = { request, reason -> deadChannels.result(request, reason, "health check") },
-        healthSummary = deadChannels::checkSummary, recordStall = stalls::record, reports = reports,
+        healthResult = { request, reason -> deadChannels.result(request, reason, DeadChannels.HEALTH_CHECK) },
+        healthSummary = deadChannels::checkSummary, healthStarted = deadChannels::checkStarted, recordStall = stalls::record, reports = reports,
         loudness = loudness, launchEvent = launchEvent, usageSink = usageSink)
 
     private val gate = StreamGate()
@@ -936,6 +937,7 @@ class PlaybackController internal constructor(
         activeSession = session
         val generation = ++healthGeneration
         mutableHealthCheck.value = ChannelCheckProgress(running = true, scope = DeadChannels.safeName(scopeName), total = total)
+        healthStarted()
         publishHealthSummary("running")
         healthJob = scope.launch(start = CoroutineStart.LAZY) {
             try {

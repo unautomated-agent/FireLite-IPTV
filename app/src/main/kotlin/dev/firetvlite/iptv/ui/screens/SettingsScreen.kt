@@ -99,6 +99,7 @@ fun SettingsScreen(
     source: SourceEntity?,
     sources: List<SavedSource>,
     importState: ImportState,
+    onFilms: () -> Unit = {},
     epgStates: Map<Long, EpgState>,
     onSaveSource: (url: String, userAgent: String, epgUrl: String, id: Long?) -> Unit,
     onActivateSource: (Long) -> Unit,
@@ -191,7 +192,7 @@ fun SettingsScreen(
                                 FLText(stringResource(R.string.settings_loudness_help), style = FireLiteTheme.typography.body)
                             }
                             SettingsSection.Remote -> SettingsCard { RemoteKeySettings() }
-                            SettingsSection.Omdb -> SettingsCard { OmdbSettings() }
+                            SettingsSection.Omdb -> SettingsCard { OmdbSettings(onFilms) }
                             SettingsSection.Health -> SettingsCard { ChannelHealthSection(source) }
                             SettingsSection.Diagnostics -> SettingsCard { DiagnosticsSection(source, source?.id?.let { epgStates[it] }, diagnostics) }
                             SettingsSection.Updates -> UpdateSection(installed, updateState, onCheckForUpdate, onInstallUpdate, onOpenInstallSettings)

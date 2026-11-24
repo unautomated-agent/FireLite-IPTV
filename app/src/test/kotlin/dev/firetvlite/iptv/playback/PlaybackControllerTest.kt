@@ -518,6 +518,13 @@ class PlaybackControllerTest {
             firstPicture()
             assertTrue(summaries.last().startsWith("start: live resume total="))
             assertEquals(2, summaries.size)
+            // The channel the app opened with is a resume, not another cold start, when the app comes back.
+            controller.play(request.copy(coldStart = true))
+            firstPicture()
+            controller.suspendStream()
+            controller.resumeStream()
+            firstPicture()
+            assertTrue(summaries.last().startsWith("start: live resume total="))
         } finally { controller.stop() }
     }
 

@@ -548,8 +548,8 @@ class PlaybackController internal constructor(
         val timing = startupTiming ?: return
         val total = timing.totalMs()
         val trigger = when {
-            request.coldStart -> "cold"
             request.resumed -> "resume"
+            request.coldStart -> "cold"
             total >= SLOW_START_MS -> "slow"
             else -> return
         }

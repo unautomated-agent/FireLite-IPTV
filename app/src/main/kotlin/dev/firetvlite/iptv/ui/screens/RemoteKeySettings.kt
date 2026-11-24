@@ -46,7 +46,8 @@ internal fun RemoteKeySettings() {
             }), style = FireLiteTheme.typography.body)
         }
     }
-    if (keys.menu != 0 || keys.home != 0) SecondaryButton(stringResource(R.string.remote_clear), {
+    // Always present: a focused button that disappears would throw the focus out of this section.
+    SecondaryButton(stringResource(R.string.remote_clear), {
         remote.clear(RemoteAlias.Menu)
         remote.clear(RemoteAlias.Home)
     }, Modifier.settingsControl("remote-clear"))

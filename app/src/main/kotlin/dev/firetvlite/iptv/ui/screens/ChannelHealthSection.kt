@@ -11,6 +11,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -27,6 +28,7 @@ import dev.firetvlite.iptv.FireLiteApplication
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.db.SourceEntity
 import dev.firetvlite.iptv.data.playlist.PlaylistHttpHeaders
+import dev.firetvlite.iptv.playback.DeadChannel
 import dev.firetvlite.iptv.playback.StreamRequest
 import dev.firetvlite.iptv.ui.components.remoteHomeKey
 import dev.firetvlite.iptv.ui.components.FLText
@@ -96,11 +98,18 @@ internal fun ChannelHealthSection(source: SourceEntity?) {
         FLText(stringResource(R.string.settings_dead_count, dead.entries.size), style = FireLiteTheme.typography.title)
         if (dead.entries.isNotEmpty()) FLText(stringResource(R.string.health_dead_help), style = FireLiteTheme.typography.body)
         val now = remember(dead) { System.currentTimeMillis() }
-        dead.entries.sortedBy { it.first }.forEach { entry ->
-            FocusSurface(onClick = {}, focusedScale = 1f, background = SolidColor(FireLiteTheme.colors.surfaceHigh),
-                modifier = Modifier.fillMaxWidth().settingsControl("dead-${entry.key}")) {
-                FLText(entry.line(now), style = FireLiteTheme.typography.body, maxLines = 2,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
+        // A focused row whose channel works again stays until focus leaves it, so focus never drops out of the pane.
+        var held by remember { mutableStateOf<DeadChannel?>(null) }
+        val recovered = held?.takeIf { it.key !in dead.keys }
+        (dead.entries + listOfNotNull(recovered)).sortedBy { it.first }.forEach { entry ->
+            key(entry.key) {
+                FocusSurface(onClick = {}, focusedScale = 1f, background = SolidColor(FireLiteTheme.colors.surfaceHigh),
+                    onFocusChanged = { focused -> if (focused) held = entry else if (held?.key == entry.key) held = null },
+                    modifier = Modifier.fillMaxWidth().settingsControl("dead-${entry.key}")) {
+                    FLText(if (entry === recovered) stringResource(R.string.health_recovered, entry.name) else entry.line(now),
+                        style = FireLiteTheme.typography.body, maxLines = 2,
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp))
+                }
             }
         }
     }

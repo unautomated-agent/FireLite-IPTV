@@ -1,6 +1,5 @@
 package dev.firetvlite.iptv
 
-import android.content.Intent
 import android.os.Bundle
 import android.view.KeyEvent
 import android.view.MotionEvent
@@ -9,6 +8,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.viewModels
 import dev.firetvlite.iptv.playback.PlaybackLifecycle
 import dev.firetvlite.iptv.playback.RemoteAlias
+import dev.firetvlite.iptv.ui.components.RemoteHome
 import dev.firetvlite.iptv.ui.navigation.GuideBackAction
 import dev.firetvlite.iptv.ui.navigation.guideBackAction
 import dev.firetvlite.iptv.ui.navigation.OverlayBackAction
@@ -26,9 +26,7 @@ class MainActivity : ComponentActivity() {
 
     /** A key of another remote learned in Settings, e.g. Tools as Menu and Exit as Home. */
     private fun remoteAlias(event: KeyEvent): Boolean? {
-        val container = (application as FireLiteApplication).container
-        if (!container.startup.ready.value) return null
-        val remote = container.remoteKeys
+        val remote = (application as FireLiteApplication).container.loadedRemoteKeys() ?: return null
         if (remote.learning.value != null) {
             if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
                 remote.pressed(event.keyCode)
@@ -46,10 +44,7 @@ class MainActivity : ComponentActivity() {
                 KeyEvent.KEYCODE_MENU, event.repeatCount, event.metaState, event.deviceId, event.scanCode,
                 event.flags, event.source))
             RemoteAlias.Home -> {
-                if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) runCatching {
-                    startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_HOME)
-                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                }
+                if (event.action == KeyEvent.ACTION_UP && !event.isCanceled) RemoteHome.open(this)
                 true
             }
             null -> null

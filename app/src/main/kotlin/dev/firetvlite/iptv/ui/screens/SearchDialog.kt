@@ -62,6 +62,7 @@ import dev.firetvlite.iptv.data.SearchWindow
 import dev.firetvlite.iptv.data.db.ChannelEntity
 import dev.firetvlite.iptv.data.db.SearchProgramme
 import dev.firetvlite.iptv.playback.CatchupUrlBuilder
+import dev.firetvlite.iptv.ui.components.remoteHomeKey
 import dev.firetvlite.iptv.ui.components.ArchiveIcon
 import dev.firetvlite.iptv.ui.components.DeadChannelIcon
 import dev.firetvlite.iptv.ui.components.FLText
@@ -127,7 +128,7 @@ internal fun SearchDialog(sourceId: Long?, viewModel: PlayerViewModel) {
         val keyboardVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
         val inputLabel = stringResource(R.string.search_input)
         LaunchedEffect(Unit) { fieldFocus.requestFocusWhenReady() }
-        Column(Modifier.fillMaxSize().background(colors.background).padding(horizontal = 48.dp, vertical = 27.dp),
+        Column(Modifier.fillMaxSize().remoteHomeKey().background(colors.background).padding(horizontal = 48.dp, vertical = 27.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween) {

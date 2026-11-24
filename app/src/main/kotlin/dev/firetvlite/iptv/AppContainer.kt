@@ -47,6 +47,9 @@ class AppContainer(application: Application, startedAt: Long = SystemClock.elaps
     val clockPreferences by lazy { ClockPreferences(application) }
     val reminderPreferences by lazy { ReminderPreferences(application) }
     val remoteKeys by lazy { dev.firetvlite.iptv.data.RemoteKeyPreferences(application) }
+    private val remoteKeysLoading = applicationScope.launch(Dispatchers.IO) { remoteKeys }
+    /** Null for the first moments of the process, until the saved buttons are read off the main thread. */
+    fun loadedRemoteKeys() = if (remoteKeysLoading.isCompleted) remoteKeys else null
     internal val loudnessPreferences = LoudnessPreferences(application, applicationScope)
     internal val loudness = LoudnessLeveller()
 
@@ -88,7 +91,6 @@ class AppContainer(application: Application, startedAt: Long = SystemClock.elaps
             withContext(Dispatchers.IO) {
                 clockPreferences
                 reminderPreferences
-                remoteKeys
                 films
             }
             startup.backgroundReady()

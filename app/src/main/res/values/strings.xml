@@ -91,14 +91,14 @@
     <string name="films_live">Na żywo</string>
     <string name="audio_hearing">Dla osób niesłyszących</string>
     <string name="films_archive">Z archiwum</string>
-    <string name="films_archive_remaining">Dostępny jeszcze: %1$d godz. %2$d min</string>
+    <string name="films_archive_remaining">jeszcze %1$d h %2$d min</string>
     <string name="films_archive_expired">Ten film nie jest już dostępny w archiwum.</string>
     <string name="films_selected_tab">● %1$s</string>
+    <string name="films_tabs_hint">Wstecz lub ← wraca do zakładek na górze</string>
     <string name="films_empty">Brak ocenionych filmów w tej zakładce.</string>
     <string name="films_loading">Wczytywanie rankingu i ocen IMDb…</string>
     <string name="films_missing_epg">Brak EPG dla kanałów tej listy. Odśwież EPG w Ustawieniach.</string>
     <string name="films_starts_at">Zaczyna się o %1$s</string>
-    <string name="films_airing_time">NA ŻYWO · %1$s</string>
     <string name="imdb_rating">IMDb %1$s/10</string>
     <string name="imdb_rating_with_votes">%1$s · %2$s</string>
     <string name="imdb_votes_one">%1$s głos</string>
@@ -106,7 +106,6 @@
     <string name="imdb_votes_many">%1$s głosów</string>
     <string name="imdb_votes_thousands">%1$s tys. głosów</string>
     <string name="imdb_votes_millions">%1$s mln głosów</string>
-    <string name="imdb_unrated">IMDb —</string>
     <string name="omdb_films_help">Ranking filmów z programu TV według ocen IMDb. Jest też w szybkim menu: przytrzymaj Menu podczas oglądania.</string>
     <string name="omdb_key_label">Klucz OMDb (oceny IMDb)</string>
     <string name="omdb_key_help">Darmowy klucz: omdbapi.com/apikey.aspx. Limit klucza: 1000 zapytań dziennie; budżet aplikacji: 950.</string>

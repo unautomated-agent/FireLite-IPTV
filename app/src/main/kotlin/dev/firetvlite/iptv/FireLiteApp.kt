@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -24,6 +25,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.res.stringResource
@@ -75,6 +77,14 @@ private const val PANEL_VIDEO_INSET_DP = 216
 @Composable
 private fun AppShell(updateViewModel: UpdateViewModel, libraryViewModel: LibraryViewModel, playerViewModel: PlayerViewModel) {
     val startup = (LocalContext.current.applicationContext as FireLiteApplication).container.startup
+    // A channel check stops playback, so the player no longer holds the screen; the screensaver would stop the check.
+    val checking = (LocalContext.current.applicationContext as FireLiteApplication).container.playback
+        .healthCheck.collectAsState().value.running
+    val root = LocalView.current
+    DisposableEffect(root, checking) {
+        root.keepScreenOn = checking
+        onDispose { root.keepScreenOn = false }
+    }
     val firstDraw = remember { java.util.concurrent.atomic.AtomicBoolean(false) }
     val startupReady by libraryViewModel.startupReady.collectAsState()
     val updateState by updateViewModel.state.collectAsState()

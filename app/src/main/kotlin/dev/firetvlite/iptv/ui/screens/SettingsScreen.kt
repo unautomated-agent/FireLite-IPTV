@@ -557,8 +557,10 @@ private fun UpdateSection(
         }
         FlowRow(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             SecondaryButton(text = stringResource(R.string.update_check), onClick = onCheck, modifier = Modifier.settingsControl("update-check"))
-            if (state.pendingRelease != null && state !is UpdateState.Downloading) {
-                PrimaryButton(text = stringResource(R.string.update_install), onClick = onInstall, modifier = Modifier.settingsControl("update-install"))
+            // Stays composed while downloading: removing the focused button dropped focus to the first rail item.
+            if (state.pendingRelease != null) {
+                PrimaryButton(text = stringResource(R.string.update_install),
+                    onClick = { if (state !is UpdateState.Downloading) onInstall() }, modifier = Modifier.settingsControl("update-install"))
             }
             if (state is UpdateState.Failed && state.reason == FailureReason.PermissionNeeded) {
                 SecondaryButton(text = stringResource(R.string.update_open_settings), onClick = onOpenInstallSettings, modifier = Modifier.settingsControl("update-permission"))

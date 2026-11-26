@@ -61,8 +61,9 @@ object Films {
         val short = simplified(main)
         return listOfNotNull(
             OmdbQuery(main, null).takeIf { year != null },
-            short?.let { OmdbQuery(it, year) },
-            OmdbQuery(short ?: main, year, search = true).takeIf { year != null },
+            // Without its part number a title fits every instalment, so only the exact year may match.
+            short?.let { OmdbQuery(it, year, tolerance = 0) },
+            OmdbQuery(short ?: main, year, search = true, tolerance = if (short == null) 1 else 0).takeIf { year != null },
         )
     }
     internal fun variantKey(identity: String, title: String, year: Int?, search: Boolean = false): String =
@@ -89,11 +90,11 @@ object Films {
 }
 
 data class OmdbMovie(val type: String, val year: Int, val rating: Double?, val votes: Long, val id: String) {
-    fun matches(year: Int?): Boolean = type == "movie" && (year == null || kotlin.math.abs(this.year - year) <= 1) &&
+    fun matches(year: Int?, tolerance: Int = 1): Boolean = type == "movie" && (year == null || kotlin.math.abs(this.year - year) <= tolerance) &&
         id.matches(Regex("tt[0-9]+"))
 }
 
-internal data class OmdbQuery(val title: String, val year: Int?, val search: Boolean = false)
+internal data class OmdbQuery(val title: String, val year: Int?, val search: Boolean = false, val tolerance: Int = 1)
 
 sealed interface OmdbResult {
     data class Found(val movie: OmdbMovie) : OmdbResult
@@ -103,8 +104,8 @@ sealed interface OmdbResult {
 
 fun interface OmdbClient {
     suspend fun lookup(key: String, title: String, year: Int?): OmdbResult
-    /** Finds the film by title words, picks the result within ±1 year and loads it; [second] reserves the second request. */
-    suspend fun search(key: String, title: String, year: Int, second: suspend () -> Boolean): OmdbResult = OmdbResult.Missing
+    /** Finds the film by title words, picks the result within [tolerance] years and loads it; [second] reserves the second request. */
+    suspend fun search(key: String, title: String, year: Int, tolerance: Int, second: suspend () -> Boolean): OmdbResult = OmdbResult.Missing
 }
 
 interface FilmStore {
@@ -138,20 +139,21 @@ class FilmLookup(private val client: OmdbClient, private val store: FilmStore,
         val identity = Films.key(p)
         store.cached(identity)?.takeIf { Films.fresh(it, now) }?.let { return it }
         val year = Films.year(p)
-        for (query in Films.queries(p).map { OmdbQuery(it.first, it.second) } + Films.fallbacks(p)) {
+        for (query in (Films.queries(p).map { OmdbQuery(it.first, it.second) } + Films.fallbacks(p))
+            .distinctBy { Films.variantKey(identity, it.title, it.year, it.search) }) {
             currentCoroutineContext().ensureActive()
             val variant = Films.variantKey(identity, query.title, query.year, query.search)
             if (store.cached(variant)?.let { Films.fresh(it, now) } == true) continue
             wait()
             val reserve: suspend () -> Boolean = { store.reserve(Films.day(clock())).also { if (it) observer.requested(clock()) } }
             if (!reserve()) { fail("LOCAL_BUDGET"); return null }
-            val result = if (query.search) client.search(key, query.title, query.year!!, reserve)
+            val result = if (query.search) client.search(key, query.title, query.year!!, query.tolerance) { wait(); reserve() }
                 else client.lookup(key, query.title, query.year)
             observer.completed(result, clock())
             when (result) {
                 is OmdbResult.Failed -> { lastError = result.code; return null }
                 OmdbResult.Missing -> Unit
-                is OmdbResult.Found -> if (result.movie.matches(year)) {
+                is OmdbResult.Found -> if (result.movie.matches(year, query.tolerance)) {
                     val movie = result.movie
                     return FilmRatingEntity(identity, movie.rating, movie.votes, movie.id, clock()).also { store.save(it) }
                 }

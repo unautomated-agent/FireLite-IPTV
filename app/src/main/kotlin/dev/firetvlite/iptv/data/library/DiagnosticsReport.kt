@@ -227,11 +227,14 @@ object DiagnosticsReport {
             appendLine("Ostatni raport błędu:")
             append(crash ?: "Brak")
         }
-        val known = stats.secrets + DiagnosticRedactor.secrets(source?.let {
-            listOf(it.url, it.epgUrl, *it.discoveredEpgUrls.split(Regex("[,\\s]+")).toTypedArray())
-        }.orEmpty())
-        return shareable(raw, known)
+        return masked(raw, source, stats)
     }
+
+    /** Masks addresses and the source's credentials in text that comes from the provider, such as guide titles. */
+    fun masked(text: String, source: SourceEntity?, stats: SourceDiagnostics): String =
+        shareable(text, stats.secrets + DiagnosticRedactor.secrets(source?.let {
+            listOf(it.url, it.epgUrl, *it.discoveredEpgUrls.split(Regex("[,\\s]+")).toTypedArray())
+        }.orEmpty()))
 
     fun payload(text: String): String {
         val masked = shareable(text)

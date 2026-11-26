@@ -15,10 +15,10 @@ import org.json.JSONObject
 class OmdbHttpClient(private val baseUrl: () -> String = { "https://www.omdbapi.com/" }) : OmdbClient {
     override suspend fun lookup(key: String, title: String, year: Int?): OmdbResult = request(key, movieQuery(title, year), ::decode)
 
-    override suspend fun search(key: String, title: String, year: Int, second: suspend () -> Boolean): OmdbResult {
+    override suspend fun search(key: String, title: String, year: Int, tolerance: Int, second: suspend () -> Boolean): OmdbResult {
         var id: String? = null
         val found = request(key, searchQuery(title)) { body ->
-            (decode(body, requireYear = false) as? OmdbResult.Failed) ?: OmdbResult.Missing.also { id = searchMatch(body, year) }
+            (decode(body, requireYear = false) as? OmdbResult.Failed) ?: OmdbResult.Missing.also { id = searchMatch(body, year, tolerance) }
         }
         val match = id
         return when {
@@ -62,13 +62,13 @@ class OmdbHttpClient(private val baseUrl: () -> String = { "https://www.omdbapi.
 
         internal fun searchQuery(title: String): String = "s=${URLEncoder.encode(title, "UTF-8")}&type=movie"
 
-        /** IMDb id of the search result closest to [year], within ±1 year; OMDb order breaks ties. */
-        internal fun searchMatch(body: String, year: Int): String? = try {
+        /** IMDb id of the search result closest to [year], within [tolerance] years; OMDb order breaks ties. */
+        internal fun searchMatch(body: String, year: Int, tolerance: Int = 1): String? = try {
             val results = JSONObject(body).optJSONArray("Search")
             (0 until (results?.length() ?: 0)).map { results!!.getJSONObject(it) }
                 .filter { it.optString("Type") == "movie" && it.optString("imdbID").matches(Regex("tt[0-9]+")) }
                 .mapNotNull { r -> r.optString("Year").take(4).toIntOrNull()?.let { r.optString("imdbID") to kotlin.math.abs(it - year) } }
-                .filter { it.second <= 1 }.minByOrNull { it.second }?.first
+                .filter { it.second <= tolerance }.minByOrNull { it.second }?.first
         } catch (_: Exception) { null }
 
         internal const val MAX_BODY_BYTES = 64 * 1024

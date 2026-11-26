@@ -117,6 +117,7 @@ class OmdbHttpClientTest {
         assertEquals("tt1", OmdbHttpClient.searchMatch(body, 2003))
         assertEquals("tt2", OmdbHttpClient.searchMatch(body, 2002))
         assertNull(OmdbHttpClient.searchMatch(body, 2007))
+        assertNull(OmdbHttpClient.searchMatch(body, 2003, 0))
         assertNull(OmdbHttpClient.searchMatch("not json", 2001))
         assertEquals(OmdbResult.Missing, OmdbHttpClient.decode("""{"Response":"False","Error":"Too many results."}"""))
     }

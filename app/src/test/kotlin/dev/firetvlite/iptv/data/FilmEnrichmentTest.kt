@@ -261,8 +261,8 @@ class FilmEnrichmentTest {
             calls.add("t=$title y=$year")
             return titles[title to year] ?: OmdbResult.Missing
         }
-        override suspend fun search(key: String, title: String, year: Int, second: suspend () -> Boolean): OmdbResult {
-            calls.add("s=$title y=$year")
+        override suspend fun search(key: String, title: String, year: Int, tolerance: Int, second: suspend () -> Boolean): OmdbResult {
+            calls.add("s=$title y=$year±$tolerance")
             val hit = searches[title] ?: return OmdbResult.Missing
             return if (second()) hit else OmdbResult.Failed("LOCAL_BUDGET")
         }
@@ -295,10 +295,12 @@ class FilmEnrichmentTest {
         val p = film("Harry Potter and the Deathly Hallows: Part 1")
         val store = Store()
         val client = Omdb(emptyMap(), mapOf("Harry Potter and the Deathly Hallows" to found))
-        assertEquals("tt123", FilmLookup(client, store, { now }) {}.lookup(p, "fixture", now)!!.imdbId)
+        var waits = 0
+        assertEquals("tt123", FilmLookup(client, store, { now }) { waits++ }.lookup(p, "fixture", now)!!.imdbId)
         assertEquals(listOf("t=Harry Potter and the Deathly Hallows: Part 1 y=2002", "t=Harry Potter and the Deathly Hallows: Part 1 y=null",
-            "t=Harry Potter and the Deathly Hallows y=2002", "s=Harry Potter and the Deathly Hallows y=2002"), client.calls)
+            "t=Harry Potter and the Deathly Hallows y=2002", "s=Harry Potter and the Deathly Hallows y=2002±0"), client.calls)
         assertEquals(5, store.requests)
+        assertEquals(5, waits)
     }
 
     @Test fun searchWithoutBudgetForItsSecondRequestStopsAndIsRetriedLater() = runBlocking {
@@ -328,5 +330,19 @@ class FilmEnrichmentTest {
         assertEquals("OMDb brak: Film 49 | 2002", stats.missLines().first())
         assertEquals("OMDb brak: Film 10 | 2002", stats.missLines().last())
         assertTrue(stats.today(now + Films.DAY).missLines().isEmpty())
+    }
+
+    @Test fun droppedPartNumberNeverAcceptsAnotherInstalmentAndEqualQueriesRunOnce() = runBlocking {
+        val part2 = OmdbResult.Found(OmdbMovie("movie", 2003, 7.0, 10, "tt2"))
+        val p = film("Saga").copy(originalTitle = "Saga: Part 1")
+        val store = Store()
+        val missing = Omdb(emptyMap())
+        assertNull(FilmLookup(missing, store, { now }) {}.lookup(p, "fixture", now)!!.imdbId)
+        assertEquals(listOf("t=Saga: Part 1 y=2002", "t=Saga y=2002", "t=Saga: Part 1 y=null", "s=Saga y=2002±0"), missing.calls)
+        val other = film("Opowieść").copy(originalTitle = "Saga: Part 1")
+        val client = Omdb(mapOf(("Saga" to 2002) to part2))
+        assertNull(FilmLookup(client, Store(), { now }) {}.lookup(other, "fixture", now)!!.imdbId)
+        assertEquals("t=Saga y=2002", client.calls[3])
+        assertEquals(4, store.requests)
     }
 }

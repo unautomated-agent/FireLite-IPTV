@@ -379,6 +379,8 @@ class FilmEnrichmentTest {
         val potter = film("Harry Potter i Kamień Filozoficzny").copy(originalTitle = "Harry Potter and the Philosopher's Stone")
         assertTrue(Films.sameTitle(potter, "Harry Potter and the Sorcerer's Stone"))
         assertTrue(Films.sameTitle(potter, "Harry Potter i kamien filozoficzny"))
+        assertTrue(Films.sameTitle(film("Amélie"), "Ame\u0301lie"))
+        assertTrue(Films.sameTitle(film("Ame\u0301lie"), "Amélie"))
         assertFalse(Films.sameTitle(potter, "Harry Potter and the Chamber of Secrets"))
         val hallows = film("Insygnia").copy(originalTitle = "Harry Potter and the Deathly Hallows")
         assertTrue(Films.sameTitle(hallows, "Harry Potter and the Deathly Hallows: Part 1"))

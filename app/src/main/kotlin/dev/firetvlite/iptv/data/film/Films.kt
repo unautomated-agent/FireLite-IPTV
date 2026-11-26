@@ -57,8 +57,8 @@ object Films {
     /** Title without subtitle or part number: "Harry Potter i Insygnia Śmierci: część 1" → "Harry Potter i Insygnia Śmierci". */
     fun simplified(title: String): String? = title.replace(partSuffix, "").replace(subtitle, "").trim()
         .takeIf { normalized(it).isNotEmpty() && normalized(it) != normalized(title) }
-    private fun words(title: String): Set<String> = java.text.Normalizer.normalize(normalized(title), java.text.Normalizer.Form.NFD)
-        .replace(Regex("\\p{M}+"), "").replace('ł', 'l').split(' ').filter { it.isNotEmpty() }.toSet()
+    private fun words(title: String): Set<String> = normalized(
+        java.text.Normalizer.normalize(title, java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")).replace('ł', 'l').split(' ').filter { it.isNotEmpty() }.toSet()
     /** True when [found], the title OMDb answered with, is the programme's title, its short form, or differs by a word or two. */
     fun sameTitle(p: ProgrammeEntity, found: String): Boolean {
         val theirs = words(found)

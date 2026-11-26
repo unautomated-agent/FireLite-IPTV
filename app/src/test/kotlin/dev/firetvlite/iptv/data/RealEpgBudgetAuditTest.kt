@@ -14,7 +14,7 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 class RealEpgBudgetAuditTest {
-    private fun beforeQueries(p: ProgrammeEntity): List<Pair<String, Int>> {
+    private fun beforeQueries(p: ProgrammeEntity): List<Pair<String, Int?>> {
         val year = p.year ?: return emptyList()
         val titles = listOfNotNull(p.originalTitle?.takeIf(String::isNotBlank), p.title.takeIf(String::isNotBlank))
             .distinctBy(Films::normalized)
@@ -65,7 +65,7 @@ class RealEpgBudgetAuditTest {
         for (p in candidates) {
             val lookup = FilmLookup(OmdbClient { _, _, year ->
                 started.add(Films.key(p))
-                if (hit) OmdbResult.Found(OmdbMovie("movie", year, 7.0, 100, "tt123")) else OmdbResult.Missing
+                if (hit) OmdbResult.Found(OmdbMovie("movie", year ?: 2000, 7.0, 100, "tt123")) else OmdbResult.Missing
             }, store, { now }) {}
             if (lookup.lookup(p, "offline-fixture", now) != null) completed.add(Films.key(p))
             if (lookup.lastError == "LOCAL_BUDGET") break

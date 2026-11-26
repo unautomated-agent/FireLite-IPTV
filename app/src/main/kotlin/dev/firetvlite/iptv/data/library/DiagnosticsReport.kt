@@ -122,6 +122,7 @@ object DiagnosticsReport {
         }.toMutableSet()
         val failureEnd = lines.indexOfFirst { it == "Ostatnie poprawne odtwarzanie:" }.takeIf { it >= 0 } ?: lines.size
         lines.indices.filter { lines[it].startsWith("Martwe:") }.take(4).forEach { required.add(it) }
+        lines.indices.filter { lines[it].startsWith("OMDb brak:") }.take(8).forEach { required.add(it) }
         lines.indices.filter { lines[it].startsWith("Zawieszenie:") }.take(5).forEach { required.add(it) }
         lines.take(failureEnd).forEachIndexed { index, line ->
             if (line.startsWith("HLS request:") || line.startsWith("HLS variant:") || line.startsWith("HLS rendition:"))
@@ -226,11 +227,14 @@ object DiagnosticsReport {
             appendLine("Ostatni raport błędu:")
             append(crash ?: "Brak")
         }
-        val known = stats.secrets + DiagnosticRedactor.secrets(source?.let {
-            listOf(it.url, it.epgUrl, *it.discoveredEpgUrls.split(Regex("[,\\s]+")).toTypedArray())
-        }.orEmpty())
-        return shareable(raw, known)
+        return masked(raw, source, stats)
     }
+
+    /** Masks addresses and the source's credentials in text that comes from the provider, such as guide titles. */
+    fun masked(text: String, source: SourceEntity?, stats: SourceDiagnostics): String =
+        shareable(text, stats.secrets + DiagnosticRedactor.secrets(source?.let {
+            listOf(it.url, it.epgUrl, *it.discoveredEpgUrls.split(Regex("[,\\s]+")).toTypedArray())
+        }.orEmpty()))
 
     fun payload(text: String): String {
         val masked = shareable(text)

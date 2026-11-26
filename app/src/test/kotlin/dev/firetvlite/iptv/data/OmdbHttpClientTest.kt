@@ -103,4 +103,22 @@ class OmdbHttpClientTest {
             serving.get(10, TimeUnit.SECONDS)
         } finally { server.close() }
     }
+
+    @Test fun queriesWithoutYearAndSearchPickTheClosestYearWithinOne() {
+        assertEquals("t=Harry+Potter&type=movie", OmdbHttpClient.movieQuery("Harry Potter", null))
+        assertEquals("s=Harry+Potter&type=movie", OmdbHttpClient.searchQuery("Harry Potter"))
+        val body = """{"Search":[
+            {"Title":"A","Year":"2004","imdbID":"tt1","Type":"movie"},
+            {"Title":"B","Year":"2002","imdbID":"tt2","Type":"movie"},
+            {"Title":"C","Year":"2001","imdbID":"tt3","Type":"movie"},
+            {"Title":"D","Year":"2001–2005","imdbID":"tt4","Type":"series"},
+            {"Title":"E","Year":"2001","imdbID":"bad","Type":"movie"}],"Response":"True"}"""
+        assertEquals("tt3", OmdbHttpClient.searchMatch(body, 2001))
+        assertEquals("tt1", OmdbHttpClient.searchMatch(body, 2003))
+        assertEquals("tt2", OmdbHttpClient.searchMatch(body, 2002))
+        assertNull(OmdbHttpClient.searchMatch(body, 2007))
+        assertNull(OmdbHttpClient.searchMatch(body, 2003, 0))
+        assertNull(OmdbHttpClient.searchMatch("not json", 2001))
+        assertEquals(OmdbResult.Missing, OmdbHttpClient.decode("""{"Response":"False","Error":"Too many results."}"""))
+    }
 }

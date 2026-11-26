@@ -52,7 +52,7 @@ class OmdbMissAnalysisTest {
         assertEquals(0, requests)
         assertNotNull(lookup.lookup(p, "fixture", 0))
         assertNotNull(lookup.lookup(p, "fixture", 0))
-        assertEquals(1, requests)
+        assertEquals(2, requests)
         assertEquals(1, recorded)
     }
 }

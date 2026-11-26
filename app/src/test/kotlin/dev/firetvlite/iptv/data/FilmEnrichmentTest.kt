@@ -345,4 +345,10 @@ class FilmEnrichmentTest {
         assertEquals("t=Saga y=2002", client.calls[3])
         assertEquals(4, store.requests)
     }
+
+    @Test fun droppedEditionLabelStillAcceptsTheNeighbouringYear() = runBlocking {
+        val cut = OmdbResult.Found(OmdbMovie("movie", 2003, 8.1, 10, "tt9"))
+        val client = Omdb(mapOf(("Blade Runner" to 2002) to cut))
+        assertEquals("tt9", FilmLookup(client, Store(), { now }) {}.lookup(film("Blade Runner (Final Cut)"), "fixture", now)!!.imdbId)
+    }
 }

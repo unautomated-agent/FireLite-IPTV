@@ -59,11 +59,12 @@ object Films {
         val year = year(p)
         val main = queries(p).firstOrNull()?.first ?: return emptyList()
         val short = simplified(main)
+        val tolerance = if (partSuffix.containsMatchIn(main)) 0 else 1
         return listOfNotNull(
             OmdbQuery(main, null).takeIf { year != null },
-            // Without its part number a title fits every instalment, so only the exact year may match.
-            short?.let { OmdbQuery(it, year, tolerance = 0) },
-            OmdbQuery(short ?: main, year, search = true, tolerance = if (short == null) 1 else 0).takeIf { year != null },
+            // Without its part number a title fits every instalment, so then only the exact year may match.
+            short?.let { OmdbQuery(it, year, tolerance = tolerance) },
+            OmdbQuery(short ?: main, year, search = true, tolerance = tolerance).takeIf { year != null },
         )
     }
     internal fun variantKey(identity: String, title: String, year: Int?, search: Boolean = false): String =

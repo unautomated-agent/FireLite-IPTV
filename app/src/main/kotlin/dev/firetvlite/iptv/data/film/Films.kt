@@ -31,7 +31,8 @@ object Films {
     private val filmWord = Regex("(?iu)\\b(film\\w*|movies?|motion pictures?)\\b")
     private val notFilm = Regex("(?iu)\\b(wiadomości|news|informac\\w*|magazyn\\w*|publicysty\\w*|teleturniej\\w*|reality|talk[- ]show|show|rozryw\\w*|pogoda|reportaż\\w*|program\\w*)\\b")
     private val subtitle = Regex("\\s*(:|\\s[-–—]\\s|\\().*$")
-    private val partSuffix = Regex("(?iu)[\\s,.]*\\b(cz\\.?|część|part)\\s*[0-9ivxl]+\\b.*$")
+    private val partSuffix = Regex("(?iu)[\\s,.]*\\b(cz\\.?|część|part|vol\\.?|volume|chapter|rozdział|tom)\\s*" +
+        "([0-9ivxl]+|one|two|three|four|five|six|pierwsza|druga|trzecia|czwarta|piąta|pierwszy|drugi|trzeci|czwarty|piąty)\\b.*$")
     private val titleSeparators = Regex("[^\\p{L}\\p{N}]+")
     fun normalized(title: String): String = title.lowercase(Locale.ROOT)
         .replace(titleSeparators, " ").trim()

@@ -351,4 +351,12 @@ class FilmEnrichmentTest {
         val client = Omdb(mapOf(("Blade Runner" to 2002) to cut))
         assertEquals("tt9", FilmLookup(client, Store(), { now }) {}.lookup(film("Blade Runner (Final Cut)"), "fixture", now)!!.imdbId)
     }
+
+    @Test fun partNumberWrittenAsWordOrVolumeNeverAcceptsAnotherInstalment() = runBlocking {
+        val first = OmdbResult.Found(OmdbMovie("movie", 2003, 8.2, 10, "tt1"))
+        for (title in listOf("Saga: Part Two", "Saga: Vol. 2", "Saga, część druga")) {
+            val client = Omdb(mapOf(("Saga" to 2004) to first), mapOf("Saga" to first))
+            assertNull(title, FilmLookup(client, Store(), { now }) {}.lookup(film(title).copy(year = 2004), "fixture", now)!!.imdbId)
+        }
+    }
 }

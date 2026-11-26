@@ -263,7 +263,7 @@ class FilmEnrichmentTest {
             calls.add("t=$title y=$year")
             return titles[title to year] ?: OmdbResult.Missing
         }
-        override suspend fun search(key: String, title: String, year: Int, tolerance: Int, second: suspend () -> Boolean): OmdbResult {
+        override suspend fun search(key: String, title: String, year: Int, tolerance: Int, same: (String) -> Boolean, second: suspend () -> Boolean): OmdbResult {
             calls.add("s=$title y=$year±$tolerance")
             val hit = searches[title] ?: return OmdbResult.Missing
             return if (second()) hit else OmdbResult.Failed("LOCAL_BUDGET")

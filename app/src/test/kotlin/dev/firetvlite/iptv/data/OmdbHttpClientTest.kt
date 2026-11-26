@@ -119,6 +119,9 @@ class OmdbHttpClientTest {
         assertNull(OmdbHttpClient.searchMatch(body, 2007))
         assertNull(OmdbHttpClient.searchMatch(body, 2003, 0))
         assertNull(OmdbHttpClient.searchMatch("not json", 2001))
+        val titled = """{"Search":[{"Title":"Other","Year":"2002","imdbID":"tt1","Type":"movie"},{"Title":"Wanted","Year":"2003","imdbID":"tt2","Type":"movie"}]}"""
+        assertEquals("tt2", OmdbHttpClient.searchMatch(titled, 2002) { it == "Wanted" })
+        assertNull(OmdbHttpClient.searchMatch(titled, 2002) { false })
         assertEquals(OmdbResult.Missing, OmdbHttpClient.decode("""{"Response":"False","Error":"Too many results."}"""))
     }
 

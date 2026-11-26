@@ -129,8 +129,8 @@ sealed interface OmdbResult {
 
 fun interface OmdbClient {
     suspend fun lookup(key: String, title: String, year: Int?): OmdbResult
-    /** Finds the film by title words, picks the result within [tolerance] years and loads it; [second] reserves the second request. */
-    suspend fun search(key: String, title: String, year: Int, tolerance: Int, second: suspend () -> Boolean): OmdbResult = OmdbResult.Missing
+    /** Finds the film by title words, picks the result within [tolerance] years whose title [same] accepts and loads it; [second] reserves the second request. */
+    suspend fun search(key: String, title: String, year: Int, tolerance: Int, same: (String) -> Boolean, second: suspend () -> Boolean): OmdbResult = OmdbResult.Missing
 }
 
 interface FilmStore {
@@ -172,7 +172,7 @@ class FilmLookup(private val client: OmdbClient, private val store: FilmStore,
             wait()
             val reserve: suspend () -> Boolean = { store.reserve(Films.day(clock())).also { if (it) observer.requested(clock()) } }
             if (!reserve()) { fail("LOCAL_BUDGET"); return null }
-            val result = if (query.search) client.search(key, query.title, query.year!!, query.tolerance) { wait(); reserve() }
+            val result = if (query.search) client.search(key, query.title, query.year!!, query.tolerance, { Films.sameTitle(p, it) }) { wait(); reserve() }
                 else client.lookup(key, query.title, query.year)
             observer.completed(result, clock())
             when (result) {

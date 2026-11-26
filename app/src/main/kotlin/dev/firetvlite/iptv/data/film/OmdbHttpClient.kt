@@ -15,10 +15,10 @@ import org.json.JSONObject
 class OmdbHttpClient(private val baseUrl: () -> String = { "https://www.omdbapi.com/" }) : OmdbClient {
     override suspend fun lookup(key: String, title: String, year: Int?): OmdbResult = request(key, movieQuery(title, year), ::decode)
 
-    override suspend fun search(key: String, title: String, year: Int, tolerance: Int, second: suspend () -> Boolean): OmdbResult {
+    override suspend fun search(key: String, title: String, year: Int, tolerance: Int, same: (String) -> Boolean, second: suspend () -> Boolean): OmdbResult {
         var id: String? = null
         val found = request(key, searchQuery(title)) { body ->
-            (decode(body, requireYear = false) as? OmdbResult.Failed) ?: OmdbResult.Missing.also { id = searchMatch(body, year, tolerance) }
+            (decode(body, requireYear = false) as? OmdbResult.Failed) ?: OmdbResult.Missing.also { id = searchMatch(body, year, tolerance, same) }
         }
         val match = id
         return when {
@@ -62,11 +62,12 @@ class OmdbHttpClient(private val baseUrl: () -> String = { "https://www.omdbapi.
 
         internal fun searchQuery(title: String): String = "s=${URLEncoder.encode(title, "UTF-8")}&type=movie"
 
-        /** IMDb id of the search result closest to [year], within [tolerance] years; OMDb order breaks ties. */
-        internal fun searchMatch(body: String, year: Int, tolerance: Int = 1): String? = try {
+        /** IMDb id of the search result closest to [year], within [tolerance] years, whose title [same] accepts; OMDb order breaks ties. */
+        internal fun searchMatch(body: String, year: Int, tolerance: Int = 1, same: (String) -> Boolean = { true }): String? = try {
             val results = JSONObject(body).optJSONArray("Search")
             (0 until (results?.length() ?: 0)).map { results!!.getJSONObject(it) }
-                .filter { it.optString("Type") == "movie" && it.optString("imdbID").matches(Regex("tt[0-9]+")) }
+                .filter { it.optString("Type") == "movie" && it.optString("imdbID").matches(Regex("tt[0-9]+")) &&
+                    same(it.optString("Title")) }
                 .mapNotNull { r -> r.optString("Year").take(4).toIntOrNull()?.let { r.optString("imdbID") to kotlin.math.abs(it - year) } }
                 .filter { it.second <= tolerance }.minByOrNull { it.second }?.first
         } catch (_: Exception) { null }

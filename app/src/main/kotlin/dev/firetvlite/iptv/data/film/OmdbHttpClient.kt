@@ -105,7 +105,8 @@ class OmdbHttpClient(private val baseUrl: () -> String = { "https://www.omdbapi.
                     json.optString("Type"), year,
                     json.optString("imdbRating").toDoubleOrNull()?.takeIf { it in 0.0..10.0 },
                     json.optString("imdbVotes").replace(",", "").toLongOrNull()?.coerceAtLeast(0) ?: 0,
-                    json.optString("imdbID"),
+                    json.optString("imdbID"), json.optString("Title"),
+                    Regex("^(\\d{1,4}) min").find(json.optString("Runtime"))?.groupValues?.get(1)?.toInt(),
                 ))
             }
         } catch (_: Exception) { OmdbResult.Failed("BAD_RESPONSE") }

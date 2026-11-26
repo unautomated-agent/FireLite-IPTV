@@ -121,4 +121,13 @@ class OmdbHttpClientTest {
         assertNull(OmdbHttpClient.searchMatch("not json", 2001))
         assertEquals(OmdbResult.Missing, OmdbHttpClient.decode("""{"Response":"False","Error":"Too many results."}"""))
     }
+
+    @Test fun decodeKeepsTitleAndRuntime() {
+        fun movie(runtime: String) = (OmdbHttpClient.decode(
+            """{"Response":"True","Title":"Avenue of the Giants","Year":"2023","Runtime":"$runtime","Type":"movie","imdbRating":"6.5","imdbVotes":"1,234","imdbID":"tt1"}"""
+        ) as OmdbResult.Found).movie
+        assertEquals("Avenue of the Giants", movie("105 min").title)
+        assertEquals(105, movie("105 min").runtime)
+        assertEquals(null, movie("N/A").runtime)
+    }
 }

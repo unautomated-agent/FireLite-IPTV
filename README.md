@@ -170,7 +170,10 @@ the previously published guide. Lookup is limited to mapped channels of the acti
 programme starts in the next 48 hours. Original title is tried first, then the Polish title, both with the
 XMLTV year. If neither matches: the title without a year, the title without subtitle or part number, and
 finally an OMDb title search (two requests) picking the result closest to the year.
-Only movie responses within ±1 year are accepted (any year when XMLTV has none). Ratings are cached in Room
+Only movie responses within ±1 year are accepted (any year when XMLTV has none), and only when the title OMDb
+answers with is the programme's title (subtitle or a regional word may differ) and its runtime is between half
+the broadcast slot and the slot plus 10 minutes. Ratings from fewer than 1000 votes are shown grey with their
+vote count, below the well-rated films. Ratings are cached in Room
 for 30 days, misses for 3 days. Films OMDb does not know stay in the ranking below the rated ones, and the
 diagnostics report lists them as `OMDb brak:` lines. Sequential requests are spaced by 250 ms and every request,
 including fallbacks, reserves one of 1000 persisted daily slots (Warsaw calendar day), a free key's full

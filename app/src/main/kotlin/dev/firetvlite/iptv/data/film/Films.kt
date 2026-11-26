@@ -20,6 +20,8 @@ object Films {
     const val DAY = 86_400_000L
     const val DAILY_BUDGET = 1000
     const val MISS_DAYS = 3
+    /** Below this many votes an IMDb rating says little; such films rank under the well-rated ones. */
+    const val MIN_VOTES = 1000L
     const val LIVE_TAB = 0
     const val ARCHIVE_TAB = 1
     const val UPCOMING_TAB = 2
@@ -55,6 +57,23 @@ object Films {
     /** Title without subtitle or part number: "Harry Potter i Insygnia Śmierci: część 1" → "Harry Potter i Insygnia Śmierci". */
     fun simplified(title: String): String? = title.replace(partSuffix, "").replace(subtitle, "").trim()
         .takeIf { normalized(it).isNotEmpty() && normalized(it) != normalized(title) }
+    private fun words(title: String): Set<String> = java.text.Normalizer.normalize(normalized(title), java.text.Normalizer.Form.NFD)
+        .replace(Regex("\\p{M}+"), "").replace('ł', 'l').split(' ').filter { it.isNotEmpty() }.toSet()
+    /** True when [found], the title OMDb answered with, is the programme's title, its short form, or differs by a word or two. */
+    fun sameTitle(p: ProgrammeEntity, found: String): Boolean {
+        val theirs = words(found)
+        return theirs.isNotEmpty() && listOfNotNull(p.originalTitle, p.title).flatMap { listOfNotNull(it, simplified(it)) }.any {
+            val ours = words(it)
+            val shared = ours.intersect(theirs).size
+            ours.isNotEmpty() && (shared == minOf(ours.size, theirs.size) && shared * 2 >= maxOf(ours.size, theirs.size) ||
+                shared * 5 >= (ours + theirs).size * 3)
+        }
+    }
+    /** A broadcast is the film plus breaks, so the film is never much longer than its slot and rarely under half of it. */
+    fun fitsSlot(p: ProgrammeEntity, runtimeMinutes: Int?): Boolean {
+        val slot = (p.stop - p.start) / 60_000
+        return runtimeMinutes == null || runtimeMinutes in (slot / 2)..(slot + 10)
+    }
     /** Tried in order after the exact [queries] all miss; a search costs two requests. */
     internal fun fallbacks(p: ProgrammeEntity): List<OmdbQuery> {
         val year = year(p)
@@ -91,7 +110,11 @@ object Films {
         .withZone(zone).format(Instant.ofEpochMilli(time))
 }
 
-data class OmdbMovie(val type: String, val year: Int, val rating: Double?, val votes: Long, val id: String) {
+data class OmdbMovie(val type: String, val year: Int, val rating: Double?, val votes: Long, val id: String,
+    val title: String? = null, val runtime: Int? = null) {
+    /** OMDb answers a title query with its nearest guess, so the answer must also name this film and fit its slot. */
+    fun describes(p: ProgrammeEntity): Boolean = (title == null || Films.sameTitle(p, title)) && Films.fitsSlot(p, runtime)
+
     fun matches(year: Int?, tolerance: Int = 1): Boolean = type == "movie" && (year == null || kotlin.math.abs(this.year - year) <= tolerance) &&
         id.matches(Regex("tt[0-9]+"))
 }
@@ -155,7 +178,7 @@ class FilmLookup(private val client: OmdbClient, private val store: FilmStore,
             when (result) {
                 is OmdbResult.Failed -> { lastError = result.code; return null }
                 OmdbResult.Missing -> Unit
-                is OmdbResult.Found -> if (result.movie.matches(year, query.tolerance)) {
+                is OmdbResult.Found -> if (result.movie.matches(year, query.tolerance) && result.movie.describes(p)) {
                     val movie = result.movie
                     return FilmRatingEntity(identity, movie.rating, movie.votes, movie.id, clock()).also { store.save(it) }
                 }

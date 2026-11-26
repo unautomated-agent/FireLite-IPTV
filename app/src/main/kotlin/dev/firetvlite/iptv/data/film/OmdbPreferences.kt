@@ -22,7 +22,7 @@ class OmdbPreferences internal constructor(private val prefs: SharedPreferences,
         prefs.getInt("requests", 0), prefs.getInt("hits", 0), prefs.getInt("misses", 0),
         prefs.getString("last_error", "—").orEmpty(), OmdbMissType.entries.associateWith {
             prefs.getInt("miss_type_${it.name}", 0).coerceIn(0, 999_999)
-        }.filterValues { it > 0 }).today(clock()))
+        }.filterValues { it > 0 }, prefs.getString("miss_titles", "").orEmpty().split('\n').filter { it.isNotBlank() }).today(clock()))
     val stats = mutableStats.asStateFlow()
 
     init { quotaDelay(clock()) }
@@ -33,6 +33,7 @@ class OmdbPreferences internal constructor(private val prefs: SharedPreferences,
         prefs.edit().putLong("stats_day", value.day).putInt("requests", value.requests)
             .putInt("hits", value.hits).putInt("misses", value.misses).putString("last_error", value.lastError).apply {
                 OmdbMissType.entries.forEach { putInt("miss_type_${it.name}", value.missTypes[it] ?: 0) }
+                putString("miss_titles", value.missTitles.joinToString("\n"))
             }.apply()
         mutableStats.value = value
     }
@@ -71,6 +72,9 @@ class OmdbPreferences internal constructor(private val prefs: SharedPreferences,
         val remaining = (prefs.getLong("quota_until", 0) - now).coerceAtLeast(0)
         if (remaining == 0L && mutableError.value == "REMOTE_LIMIT") setError(null)
         return remaining
+    }
+    fun claimMissReset(): Boolean = (prefs.getInt("miss_reset", 0) < 1).also {
+        if (it) prefs.edit().putInt("miss_reset", 1).apply()
     }
     fun baseUrl(): String = if (BuildConfig.DEBUG) prefs.getString("debug_base_url", null)
         ?: "https://www.omdbapi.com/" else "https://www.omdbapi.com/"

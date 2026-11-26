@@ -96,7 +96,7 @@ internal fun DiagnosticsSection(source: SourceEntity?, state: EpgState?, diagnos
         context.getString(R.string.omdb_key_diagnostics, context.getString(omdbKeyStatus(omdbKey.isNotBlank()))) +
             "\n" + context.getString(R.string.omdb_stats_diagnostics, today.requests, today.hits, today.misses,
                 if (omdbKey.isBlank()) "NO_KEY" else today.lastError) +
-            "\n" + today.missSummary() + "\n" + DiagnosticsReport.text(source, state, stats, crash, playback)
+            "\n" + (listOf(today.missSummary()) + today.missLines()).joinToString("\n") + "\n" + DiagnosticsReport.text(source, state, stats, crash, playback)
     }
     val startupLine = stringResource(R.string.startup_diagnostics, startup.total?.toString() ?: "—", startup.detail())
     val report = remember(baseReport, channelHealth, stalls, startupLine) {

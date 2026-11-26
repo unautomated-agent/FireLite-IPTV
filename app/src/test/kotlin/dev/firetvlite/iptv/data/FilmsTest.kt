@@ -45,15 +45,18 @@ class FilmsTest {
             assertTrue(category, Films.candidate(film().copy(category = category)))
             assertFalse(category, Films.candidate(film().copy(category = category, episodeNum = "S1 E1")))
             assertFalse(category, Films.candidate(film("TV series").copy(category = category)))
-            assertFalse(category, Films.candidate(film(year = null).copy(category = category)))
+            assertEquals(category, category.contains(Regex("(?i)film|movie")), Films.candidate(film(year = null).copy(category = category)))
         }
+        assertTrue(Films.candidate(film().copy(category = "film familijny")))
+        assertFalse(Films.candidate(film(year = null).copy(category = "serial filmowy")))
         assertFalse(Films.candidate(film().copy(category = "Movie news")))
     }
     @Test fun requiresYearDurationAndFilmCategory() {
         assertFalse(Films.candidate(film(year = null)))
         assertFalse(Films.candidate(film(year = 999)))
         assertFalse(Films.candidate(film().copy(category = "wiadomości")))
-        assertFalse(Films.candidate(film().copy(category = null)))
+        assertTrue(Films.candidate(film().copy(category = null)))
+        assertFalse(Films.candidate(film(year = null).copy(category = null)))
         assertFalse(Films.candidate(film().copy(stop = now + 59 * 60_000)))
         assertFalse(Films.candidate(film().copy(stop = now + 60 * 60_000)))
         assertFalse(Films.candidate(film().copy(stop = now + 80 * 60_000 - 1)))
@@ -81,7 +84,7 @@ class FilmsTest {
                 rating = FilmRatingEntity("no-votes", null, 0L, "tt456", now))
             val rated = missing.copy(programme = missing.programme.copy(start = start + 3),
                 rating = FilmRatingEntity("rated", 8.0, 5L, "tt789", now))
-            val expected = listOf(rated)
+            val expected = listOf(rated, unrated, missing, noVotes)
             for (input in listOf(listOf(rated, noVotes, unrated, missing), listOf(missing, unrated, noVotes, rated))) {
                 assertEquals(expected, rankedFilms(input, now, tab))
             }
@@ -101,7 +104,7 @@ class FilmsTest {
         }, wait = {})
         assertNull(lookup.lookup(short, "fixture", now))
         lookup.lookup(full, "fixture", now)
-        assertEquals(1, requests)
+        assertEquals(2, requests)
     }
     @Test fun enrichmentIncludesAiringAndFutureFilmsButNotExpiredOrOutsideWindow() {
         val airing = film().copy(start = now - 60 * 60_000, stop = now + 60 * 60_000)
@@ -127,7 +130,7 @@ class FilmsTest {
         for (original in listOf(null, "", "  ")) {
             assertEquals(listOf("Był sobie chłopiec" to 2002), Films.queries(film().copy(originalTitle = original)))
         }
-        assertTrue(Films.queries(film(year = null)).isEmpty())
+        assertEquals(listOf("About a Boy" to null, "Był sobie chłopiec" to null), Films.queries(film(year = null)))
         assertTrue(Films.queries(film("").copy(originalTitle = null)).isEmpty())
         assertEquals(2, Films.queries(film()).size)
     }
@@ -234,8 +237,8 @@ class FilmsTest {
         val negative = positive.copy(imdbId = null, imdbRating = null)
         assertTrue(Films.fresh(positive, now + 30 * Films.DAY - 1))
         assertFalse(Films.fresh(positive, now + 30 * Films.DAY))
-        assertTrue(Films.fresh(negative, now + 30 * Films.DAY - 1))
-        assertFalse(Films.fresh(negative, now + 30 * Films.DAY))
+        assertTrue(Films.fresh(negative, now + 3 * Films.DAY - 1))
+        assertFalse(Films.fresh(negative, now + 3 * Films.DAY))
         assertFalse(Films.fresh(negative, now - 1))
         assertFalse(Films.fresh(positive, now - 1))
     }
@@ -291,7 +294,7 @@ class FilmsTest {
     }
     @Test fun fakeClientExercisesFallbackCachesAndNoKey() = runBlocking {
         val store = Store()
-        val calls = mutableListOf<Pair<String, Int>>()
+        val calls = mutableListOf<Pair<String, Int?>>()
         var waits = 0
         val client = OmdbClient { _, title, year ->
             calls.add(title to year)
@@ -315,9 +318,10 @@ class FilmsTest {
         var calls = 0
         val missing = FilmLookup(OmdbClient { _, _, _ -> calls++; OmdbResult.Missing }, store, { now }) {}
         assertNull(missing.lookup(film(), "fixture", now)!!.imdbRating)
-        assertEquals(2, calls)
+        assertEquals(3, calls)
+        assertEquals(5, store.used[Films.day(now)])
         missing.lookup(film(), "fixture", now + Films.DAY)
-        assertEquals(2, calls)
+        assertEquals(3, calls)
     }
     @Test fun budgetSurvivesLookupRecreationAndCountsEveryFallbackRequest() = runBlocking {
         val store = Store()
@@ -330,12 +334,11 @@ class FilmsTest {
         assertNull(FilmLookup(client, store, { now }) {}.lookup(film(), "fixture", now))
         assertEquals(1, requests)
         FilmLookup(client, store, { now + Films.DAY }) {}.lookup(film(), "fixture", now + Films.DAY)
-        assertEquals(2, requests)
+        assertEquals(3, requests)
     }
 
-    @Test fun theRaisedBudgetKeepsASafetyMarginAndExistingFourHundredRequestsDoNotBlockLookup() = runBlocking {
-        assertEquals(950, Films.DAILY_BUDGET)
-        assertEquals(50, 1000 - Films.DAILY_BUDGET)
+    @Test fun theBudgetIsTheFullFreeKeyLimitAndExistingFourHundredRequestsDoNotBlockLookup() = runBlocking {
+        assertEquals(1000, Films.DAILY_BUDGET)
         val store = Store()
         store.used[Films.day(now)] = 400
         var requests = 0
@@ -415,7 +418,7 @@ class FilmsTest {
         val airing = best.copy(programme = film().copy(start = now - 60_000))
         val duplicate = best.copy(programme = best.programme.copy(stop = best.programme.stop + 1_000))
         val films = listOf(unrated, fewerVotes, votes, expired, unsupported, airing, best, duplicate)
-        assertEquals(listOf(best, votes, fewerVotes), rankedFilms(films, now, Films.ARCHIVE_TAB))
+        assertEquals(listOf(best, votes, fewerVotes, unrated), rankedFilms(films, now, Films.ARCHIVE_TAB))
         assertTrue(rankedFilms(emptyList(), now, Films.ARCHIVE_TAB).isEmpty())
         assertTrue(rankedFilms(films, now, Films.TAB_COUNT).isEmpty())
     }
@@ -458,7 +461,7 @@ class FilmsTest {
         val ended = showing(now - 120 * 60_000, 10.0)
         val films = listOf(unrated, lowVotes, outside, ended, tomorrow, airing)
         assertEquals(listOf(airing), rankedFilms(films, now, Films.LIVE_TAB))
-        assertEquals(listOf(lowVotes), rankedFilms(films, now, Films.UPCOMING_TAB))
+        assertEquals(listOf(lowVotes, unrated), rankedFilms(films, now, Films.UPCOMING_TAB))
         assertEquals(listOf(tomorrow), rankedFilms(films, now, Films.FUTURE_TAB))
         assertTrue(rankedFilms(emptyList(), now, 0).isEmpty())
         assertEquals("niedz. 29.03 00:30", Films.time(now))
@@ -480,13 +483,15 @@ class FilmsTest {
         assertFalse(Films.inWindow(at(now), now, -1))
     }
 
-    @Test fun numericRatingsAreRequiredButUnratedFilmsStillGetEnriched() {
+    @Test fun filmsWithoutANumericRatingStayBelowRatedOnesAndStillGetEnriched() {
         val base = FilmShowing(channel(), film(), null)
         val variants = listOf(null, Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY, 8.0).mapIndexed { i, score ->
             base.copy(channel = channel().copy(id = i.toLong()),
                 rating = FilmRatingEntity("k", score, 10L, "tt123", now))
         }
-        assertEquals(listOf(variants.last()), rankedFilms(listOf(base) + variants, now, Films.LIVE_TAB))
+        val ranked = rankedFilms(listOf(base) + variants, now, Films.LIVE_TAB)
+        assertEquals(variants.last(), ranked.first())
+        assertEquals(5, ranked.size)
         assertEquals(listOf(base.programme), ratingCandidates(listOf(base), now))
     }
 }

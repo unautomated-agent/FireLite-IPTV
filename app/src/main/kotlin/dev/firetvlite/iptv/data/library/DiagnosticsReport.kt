@@ -122,6 +122,7 @@ object DiagnosticsReport {
         }.toMutableSet()
         val failureEnd = lines.indexOfFirst { it == "Ostatnie poprawne odtwarzanie:" }.takeIf { it >= 0 } ?: lines.size
         lines.indices.filter { lines[it].startsWith("Martwe:") }.take(4).forEach { required.add(it) }
+        lines.indices.filter { lines[it].startsWith("OMDb brak:") }.take(8).forEach { required.add(it) }
         lines.indices.filter { lines[it].startsWith("Zawieszenie:") }.take(5).forEach { required.add(it) }
         lines.take(failureEnd).forEachIndexed { index, line ->
             if (line.startsWith("HLS request:") || line.startsWith("HLS variant:") || line.startsWith("HLS rendition:"))

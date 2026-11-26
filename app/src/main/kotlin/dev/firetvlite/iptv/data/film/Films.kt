@@ -18,7 +18,8 @@ import kotlinx.coroutines.withContext
 object Films {
     internal const val VARIANT_PREFIX = "@variant:"
     const val DAY = 86_400_000L
-    const val DAILY_BUDGET = 950
+    const val DAILY_BUDGET = 1000
+    const val MISS_DAYS = 3
     const val LIVE_TAB = 0
     const val ARCHIVE_TAB = 1
     const val UPCOMING_TAB = 2
@@ -27,6 +28,10 @@ object Films {
     val zone: ZoneId = ZoneId.of("Europe/Warsaw")
     private val series = Regex("(?iu)\\b(serial\\w*|series|odc\\.?|odcinek|sezon|season|episode|s\\d{1,2}\\s*e\\d+|e\\d+)\\b|\\(\\d+/\\d+\\)")
     private val genre = Regex("(?imu)\\b(sensacja|dramat|komedia|thriller|horror|western|sci-fi|science fiction|kryminał|przygodowy|wojenny|obyczajowy|romans|fantasy|biograficzny|animowany film|action|drama|comedy|crime|adventure|war|romance|biographical|animated film|animated movie|feature film|television film|tv movie)\\b|\\bfilm (fabularny|kinowy|telewizyjny|animowany)\\b|^(films?|movies?|motion pictures?)$")
+    private val filmWord = Regex("(?iu)\\b(film\\w*|movies?|motion pictures?)\\b")
+    private val notFilm = Regex("(?iu)\\b(wiadomości|news|informac\\w*|magazyn\\w*|publicysty\\w*|teleturniej\\w*|reality|talk[- ]show|show|rozryw\\w*|pogoda|reportaż\\w*|program\\w*)\\b")
+    private val subtitle = Regex("\\s*(:|\\s[-–—]\\s|\\().*$")
+    private val partSuffix = Regex("(?iu)[\\s,.]*\\b(cz\\.?|część|part)\\s*[0-9ivxl]+\\b.*$")
     private val titleSeparators = Regex("[^\\p{L}\\p{N}]+")
     fun normalized(title: String): String = title.lowercase(Locale.ROOT)
         .replace(titleSeparators, " ").trim()
@@ -34,22 +39,36 @@ object Films {
     internal fun candidateMetadata(p: ProgrammeEntity): Boolean {
         val categories = (p.categories.ifBlank { p.category.orEmpty() })
             .split('\n').joinToString("\n") { it.substringBefore("\",]\"name\":\"").trim().lowercase(Locale.ROOT) }
-        return p.year in 1000..9999 && p.stop - p.start >= 80 * 60_000L &&
+        return p.stop - p.start >= 80 * 60_000L &&
             p.episodeNum == null && !series.containsMatchIn(p.title + "\n" + p.originalTitle.orEmpty() + "\n" + categories) &&
-            genre.containsMatchIn(categories)
+            !notFilm.containsMatchIn(categories) && (year(p) != null || filmWord.containsMatchIn(categories))
     }
+    fun year(p: ProgrammeEntity): Int? = p.year?.takeIf { it in 1000..9999 }
     fun key(p: ProgrammeEntity): String = normalized(p.originalTitle?.takeIf { it.isNotBlank() } ?: p.title) + ":" + p.year
-    fun queries(p: ProgrammeEntity): List<Pair<String, Int>> {
-        val year = p.year ?: return emptyList()
+    fun queries(p: ProgrammeEntity): List<Pair<String, Int?>> {
         val titles = listOfNotNull(p.originalTitle?.takeIf {
             it.isNotBlank() && normalized(it) != normalized(p.title)
         }, p.title.takeIf { it.isNotBlank() })
-        return titles.map { it to year }
+        return titles.map { it to year(p) }
     }
-    internal fun variantKey(identity: String, title: String, year: Int): String =
-        "$VARIANT_PREFIX$identity:${normalized(title)}:$year"
+    /** Title without subtitle or part number: "Harry Potter i Insygnia Śmierci: część 1" → "Harry Potter i Insygnia Śmierci". */
+    fun simplified(title: String): String? = title.replace(partSuffix, "").replace(subtitle, "").trim()
+        .takeIf { normalized(it).isNotEmpty() && normalized(it) != normalized(title) }
+    /** Tried in order after the exact [queries] all miss; a search costs two requests. */
+    internal fun fallbacks(p: ProgrammeEntity): List<OmdbQuery> {
+        val year = year(p)
+        val main = queries(p).firstOrNull()?.first ?: return emptyList()
+        val short = simplified(main)
+        return listOfNotNull(
+            OmdbQuery(main, null).takeIf { year != null },
+            short?.let { OmdbQuery(it, year) },
+            OmdbQuery(short ?: main, year, search = true).takeIf { year != null },
+        )
+    }
+    internal fun variantKey(identity: String, title: String, year: Int?, search: Boolean = false): String =
+        "$VARIANT_PREFIX$identity:${normalized(title)}:${year ?: "any"}${if (search) ":search" else ""}"
     fun fresh(rating: FilmRatingEntity, now: Long): Boolean = now >= rating.fetchedAt &&
-        now - rating.fetchedAt < 30 * DAY
+        now - rating.fetchedAt < (if (rating.imdbId == null) MISS_DAYS else 30) * DAY
     fun day(now: Long): Long = Instant.ofEpochMilli(now).atZone(zone).toLocalDate().toEpochDay()
     fun inWindow(p: ProgrammeEntity, now: Long, tab: Int): Boolean = when (tab) {
         LIVE_TAB -> p.start <= now && p.stop > now
@@ -70,9 +89,11 @@ object Films {
 }
 
 data class OmdbMovie(val type: String, val year: Int, val rating: Double?, val votes: Long, val id: String) {
-    fun matches(year: Int): Boolean = type == "movie" && kotlin.math.abs(this.year - year) <= 1 &&
+    fun matches(year: Int?): Boolean = type == "movie" && (year == null || kotlin.math.abs(this.year - year) <= 1) &&
         id.matches(Regex("tt[0-9]+"))
 }
+
+internal data class OmdbQuery(val title: String, val year: Int?, val search: Boolean = false)
 
 sealed interface OmdbResult {
     data class Found(val movie: OmdbMovie) : OmdbResult
@@ -81,7 +102,9 @@ sealed interface OmdbResult {
 }
 
 fun interface OmdbClient {
-    suspend fun lookup(key: String, title: String, year: Int): OmdbResult
+    suspend fun lookup(key: String, title: String, year: Int?): OmdbResult
+    /** Finds the film by title words, picks the result within ±1 year and loads it; [second] reserves the second request. */
+    suspend fun search(key: String, title: String, year: Int, second: suspend () -> Boolean): OmdbResult = OmdbResult.Missing
 }
 
 interface FilmStore {
@@ -114,21 +137,21 @@ class FilmLookup(private val client: OmdbClient, private val store: FilmStore,
         if (!Films.candidate(p)) return null
         val identity = Films.key(p)
         store.cached(identity)?.takeIf { Films.fresh(it, now) }?.let { return it }
-        for ((title, year) in Films.queries(p)) {
+        val year = Films.year(p)
+        for (query in Films.queries(p).map { OmdbQuery(it.first, it.second) } + Films.fallbacks(p)) {
             currentCoroutineContext().ensureActive()
-            val variant = Films.variantKey(identity, title, year)
+            val variant = Films.variantKey(identity, query.title, query.year, query.search)
             if (store.cached(variant)?.let { Films.fresh(it, now) } == true) continue
             wait()
-            if (!store.reserve(Films.day(clock()))) { fail("LOCAL_BUDGET"); return null }
-            observer.requested(clock())
-            val result = client.lookup(key, title, year)
-            val completedAt = clock()
-            observer.completed(result, completedAt)
-            if (result == OmdbResult.Missing) observer.missing(p, completedAt)
+            val reserve: suspend () -> Boolean = { store.reserve(Films.day(clock())).also { if (it) observer.requested(clock()) } }
+            if (!reserve()) { fail("LOCAL_BUDGET"); return null }
+            val result = if (query.search) client.search(key, query.title, query.year!!, reserve)
+                else client.lookup(key, query.title, query.year)
+            observer.completed(result, clock())
             when (result) {
                 is OmdbResult.Failed -> { lastError = result.code; return null }
                 OmdbResult.Missing -> Unit
-                is OmdbResult.Found -> if (result.movie.matches(p.year!!)) {
+                is OmdbResult.Found -> if (result.movie.matches(year)) {
                     val movie = result.movie
                     return FilmRatingEntity(identity, movie.rating, movie.votes, movie.id, clock()).also { store.save(it) }
                 }
@@ -137,6 +160,7 @@ class FilmLookup(private val client: OmdbClient, private val store: FilmStore,
                 store.save(FilmRatingEntity(variant, null, 0L, null, clock()))
             }
         }
+        observer.missing(p, clock())
         return FilmRatingEntity(identity, null, 0, null, clock()).also { store.save(it) }
     }
 

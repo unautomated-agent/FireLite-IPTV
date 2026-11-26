@@ -24,6 +24,8 @@ interface FilmDao {
     suspend fun cached(key: String): FilmRatingEntity?
     @Query("SELECT * FROM film_rating")
     fun observeRatings(): Flow<List<FilmRatingEntity>>
+    @Query("DELETE FROM film_rating WHERE imdbId IS NULL")
+    suspend fun clearMisses()
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun save(rating: FilmRatingEntity)
     @Insert(onConflict = OnConflictStrategy.IGNORE)

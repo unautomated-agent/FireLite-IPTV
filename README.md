@@ -163,15 +163,18 @@ Rated films sort by IMDb score, then votes; unrated candidates follow in grey. O
 only shows its start time; OK on an airing film starts from the programme beginning using catch-up,
 then the existing live buffer if available, otherwise live playback.
 
-Film candidates require a four-digit XMLTV year, 60–240-minute duration, a film/genre category,
-and no episode or series markers. XMLTV imports retain all categories, original titles, years,
+Film candidates run at least 80 minutes, have no episode or series markers, and carry a four-digit
+XMLTV year or a category containing "film"/"movie". XMLTV imports retain all categories, original titles, years,
 credits and episode numbers. Database migration 6→7 requests a fresh guide without discarding
 the previously published guide. Lookup is limited to mapped channels of the active playlist and
-programme starts in the next 48 hours. Original title is preferred, then Polish title, then ±1 year;
-only movie responses within ±1 year are accepted. Ratings are cached in Room for 30 days,
-negative matches for 7 days. Sequential data requests are spaced by 250 ms and every request,
-including fallbacks, reserves one of 950 persisted daily slots (Warsaw calendar day),
-leaving a 50-request margin below a free key's 1000/day provider limit.
+programme starts in the next 48 hours. Original title is tried first, then the Polish title, both with the
+XMLTV year. If neither matches: the title without a year, the title without subtitle or part number, and
+finally an OMDb title search (two requests) picking the result closest to the year.
+Only movie responses within ±1 year are accepted (any year when XMLTV has none). Ratings are cached in Room
+for 30 days, misses for 3 days. Films OMDb does not know stay in the ranking below the rated ones, and the
+diagnostics report lists them as `OMDb brak:` lines. Sequential requests are spaced by 250 ms and every request,
+including fallbacks, reserves one of 1000 persisted daily slots (Warsaw calendar day), a free key's full
+provider limit; if OMDb refuses earlier, requests pause until the next day.
 Import completion, active-source/key changes and hourly process refreshes trigger enrichment;
 cache TTLs avoid unnecessary daily requests. This uses the existing app-process refresh model,
 not an OS job that wakes a stopped application. Network/authentication failures never affect playback.

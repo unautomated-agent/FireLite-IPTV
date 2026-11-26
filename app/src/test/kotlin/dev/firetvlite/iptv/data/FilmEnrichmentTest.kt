@@ -55,8 +55,8 @@ class FilmEnrichmentTest {
         val store = Store()
         val lookup = FilmLookup(OmdbClient { _, title, _ -> if (title == "First") OmdbResult.Missing else found }, store, { now }) {}
         assertFalse(enrichFilms(listOf(film("First"), film("Second")), "fixture", lookup, { true }) { now })
-        assertEquals(2, store.requests)
-        assertEquals(3, store.rows.size)
+        assertEquals(4, store.requests)
+        assertEquals(5, store.rows.size)
     }
 
     @Test fun interruptedFallbackResumesOnlyTheUnfinishedVariantAfterRecreatingLookup() = runBlocking {
@@ -64,7 +64,7 @@ class FilmEnrichmentTest {
             for (first in listOf(OmdbResult.Missing, found.copy(movie = found.movie.copy(type = "series")))) {
                 val store = Store()
                 val programme = film("Display").copy(originalTitle = "Original")
-                val queries = mutableListOf<Pair<String, Int>>()
+                val queries = mutableListOf<Pair<String, Int?>>()
                 val interrupted = FilmLookup(OmdbClient { _, title, year ->
                     queries.add(title to year)
                     if (title == "Original") first else OmdbResult.Failed(failure)
@@ -99,22 +99,22 @@ class FilmEnrichmentTest {
         assertEquals(listOf("Original", "Display"), queries)
     }
 
-    @Test fun completedMissesAndVariantMissesExpireTogetherAfterThirtyDays() = runBlocking {
+    @Test fun completedMissesAndVariantMissesExpireTogetherAfterThreeDays() = runBlocking {
         val store = Store()
         val programme = film("Display").copy(originalTitle = "Original")
         var time = now
         val lookup = FilmLookup(OmdbClient { _, _, _ -> OmdbResult.Missing }, store, { time }) {}
         assertNull(lookup.lookup(programme, "fixture", time)!!.imdbId)
-        assertEquals(2, store.requests)
-        time += 30 * Films.DAY - 1
-        lookup.lookup(programme, "fixture", time)
-        assertEquals(2, store.requests)
-        time++
+        assertEquals(4, store.requests)
+        time += 3 * Films.DAY - 1
         lookup.lookup(programme, "fixture", time)
         assertEquals(4, store.requests)
+        time++
+        lookup.lookup(programme, "fixture", time)
+        assertEquals(8, store.requests)
     }
 
-    @Test fun partialProgressAlsoExpiresAfterThirtyDays() = runBlocking {
+    @Test fun partialProgressAlsoExpiresAfterThreeDays() = runBlocking {
         val store = Store()
         val programme = film("Display").copy(originalTitle = "Original")
         val interrupted = FilmLookup(OmdbClient { _, title, _ ->
@@ -123,9 +123,9 @@ class FilmEnrichmentTest {
         interrupted.lookup(programme, "fixture", now)
         val queries = mutableListOf<String>()
         val resumed = FilmLookup(OmdbClient { _, title, _ -> queries.add(title); OmdbResult.Missing },
-            store, { now + 30 * Films.DAY }) {}
-        resumed.lookup(programme, "fixture", now + 30 * Films.DAY)
-        assertEquals(listOf("Original", "Display"), queries)
+            store, { now + 3 * Films.DAY }) {}
+        resumed.lookup(programme, "fixture", now + 3 * Films.DAY)
+        assertEquals(listOf("Original", "Display", "Original"), queries)
     }
 
     @Test fun repeatedTabRequestsShareOneRunningPassAndOneRequestPerUncachedFilm() = runBlocking {
@@ -253,5 +253,80 @@ class FilmEnrichmentTest {
         resumed.lookup(programme, "fixture", now)
         resumed.lookup(programme, "fixture", now)
         assertEquals(OmdbStats(Films.day(now), 3, 1, 1, "HTTP_503"), stats)
+    }
+
+    private class Omdb(val titles: Map<Pair<String, Int?>, OmdbResult>, val searches: Map<String, OmdbResult> = emptyMap()) : OmdbClient {
+        val calls = mutableListOf<String>()
+        override suspend fun lookup(key: String, title: String, year: Int?): OmdbResult {
+            calls.add("t=$title y=$year")
+            return titles[title to year] ?: OmdbResult.Missing
+        }
+        override suspend fun search(key: String, title: String, year: Int, second: suspend () -> Boolean): OmdbResult {
+            calls.add("s=$title y=$year")
+            val hit = searches[title] ?: return OmdbResult.Missing
+            return if (second()) hit else OmdbResult.Failed("LOCAL_BUDGET")
+        }
+    }
+    private val stone = OmdbResult.Found(OmdbMovie("movie", 2001, 7.6, 800_000, "tt0241527"))
+
+    @Test fun wrongProgrammeYearIsRecoveredByTheLookupWithoutYear() = runBlocking {
+        val store = Store()
+        val p = film("Harry Potter i Kamień Filozoficzny").copy(originalTitle = "Harry Potter and the Sorcerer's Stone")
+        val client = Omdb(mapOf(("Harry Potter and the Sorcerer's Stone" to null) to stone))
+        assertEquals("tt0241527", FilmLookup(client, store, { now }) {}.lookup(p, "fixture", now)!!.imdbId)
+        assertEquals(listOf("t=Harry Potter and the Sorcerer's Stone y=2002", "t=Harry Potter i Kamień Filozoficzny y=2002",
+            "t=Harry Potter and the Sorcerer's Stone y=null"), client.calls)
+        assertEquals(3, store.requests)
+    }
+
+    @Test fun lookupWithoutYearStillRejectsAFilmFromAnotherYear() = runBlocking {
+        val store = Store()
+        val remake = OmdbResult.Found(OmdbMovie("movie", 1984, 6.0, 10, "tt1"))
+        val lookup = FilmLookup(Omdb(mapOf(("Dune" to null) to remake)), store, { now }) {}
+        assertNull(lookup.lookup(film("Dune"), "fixture", now)!!.imdbId)
+    }
+
+    @Test fun subtitleAndPartNumberAreDroppedAndSearchCostsTwoRequests() = runBlocking {
+        assertEquals("Harry Potter and the Deathly Hallows", Films.simplified("Harry Potter and the Deathly Hallows: Part 1"))
+        assertEquals("Harry Potter i Insygnia Śmierci", Films.simplified("Harry Potter i Insygnia Śmierci, część 2"))
+        assertEquals("Blade Runner", Films.simplified("Blade Runner (Final Cut)"))
+        assertNull(Films.simplified("Harry Potter"))
+        assertNull(Films.simplified(": Part 1"))
+        val p = film("Harry Potter and the Deathly Hallows: Part 1")
+        val store = Store()
+        val client = Omdb(emptyMap(), mapOf("Harry Potter and the Deathly Hallows" to found))
+        assertEquals("tt123", FilmLookup(client, store, { now }) {}.lookup(p, "fixture", now)!!.imdbId)
+        assertEquals(listOf("t=Harry Potter and the Deathly Hallows: Part 1 y=2002", "t=Harry Potter and the Deathly Hallows: Part 1 y=null",
+            "t=Harry Potter and the Deathly Hallows y=2002", "s=Harry Potter and the Deathly Hallows y=2002"), client.calls)
+        assertEquals(5, store.requests)
+    }
+
+    @Test fun searchWithoutBudgetForItsSecondRequestStopsAndIsRetriedLater() = runBlocking {
+        val store = Store()
+        store.requests = Films.DAILY_BUDGET - 3
+        val client = Omdb(emptyMap(), mapOf("Display" to found))
+        val lookup = FilmLookup(client, store, { now }) {}
+        assertNull(lookup.lookup(film("Display"), "fixture", now))
+        assertEquals("LOCAL_BUDGET", lookup.lastError)
+        assertEquals(Films.DAILY_BUDGET, store.requests)
+        assertNull(store.rows[Films.key(film("Display"))])
+    }
+
+    @Test fun filmWithoutYearIsLookedUpByTitleOnlyAndNeverSearched() = runBlocking {
+        val store = Store()
+        val p = film("Display").copy(year = null, category = "film familijny")
+        val client = Omdb(mapOf(("Display" to null) to found))
+        assertEquals("tt123", FilmLookup(client, store, { now }) {}.lookup(p, "fixture", now)!!.imdbId)
+        assertEquals(listOf("t=Display y=null"), client.calls)
+    }
+
+    @Test fun missedTitlesAreListedNewestFirstBoundedAndResetDaily() {
+        var stats = OmdbStats()
+        repeat(50) { stats = stats.missing(film("Film $it"), now) }
+        stats = stats.missing(film("Film 49"), now)
+        assertEquals(40, stats.missLines().size)
+        assertEquals("OMDb brak: Film 49 | 2002", stats.missLines().first())
+        assertEquals("OMDb brak: Film 10 | 2002", stats.missLines().last())
+        assertTrue(stats.today(now + Films.DAY).missLines().isEmpty())
     }
 }

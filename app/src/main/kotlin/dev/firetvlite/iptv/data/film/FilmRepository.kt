@@ -59,11 +59,12 @@ private fun ratingPriority(showing: FilmShowing, now: Long): Int = when {
 }
 
 fun rankedFilms(films: List<FilmShowing>, now: Long, tab: Int): List<FilmShowing> = films
-    .filter { it.rating?.imdbRating?.isFinite() == true && Films.candidate(it.programme) &&
+    .filter { Films.candidate(it.programme) &&
         (if (tab == Films.ARCHIVE_TAB) Films.archived(it.channel, it.programme, now)
         else Films.inWindow(it.programme, now, tab)) }
     .distinctBy { it.identity }
-    .sortedWith(compareByDescending<FilmShowing> { it.rating?.imdbRating ?: -1.0 }
+    // Films without a rating stay in the list, below the rated ones, so nothing silently disappears.
+    .sortedWith(compareByDescending<FilmShowing> { it.rating?.imdbRating?.takeIf(Double::isFinite) ?: -1.0 }
         .thenByDescending { it.rating?.imdbVotes ?: 0L }.thenBy { it.programme.start }.thenBy { it.channel.id })
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -108,6 +109,8 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
 
     init {
         scope.launch(Dispatchers.IO) {
+            // Misses remembered by older versions were found with the narrower lookup; check those films again.
+            if (preferences.claimMissReset()) dao.clearMisses()
             combine(database.sourceDao().observeActive(), preferences.refresh, epg.states, futureWindows.pending) { source, revision, _, request ->
                 Triple(source, revision, request)
             }

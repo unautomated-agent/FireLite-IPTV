@@ -81,7 +81,8 @@ class OmdbPreferences internal constructor(private val prefs: SharedPreferences,
     }
     fun save(key: String): Boolean {
         val value = normalizeOmdbKey(key) ?: return false
-        if (value != mutableKey.value) prefs.edit().putLong("quota_until", 0).apply()
+        // Another key has its own counter: a refusal of the old key says nothing about it.
+        if (value != mutableKey.value) prefs.edit().putLong("quota_until", 0).putLong("probe_refused_at", 0).apply()
         prefs.edit().putString("key", value).apply()
         mutableKey.value = value
         setError(if (quotaDelay(clock()) > 0) "REMOTE_LIMIT" else null)

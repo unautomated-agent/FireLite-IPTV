@@ -63,6 +63,11 @@ class OmdbPreferencesTest {
         preferences.completed(OmdbResult.Failed("REMOTE_LIMIT"), now + Films.DAY)
         assertTrue(preferences.resetProbe.active)
         assertEquals(OmdbResetProbe.INTERVAL, preferences.resetProbe.delay(now + Films.DAY, 0))
+        assertTrue(preferences.save("abcd1234"))
+        preferences.completed(OmdbResult.Missing, now + Films.DAY + 60_000)
+        assertEquals(1, lines.size)
+        assertFalse(preferences.resetProbe.done)
+        preferences.completed(OmdbResult.Failed("REMOTE_LIMIT"), now + Films.DAY)
         assertEquals(0L, preferences.resetProbe.delay(now + Films.DAY + OmdbResetProbe.INTERVAL, now))
         assertEquals(60_000L, preferences.resetProbe.delay(now + Films.DAY + OmdbResetProbe.INTERVAL,
             now + Films.DAY + 60_000))

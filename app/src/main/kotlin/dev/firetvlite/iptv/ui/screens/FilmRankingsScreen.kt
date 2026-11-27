@@ -41,6 +41,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.data.film.Films
+import dev.firetvlite.iptv.data.film.ratingTier
 import dev.firetvlite.iptv.data.film.FilmProgress
 import dev.firetvlite.iptv.data.film.rankedFilms
 import dev.firetvlite.iptv.data.film.rankingStatus
@@ -150,6 +151,7 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
                 items(rows, key = { it.identity }) { film ->
                     val p = film.programme
                     val ratingText = imdbRatingText(film.rating, showVotes = true)
+                    val trusted = ratingTier(film.rating) == 0
                     val airing = p.start <= now && p.stop > now
                     val archiveUntil = Films.archiveUntil(film.channel, p)?.takeIf { p.stop <= now }
                     FocusSurface(onClick = {
@@ -174,12 +176,14 @@ fun FilmRankingsScreen(library: LibraryViewModel, player: PlayerViewModel, activ
                             FLText(film.rating?.imdbRating?.takeIf { ratingText.isNotEmpty() }
                                 ?.let { String.format(Locale("pl", "PL"), "%.1f", it) } ?: "—",
                                 style = FireLiteTheme.typography.title,
-                                color = if (ratingText.isNotEmpty()) Color(0xFFF5C518) else colors.textSecondary,
+                                color = if (trusted) Color(0xFFF5C518) else colors.textSecondary,
                                 maxLines = 1, modifier = Modifier.width(36.dp))
                             FLText(listOfNotNull(p.title, p.originalTitle?.takeIf { it != p.title }, p.year?.toString()).joinToString(" · "),
                                 style = FireLiteTheme.typography.title,
-                                color = if (ratingText.isEmpty()) colors.textSecondary else colors.textPrimary,
+                                color = if (trusted) colors.textPrimary else colors.textSecondary,
                                 maxLines = 1, modifier = Modifier.weight(1f))
+                            if (!trusted && ratingText.isNotEmpty()) FLText(ratingText.substringAfter(" · ", ""),
+                                style = FireLiteTheme.typography.label, color = colors.textSecondary, maxLines = 1)
                             FLText(archiveUntil?.let {
                                 val minutes = ((it - now).coerceAtLeast(0) + 59_999) / 60_000
                                 stringResource(R.string.films_archive_remaining, minutes / 60, minutes % 60)

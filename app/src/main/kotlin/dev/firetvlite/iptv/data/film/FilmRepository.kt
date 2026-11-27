@@ -58,13 +58,20 @@ private fun ratingPriority(showing: FilmShowing, now: Long): Int = when {
     else -> 3
 }
 
+fun ratingTier(rating: FilmRatingEntity?): Int = when {
+    rating?.imdbRating?.isFinite() != true -> 2
+    rating.imdbVotes < Films.MIN_VOTES -> 1
+    else -> 0
+}
+
 fun rankedFilms(films: List<FilmShowing>, now: Long, tab: Int): List<FilmShowing> = films
     .filter { Films.candidate(it.programme) &&
         (if (tab == Films.ARCHIVE_TAB) Films.archived(it.channel, it.programme, now)
         else Films.inWindow(it.programme, now, tab)) }
     .distinctBy { it.identity }
-    // Films without a rating stay in the list, below the rated ones, so nothing silently disappears.
-    .sortedWith(compareByDescending<FilmShowing> { it.rating?.imdbRating?.takeIf(Double::isFinite) ?: -1.0 }
+    // Well-rated films first, then ratings from too few votes, then films without a rating, so nothing silently disappears.
+    .sortedWith(compareBy<FilmShowing> { ratingTier(it.rating) }
+        .thenByDescending { it.rating?.imdbRating?.takeIf(Double::isFinite) ?: -1.0 }
         .thenByDescending { it.rating?.imdbVotes ?: 0L }.thenBy { it.programme.start }.thenBy { it.channel.id })
 
 @OptIn(ExperimentalCoroutinesApi::class)

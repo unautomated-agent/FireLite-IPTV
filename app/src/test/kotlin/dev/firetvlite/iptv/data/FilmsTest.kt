@@ -461,6 +461,11 @@ class FilmsTest {
         val ended = showing(now - 120 * 60_000, 10.0)
         val films = listOf(unrated, lowVotes, outside, ended, tomorrow, airing)
         assertEquals(listOf(airing), rankedFilms(films, now, Films.LIVE_TAB))
+        val trusted = showing(now + 3000, 6.5, Films.MIN_VOTES)
+        val almost = showing(now + 4000, 9.4, Films.MIN_VOTES - 1)
+        assertEquals(listOf(trusted, almost, lowVotes, unrated),
+            rankedFilms(films + almost + trusted, now, Films.UPCOMING_TAB))
+        assertEquals(listOf(0, 1, 2), listOf(trusted, almost, unrated).map { ratingTier(it.rating) })
         assertEquals(listOf(lowVotes, unrated), rankedFilms(films, now, Films.UPCOMING_TAB))
         assertEquals(listOf(tomorrow), rankedFilms(films, now, Films.FUTURE_TAB))
         assertTrue(rankedFilms(emptyList(), now, 0).isEmpty())

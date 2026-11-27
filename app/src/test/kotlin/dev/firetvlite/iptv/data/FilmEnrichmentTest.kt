@@ -14,6 +14,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.yield
 import org.junit.Assert.*
+import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class FilmEnrichmentTest {
@@ -261,7 +263,7 @@ class FilmEnrichmentTest {
             calls.add("t=$title y=$year")
             return titles[title to year] ?: OmdbResult.Missing
         }
-        override suspend fun search(key: String, title: String, year: Int, tolerance: Int, second: suspend () -> Boolean): OmdbResult {
+        override suspend fun search(key: String, title: String, year: Int, tolerance: Int, same: (String) -> Boolean, second: suspend () -> Boolean): OmdbResult {
             calls.add("s=$title y=$year±$tolerance")
             val hit = searches[title] ?: return OmdbResult.Missing
             return if (second()) hit else OmdbResult.Failed("LOCAL_BUDGET")
@@ -358,5 +360,32 @@ class FilmEnrichmentTest {
             val client = Omdb(mapOf(("Saga" to 2004) to first), mapOf("Saga" to first))
             assertNull(title, FilmLookup(client, Store(), { now }) {}.lookup(film(title).copy(year = 2004), "fixture", now)!!.imdbId)
         }
+    }
+
+    @Test fun answerForAnotherFilmIsRejectedByTitleOrRuntime() = runBlocking {
+        fun movie(title: String, runtime: Int?) = OmdbResult.Found(OmdbMovie("movie", 2002, 9.4, 12, "tt7", title, runtime))
+        suspend fun id(p: ProgrammeEntity, answer: OmdbResult) =
+            FilmLookup(OmdbClient { _, _, _ -> answer }, Store(), { now }) {}.lookup(p, "fixture", now)!!.imdbId
+        val p = film("Wyzwolenie").copy(originalTitle = "Avenue of the Giants")
+        assertNull(id(p, movie("The Optimist: The Bravest Act Is Truth", 110)))
+        assertNull(id(p, movie("Avenue of the Giants", 15)))
+        assertNull(id(p, movie("Avenue of the Giants", 200)))
+        assertEquals("tt7", id(p, movie("Avenue of the Giants", 105)))
+        assertEquals("tt7", id(p, movie("Avenue of the Giants", null)))
+        assertEquals("tt7", id(p, movie("Wyzwolenie", 60)))
+    }
+
+    @Test fun titleComparisonAllowsSubtitlesAndRegionalWording() {
+        val potter = film("Harry Potter i Kamień Filozoficzny").copy(originalTitle = "Harry Potter and the Philosopher's Stone")
+        assertTrue(Films.sameTitle(potter, "Harry Potter and the Sorcerer's Stone"))
+        assertTrue(Films.sameTitle(potter, "Harry Potter i kamien filozoficzny"))
+        assertTrue(Films.sameTitle(film("Amélie"), "Ame\u0301lie"))
+        assertTrue(Films.sameTitle(film("Ame\u0301lie"), "Amélie"))
+        assertFalse(Films.sameTitle(potter, "Harry Potter and the Chamber of Secrets"))
+        val hallows = film("Insygnia").copy(originalTitle = "Harry Potter and the Deathly Hallows")
+        assertTrue(Films.sameTitle(hallows, "Harry Potter and the Deathly Hallows: Part 1"))
+        assertTrue(Films.sameTitle(film("Blade Runner (Final Cut)"), "Blade Runner"))
+        assertFalse(Films.sameTitle(film("Heat"), "The Heat of the Night Returns"))
+        assertFalse(Films.sameTitle(film("Heat"), ""))
     }
 }

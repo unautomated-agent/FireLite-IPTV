@@ -51,7 +51,8 @@ class OmdbPreferences internal constructor(private val prefs: SharedPreferences,
     fun probed(result: OmdbResult, now: Long) {
         // A key OMDb no longer accepts cannot show the reset: give up this measurement and show the error.
         if (result is OmdbResult.Failed && result.code in setOf("AUTH", "HTTP_401", "HTTP_403")) {
-            prefs.edit().putLong("probe_refused_at", 0).apply()
+            // The limit pause goes too: it would hide this error and hold back a repaired key until midnight.
+            prefs.edit().putLong("probe_refused_at", 0).putLong("quota_until", 0).apply()
             setError(result.code)
         } else probe(result, now)
     }

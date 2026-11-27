@@ -58,6 +58,8 @@ class OmdbPreferencesTest {
         preferences.probed(OmdbResult.Failed("AUTH"), now + 600_000)
         assertFalse(preferences.resetProbe.active)
         assertEquals("AUTH", preferences.currentError.value)
+        assertEquals(0L, preferences.quotaDelay(now + 600_000))
+        assertEquals("AUTH", preferences.currentError.value)
     }
 
     @Test fun wideBracketIsReportedAsImpreciseAndMeasuredAgain() {

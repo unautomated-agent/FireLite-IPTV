@@ -398,7 +398,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         settlePendingZap()
         startupPending = false
         select(allChannels(channel.sourceId), 0, GroupKey.All, PlayerMode.Fullscreen,
-            archiveTime = archiveStart, expectedChannel = channel)
+            archiveTime = archiveStart?.let { container.archiveStart.time(it, System.currentTimeMillis()) },
+            expectedChannel = channel)
     }
 
     fun dismissTimeline() {

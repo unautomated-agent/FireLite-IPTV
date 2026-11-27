@@ -229,8 +229,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         select(zap, startIndex, group, PlayerMode.Fullscreen)
     }
 
+    /** Plays a programme of the archive from its start at [time]. */
     fun openArchive(zap: ZapContext, startIndex: Int, group: GroupKey, time: Long) {
-        select(zap, startIndex, group, PlayerMode.Fullscreen, time)
+        select(zap, startIndex, group, PlayerMode.Fullscreen, container.archiveStart.time(time, System.currentTimeMillis()))
     }
 
     private fun select(zap: ZapContext, startIndex: Int, group: GroupKey, mode: PlayerMode, archiveTime: Long? = null,
@@ -587,7 +588,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         catchupJob = playbackWork.launch {
             val current = epg.programmeAt(channel.id, watched)
             catchupJob = null
-            if (current == null) notify(PlayerMessage.SeekUnsupported) else seekAbsolute(current.start)
+            if (current == null) notify(PlayerMessage.SeekUnsupported) else seekAbsolute(
+                if (CatchupUrlBuilder.isSupported(channel)) container.archiveStart.time(current.start, System.currentTimeMillis())
+                else current.start)
         }
     }
 

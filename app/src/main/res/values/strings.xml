@@ -75,6 +75,8 @@
     <string name="remote_timeout">Nie odebrano żadnego przycisku. Telewizor nie przekazuje go do Fire TV albo sam go obsługuje.</string>
     <string name="remote_clear">Usuń dodatkowe przyciski</string>
     <string name="settings_clock">Zegar w lewym górnym rogu</string>
+    <string name="settings_archive_start">Start audycji z archiwum: %1$d s później</string>
+    <string name="settings_archive_start_help">Archiwum dostawcy jest opóźnione względem programu TV. Zwiększ, jeśli audycja z archiwum zaczyna się od końcówki poprzedniej; zmniejsz, jeśli ucina początek. OK zmienia wartość.</string>
     <string name="settings_loudness">Wyrównanie głośności</string>
     <string name="toggle_on">Włączone</string>
     <string name="toggle_off">Wyłączone</string>

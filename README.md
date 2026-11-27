@@ -108,7 +108,10 @@ is saved locally and defaults to on. Turning it off does not change programme/ba
   Long-press Left jumps to the current programme's start when catch-up is available. Archive seeks stay inside
   a seekable archive or re-request it after debounce; reaching the live edge returns to live.
 - **Programme history**: a translucent right-side list leaves video full-size behind it. Compact single-line
-  time/title rows run oldest first, with Na żywo initially focused and upcoming programmes below it.
+  time/title rows run oldest first, with upcoming programmes below Na żywo. It opens on Na żywo, or centred on the
+  programme being watched when playback is in the archive or more than two minutes behind live in an
+  earlier programme. Na żywo carries a red dot, replayable past rows the archive icon, ▶ the watched row;
+  a legend sits under the list.
   Future rows are dimmed and marked Wkrótce; OK shows their start time without changing playback.
   Rewind/FastForward jump to the previous/next available Warsaw calendar day, clamped to the archive range
   and the last known EPG programme; a day header and details

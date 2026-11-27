@@ -73,6 +73,7 @@ data class ChannelTimelineTarget(
     val liveWindowStart: Long?,
     val playing: Boolean,
     val fromOverlay: Boolean = false,
+    val archive: Boolean = false,
 )
 
 /**
@@ -375,7 +376,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         val windowStart = if (playing && archiveStartMs == null && frame.snapshot.seekable)
             frame.watchedMs - frame.snapshot.positionMs else null
         mutableTimeline.value = ChannelTimelineTarget(channel, zap, index, group, frame, windowStart, playing,
-            fromOverlay = mutableMode.value == PlayerMode.Overlay)
+            fromOverlay = mutableMode.value == PlayerMode.Overlay, archive = playing && archiveStartMs != null)
         setMode(PlayerMode.Fullscreen)
     }
 

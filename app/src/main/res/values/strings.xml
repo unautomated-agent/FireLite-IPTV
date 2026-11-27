@@ -226,6 +226,9 @@
     <string name="channel_timeline_yesterday">Wczoraj</string>
     <string name="channel_timeline_tomorrow">Jutro</string>
     <string name="channel_timeline_upcoming">%1$s · Wkrótce · %2$s</string>
+    <string name="channel_timeline_legend_live">na żywo</string>
+    <string name="channel_timeline_legend_archive">z archiwum</string>
+    <string name="channel_timeline_legend_watching">oglądasz</string>
     <string name="channel_timeline_start">Początek archiwum</string>
     <string name="channel_timeline_unavailable">Ten kanał nie ma dostępnego archiwum.</string>
     <string name="channel_timeline_future">Zaczyna się o %1$s</string>

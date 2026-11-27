@@ -86,6 +86,24 @@ class HistoryNavigationTest {
         assertEquals(reloaded.lastIndex, focus.index(reloaded))
     }
 
+    @Test fun opensAtWatchedProgrammeWhenBehindLive() {
+        val live = TimelineItem(now - 600_000, now + 600_000, live = true, current = true)
+        val watched = items[8].start + 60_000
+        val atLive = HistoryFocus(now, live = true)
+        val focus = HistoryNavigation.initialFocus(true, true, watched, now, live)
+        assertEquals(HistoryFocus(watched), focus)
+        assertEquals(8, focus.index(items))
+        assertEquals(focus, HistoryNavigation.initialFocus(true, false, watched, now, live))
+        assertEquals(atLive, HistoryNavigation.initialFocus(false, true, watched, now, live))
+        assertEquals(atLive, HistoryNavigation.initialFocus(true, true, now - 300_000, now, live))
+        assertEquals(atLive, HistoryNavigation.initialFocus(true, true, now - 1_000, now, null))
+        assertEquals(atLive, HistoryNavigation.initialFocus(true, true, 0, now, live))
+        assertEquals(atLive, HistoryNavigation.initialFocus(true, false, now - 60_000, now, null))
+        assertEquals(HistoryFocus(now - 60_000), HistoryNavigation.initialFocus(true, true, now - 60_000, now, null))
+        assertEquals(HistoryFocus(now - 300_000), HistoryNavigation.initialFocus(true, false, now - 300_000, now, null))
+        assertEquals(HistoryNavigation.InitialPosition(23, 26), HistoryNavigation.initialPosition(30, 840, 52, 8, centred = true))
+    }
+
     @Test fun keepsSelectedTimeRatherThanItsOldIndexWhenRowsChange() {
         val focus = HistoryFocus(items[8].start)
         assertEquals(8, focus.index(items))

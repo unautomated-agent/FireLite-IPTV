@@ -33,13 +33,13 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
 
     val installed: InstalledVersion by lazy { readInstalledVersion() }
 
-    private val updateFile by lazy { File(app.cacheDir, "updates/firelite.apk") }
+    private val files by lazy { UpdateFiles(File(app.cacheDir, "updates")) }
 
     init {
         // A finished update leaves its APK behind; it is no longer needed once this build runs.
         viewModelScope.launch(Dispatchers.IO) {
             (application as FireLiteApplication).container.startup.awaitReady()
-            updateFile.parentFile?.deleteRecursively()
+            files.removeStale()
         }
     }
 
@@ -95,11 +95,12 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
             return
         }
 
+        files.claim()
         mutableState.value = UpdateState.Downloading(release, null)
         viewModelScope.launch {
             val downloaded: Boolean = withContext(Dispatchers.IO) {
                 try {
-                    repo.download(release, updateFile) { progress ->
+                    repo.download(release, files.apk) { progress ->
                         mutableState.value = UpdateState.Downloading(release, progress)
                     }
                     true
@@ -110,7 +111,7 @@ class UpdateViewModel(application: Application) : AndroidViewModel(application) 
             mutableState.value = when {
                 !downloaded -> UpdateState.Failed(FailureReason.Download, release)
                 // The installer is open now. If the user cancels, the update simply stays available.
-                ApkInstaller.install(app, updateFile) -> UpdateState.Available(release)
+                ApkInstaller.install(app, files.apk) -> UpdateState.Available(release)
                 else -> UpdateState.Failed(FailureReason.InstallerUnavailable, release)
             }
         }

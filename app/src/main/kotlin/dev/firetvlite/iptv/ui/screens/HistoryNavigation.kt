@@ -1,6 +1,7 @@
 package dev.firetvlite.iptv.ui.screens
 
 import dev.firetvlite.iptv.playback.ChannelTimeline
+import dev.firetvlite.iptv.playback.PlaybackTime
 import dev.firetvlite.iptv.playback.TimelineItem
 import java.time.Instant
 import java.time.ZoneId
@@ -17,10 +18,21 @@ internal data class HistoryFocus(val time: Long, val live: Boolean = false) {
 internal object HistoryNavigation {
     data class InitialPosition(val index: Int, val offset: Int)
 
-    fun initialPosition(liveIndex: Int, viewportHeight: Int, rowHeight: Int, spacing: Int): InitialPosition {
+    /** A live stream runs up to about a minute behind the clock; further back counts as watching the past. */
+    const val BEHIND_LIVE_MS = 120_000L
+
+    /** Opens on the programme being watched when playback is behind live ([archive] or far back in the live window), otherwise on the live row. */
+    fun initialFocus(playing: Boolean, archive: Boolean, watched: Long, now: Long, live: TimelineItem?): HistoryFocus =
+        if (playing && watched > 0 && watched < now - (if (archive) PlaybackTime.LIVE_TOLERANCE_MS else BEHIND_LIVE_MS) &&
+            (live == null || watched < live.start))
+            HistoryFocus(watched)
+        else HistoryFocus(now, live = true)
+
+    /** Places the focused row three quarters down (live: the past is above) or, with [centred], in the middle. */
+    fun initialPosition(liveIndex: Int, viewportHeight: Int, rowHeight: Int, spacing: Int, centred: Boolean = false): InitialPosition {
         if (liveIndex <= 0 || viewportHeight <= 0 || rowHeight <= 0) return InitialPosition(liveIndex.coerceAtLeast(0), 0)
         val stride = rowHeight.toLong() + spacing.coerceAtLeast(0)
-        val target = viewportHeight.toLong() * 3 / 4
+        val target = if (centred) (viewportHeight.toLong() - rowHeight) / 2 else viewportHeight.toLong() * 3 / 4
         val before = ((target + stride - 1) / stride).coerceAtMost(liveIndex.toLong()).toInt()
         return InitialPosition(liveIndex - before, (before * stride - target).coerceAtLeast(0).toInt())
     }

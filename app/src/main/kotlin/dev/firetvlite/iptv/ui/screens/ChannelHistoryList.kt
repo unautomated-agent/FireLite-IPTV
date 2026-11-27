@@ -9,6 +9,8 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
@@ -43,7 +45,9 @@ import dev.firetvlite.iptv.R
 import dev.firetvlite.iptv.playback.CatchupUrlBuilder
 import dev.firetvlite.iptv.playback.ChannelTimeline
 import dev.firetvlite.iptv.playback.TimelineItem
+import dev.firetvlite.iptv.ui.components.ArchiveIcon
 import dev.firetvlite.iptv.ui.components.FLText
+import dev.firetvlite.iptv.ui.components.LiveIcon
 import dev.firetvlite.iptv.ui.components.clockTime
 import dev.firetvlite.iptv.ui.components.requestFocusWhenReady
 import dev.firetvlite.iptv.ui.theme.FireLiteTheme
@@ -64,7 +68,11 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
     val timeline = remember(programmes, target) { ChannelTimeline.items(programmes.orEmpty().map { it.programme }, now, earliest) }
     val items = remember(timeline) { ChannelTimeline.history(timeline) }
     val nextProgramme = timeline.firstOrNull { it.future }
-    var focus by remember(target) { mutableStateOf(HistoryFocus(now, live = true)) }
+    val opened = remember(target, programmes != null) {
+        HistoryNavigation.initialFocus(target.playing, target.archive, target.frame.watchedMs, now, items.lastOrNull { it.live }.takeIf { programmes != null })
+    }
+    var moved by remember(target) { mutableStateOf<HistoryFocus?>(null) }
+    val focus = moved ?: opened
     var atStart by remember(target) { mutableStateOf(false) }
     val index = focus.index(items)
     val focused = items[index]
@@ -87,7 +95,7 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
                 it.visibleItemsInfo.any { row -> row.size > 0 }
         }
         val position = HistoryNavigation.initialPosition(index, layout.viewportEndOffset - layout.viewportStartOffset,
-            layout.visibleItemsInfo.first().size, rowSpacing)
+            layout.visibleItemsInfo.first().size, rowSpacing, centred = !focused.live)
         listState.scrollToItem(position.index, position.offset)
         initiallyPositioned = true
     }
@@ -113,7 +121,7 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
                     Key.DirectionLeft, Key.DirectionRight -> true
                     Key.MediaRewind, Key.MediaFastForward -> {
                         if (event.nativeKeyEvent.repeatCount == 0) {
-                            focus = HistoryNavigation.jumpDay(items, focus,
+                            moved = HistoryNavigation.jumpDay(items, focus,
                                 if (event.key == Key.MediaRewind) -1 else 1, now)
                             atStart = false
                         }
@@ -123,7 +131,7 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
                         val delta = if (event.key == Key.DirectionUp) -1 else 1
                         val next = ChannelTimeline.move(index, delta, items.size)
                         atStart = next == index && delta < 0
-                        focus = HistoryFocus(items[next].start, items[next].live)
+                        moved = HistoryFocus(items[next].start, items[next].live)
                         true
                     }
                     Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
@@ -144,10 +152,14 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
                 color = colors.accent)
             LazyColumn(state = listState, modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 itemsIndexed(items, key = { _, item -> if (item.live) "live" else "time:${item.start}" }) { itemIndex, item ->
-                    Column(Modifier.fillMaxWidth()
+                    Row(Modifier.fillMaxWidth()
                         .background(if (itemIndex == index) colors.surfaceHigh.copy(alpha = 0.75f) else Color.Transparent)
                         .border(2.dp, if (itemIndex == index) Color.White else Color.Transparent)
-                        .padding(horizontal = 10.dp, vertical = 7.dp)) {
+                        .padding(horizontal = 10.dp, vertical = 7.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Box(Modifier.size(16.dp)) {
+                            if (item.live) LiveIcon() else if (!item.future) ArchiveIcon()
+                        }
                         FLText((if (itemIndex == playingIndex) "▶ " else "") +
                             (if (item.future) stringResource(R.string.channel_timeline_upcoming, clockTime(item.start), timelineTitle(item))
                             else (if (item.live) "" else "${clockTime(item.start)}  ") + timelineTitle(item)),
@@ -167,6 +179,14 @@ internal fun ChannelHistoryList(target: ChannelTimelineTarget, player: PlayerVie
             FLText(focused.programme?.description?.takeIf { it.isNotBlank() }
                 ?: "",
                 style = FireLiteTheme.typography.label, maxLines = 2)
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalAlignment = Alignment.CenterVertically) {
+                LiveIcon()
+                FLText(stringResource(R.string.channel_timeline_legend_live), style = FireLiteTheme.typography.label, color = colors.textSecondary)
+                ArchiveIcon(Modifier.padding(start = 10.dp))
+                FLText(stringResource(R.string.channel_timeline_legend_archive), style = FireLiteTheme.typography.label, color = colors.textSecondary)
+                FLText("▶ " + stringResource(R.string.channel_timeline_legend_watching), modifier = Modifier.padding(start = 10.dp),
+                    style = FireLiteTheme.typography.label, color = colors.textSecondary)
+            }
             FLText(stringResource(when {
                 atStart -> R.string.channel_timeline_start
                 earliest == null -> R.string.channel_timeline_unavailable

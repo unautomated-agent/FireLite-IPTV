@@ -132,16 +132,16 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
                     if (source == null || key.isBlank()) return@collectLatest
                     while (true) {
                         val quotaDelay = preferences.quotaDelay(System.currentTimeMillis())
-                        if (quotaDelay > 0) {
-                            val probe = preferences.resetProbe
-                            if (!probe.active) { delay(quotaDelay); continue }
-                            // Finding OMDb's reset hour: ask once in a while until it answers again.
+                        val probe = preferences.resetProbe
+                        if (probe.active) {
+                            // Finding OMDb's reset hour: nothing but one request once in a while until it answers again.
                             val wait = probe.delay(System.currentTimeMillis(), probedAt)
-                            if (wait > 0) { delay(minOf(wait, quotaDelay)); continue }
+                            if (wait > 0) { delay(wait); continue }
                             probedAt = System.currentTimeMillis()
                             preferences.probed(client.lookup(key, OmdbResetProbe.TITLE, OmdbResetProbe.YEAR), System.currentTimeMillis())
                             continue
                         }
+                        if (quotaDelay > 0) { delay(quotaDelay); continue }
                         var retry = false
                         var hasFutureCandidates = false
                         mutableEnriching.value = true
@@ -167,6 +167,8 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
                             futureWindows.complete(request)
                             return@collectLatest
                         }
+                        // A refusal that started the reset measurement is handled at the top of the loop.
+                        if (preferences.resetProbe.active) continue
                         delay(preferences.quotaDelay(System.currentTimeMillis()).takeIf { it > 0 }
                             ?: if (retry) 60_000L else 60 * 60_000L)
                     }

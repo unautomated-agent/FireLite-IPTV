@@ -445,7 +445,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     val limit = now - channel.catchupDays.toLong() * ChannelTimeline.DAY
                     if (item.stop <= limit) return
                     closeTimeline()
-                    openArchive(target.zap, target.index, target.group, maxOf(item.start, limit))
+                    // A slot without a programme has no start to miss, so it is not shifted.
+                    select(target.zap, target.index, target.group, PlayerMode.Fullscreen, maxOf(item.start, limit))
                 } else if (activeChannel?.streamUrl == channel.streamUrl && archiveStartMs == null) {
                     val frame = updateFrame()
                     if (!frame.snapshot.seekable) { notify(PlayerMessage.SeekUnsupported); return }

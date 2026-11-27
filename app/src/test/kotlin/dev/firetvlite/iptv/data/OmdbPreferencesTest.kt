@@ -2,6 +2,7 @@ package dev.firetvlite.iptv.data
 
 import android.content.SharedPreferences
 import dev.firetvlite.iptv.data.film.OmdbPreferences
+import dev.firetvlite.iptv.data.film.OmdbResetProbe
 import dev.firetvlite.iptv.data.film.OmdbResult
 import dev.firetvlite.iptv.data.film.OmdbMovie
 import dev.firetvlite.iptv.data.film.FilmLookup
@@ -28,6 +29,43 @@ class OmdbPreferencesTest {
         assertEquals(preferences.stats.value, reopened.stats.value)
         assertFalse(reopened.stats.value.missSummary().contains(p.title))
         assertTrue(OmdbPreferences(backend.preferences) { now + Films.DAY }.stats.value.missTypes.isEmpty())
+    }
+
+    @Test fun resetHourIsReportedOnceWhenOmdbAnswersSoonAfterARefusal() {
+        val backend = Backend()
+        val refused = Instant.parse("2026-03-28T07:50:00Z").toEpochMilli()
+        val lines = mutableListOf<String>()
+        val preferences = OmdbPreferences(backend.preferences) { refused }.also { it.resetReport = lines::add }
+        preferences.completed(OmdbResult.Failed("REMOTE_LIMIT"), refused - 3_600_000)
+        preferences.probed(OmdbResult.Failed(), refused - 60_000)
+        preferences.probed(OmdbResult.Failed("REMOTE_LIMIT"), refused)
+        assertTrue(preferences.quotaDelay(refused) > 0 && lines.isEmpty())
+        assertTrue(OmdbPreferences(backend.preferences) { refused }.resetProbe.active)
+        preferences.probed(OmdbResult.Missing, refused + 600_000)
+        assertEquals(listOf("OMDb reset licznika (pomiar): odmowa 2026-03-28T07:50:00Z, " +
+            "odpowiedź 2026-03-28T08:00:00Z, odstęp 10 min"), lines)
+        assertEquals(0L, preferences.quotaDelay(refused + 600_000))
+        assertNull(preferences.currentError.value)
+        preferences.completed(OmdbResult.Failed("REMOTE_LIMIT"), refused + Films.DAY)
+        preferences.probed(OmdbResult.Missing, refused + Films.DAY + 60_000)
+        assertEquals(1, lines.size)
+    }
+
+    @Test fun wideBracketIsReportedAsImpreciseAndMeasuredAgain() {
+        val backend = Backend()
+        val now = 1_800_000_000_000L
+        val lines = mutableListOf<String>()
+        val preferences = OmdbPreferences(backend.preferences) { now }.also { it.resetReport = lines::add }
+        preferences.completed(OmdbResult.Failed("REMOTE_LIMIT"), now)
+        preferences.completed(OmdbResult.Missing, now + 8 * 3_600_000)
+        assertTrue(lines.single().contains("niedokładny") && lines.single().contains("480 min"))
+        assertFalse(preferences.resetProbe.done || preferences.resetProbe.active)
+        preferences.completed(OmdbResult.Failed("REMOTE_LIMIT"), now + Films.DAY)
+        assertTrue(preferences.resetProbe.active)
+        assertEquals(OmdbResetProbe.INTERVAL, preferences.resetProbe.delay(now + Films.DAY, 0))
+        assertEquals(0L, preferences.resetProbe.delay(now + Films.DAY + OmdbResetProbe.INTERVAL, now))
+        assertEquals(60_000L, preferences.resetProbe.delay(now + Films.DAY + OmdbResetProbe.INTERVAL,
+            now + Films.DAY + 60_000))
     }
 
     @Test fun expiredQuotaStatusClearsEvenWhenEveryRemainingFilmIsCached() = runBlocking {

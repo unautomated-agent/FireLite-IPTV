@@ -82,7 +82,9 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
         if (preferences.key.value.isNotBlank()) futureWindows.request(sourceId, preferences.refresh.value)
     }
     private val dao = database.filmDao()
-    private val lookup = FilmLookup(OmdbHttpClient(preferences::baseUrl), object : FilmStore {
+    private val client = OmdbHttpClient(preferences::baseUrl)
+    private var probedAt = 0L
+    private val lookup = FilmLookup(client, object : FilmStore {
         override suspend fun cached(key: String) = dao.cached(key)
         override suspend fun save(rating: FilmRatingEntity) = dao.save(rating)
         override suspend fun reserve(day: Long): Boolean = database.withTransaction {
@@ -130,7 +132,16 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
                     if (source == null || key.isBlank()) return@collectLatest
                     while (true) {
                         val quotaDelay = preferences.quotaDelay(System.currentTimeMillis())
-                        if (quotaDelay > 0) { delay(quotaDelay); continue }
+                        if (quotaDelay > 0) {
+                            val probe = preferences.resetProbe
+                            if (!probe.active) { delay(quotaDelay); continue }
+                            // Finding OMDb's reset hour: ask once in a while until it answers again.
+                            val wait = probe.delay(System.currentTimeMillis(), probedAt)
+                            if (wait > 0) { delay(minOf(wait, quotaDelay)); continue }
+                            probedAt = System.currentTimeMillis()
+                            preferences.probed(client.lookup(key, OmdbResetProbe.TITLE, OmdbResetProbe.YEAR), System.currentTimeMillis())
+                            continue
+                        }
                         var retry = false
                         var hasFutureCandidates = false
                         mutableEnriching.value = true

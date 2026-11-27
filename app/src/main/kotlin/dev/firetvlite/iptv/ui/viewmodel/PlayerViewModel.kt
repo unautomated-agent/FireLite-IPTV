@@ -639,7 +639,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             notify(PlayerMessage.CatchupUnsupported)
             return
         }
-        archiveStartMs = start * 1000
+        archiveStartMs = CatchupUrlBuilder.startOf(channel, start) * 1000
         mutableLiveChannelId.value = null
         val request = StreamRequest(url, userAgent, archive = true, channelName = channel.name,
             headers = PlaylistHttpHeaders.decode(channel.requestHeaders), channelKey = DeadChannels.key(channel.streamUrl),

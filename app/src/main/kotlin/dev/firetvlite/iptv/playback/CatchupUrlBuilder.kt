@@ -71,6 +71,11 @@ object CatchupUrlBuilder {
         }
     }
 
+    /** The moment the address built for [startEpochSec] really starts at: native Xtream addresses carry whole minutes. */
+    fun startOf(channel: ChannelEntity, startEpochSec: Long): Long =
+        if (typeOf(channel) == "xc" && channel.catchupSource.isNullOrEmpty()) startEpochSec - Math.floorMod(startEpochSec, 60L)
+        else startEpochSec
+
     private fun typeOf(channel: ChannelEntity): String? {
         val type = channel.catchupType?.trim()?.lowercase(Locale.ROOT)
             ?: if (!channel.catchupSource.isNullOrBlank()) "default" else null

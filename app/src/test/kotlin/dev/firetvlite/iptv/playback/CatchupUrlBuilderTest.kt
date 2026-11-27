@@ -24,6 +24,8 @@ class CatchupUrlBuilderTest {
         assertEquals("https://host/timeshift/u/p/30/2024-03-05:07-08/12.m3u8",
             CatchupUrlBuilder.build(channel("https://host/u/p/12.m3u8", "xc"), start, now, 1800))
         assertTrue(CatchupUrlBuilder.isSupported(channel("https://host/u/p/12", "xc")))
+        assertEquals(1_700_000_040L, CatchupUrlBuilder.startOf(channel("https://host/u/p/12", "xc"), 1_700_000_070))
+        assertEquals(1_700_000_070L, CatchupUrlBuilder.startOf(channel("https://host/u/p/12", "shift"), 1_700_000_070))
     }
 
     @Test fun expandsAllProviderPlaceholdersAndHonoursTemplatesForShiftAndFs() {

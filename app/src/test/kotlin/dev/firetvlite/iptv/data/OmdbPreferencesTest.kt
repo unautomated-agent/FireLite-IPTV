@@ -51,6 +51,15 @@ class OmdbPreferencesTest {
         assertEquals(1, lines.size)
     }
 
+    @Test fun rejectedKeyEndsTheMeasurementAndShowsTheError() {
+        val now = 1_800_000_000_000L
+        val preferences = OmdbPreferences(Backend().preferences) { now }
+        preferences.completed(OmdbResult.Failed("REMOTE_LIMIT"), now)
+        preferences.probed(OmdbResult.Failed("AUTH"), now + 600_000)
+        assertFalse(preferences.resetProbe.active)
+        assertEquals("AUTH", preferences.currentError.value)
+    }
+
     @Test fun wideBracketIsReportedAsImpreciseAndMeasuredAgain() {
         val backend = Backend()
         val now = 1_800_000_000_000L

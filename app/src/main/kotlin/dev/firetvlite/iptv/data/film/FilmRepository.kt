@@ -82,7 +82,9 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
         if (preferences.key.value.isNotBlank()) futureWindows.request(sourceId, preferences.refresh.value)
     }
     private val dao = database.filmDao()
-    private val lookup = FilmLookup(OmdbHttpClient(preferences::baseUrl), object : FilmStore {
+    private val client = OmdbHttpClient(preferences::baseUrl)
+    private var probedAt = 0L
+    private val lookup = FilmLookup(client, object : FilmStore {
         override suspend fun cached(key: String) = dao.cached(key)
         override suspend fun save(rating: FilmRatingEntity) = dao.save(rating)
         override suspend fun reserve(day: Long): Boolean = database.withTransaction {
@@ -130,6 +132,15 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
                     if (source == null || key.isBlank()) return@collectLatest
                     while (true) {
                         val quotaDelay = preferences.quotaDelay(System.currentTimeMillis())
+                        val probe = preferences.resetProbe
+                        if (probe.active) {
+                            // Finding OMDb's reset hour: nothing but one request once in a while until it answers again.
+                            val wait = probe.delay(System.currentTimeMillis(), probedAt)
+                            if (wait > 0) { delay(wait); continue }
+                            probedAt = System.currentTimeMillis()
+                            preferences.probed(client.lookup(key, OmdbResetProbe.TITLE, OmdbResetProbe.YEAR), System.currentTimeMillis())
+                            continue
+                        }
                         if (quotaDelay > 0) { delay(quotaDelay); continue }
                         var retry = false
                         var hasFutureCandidates = false
@@ -156,6 +167,8 @@ class FilmRepository(private val database: FireLiteDatabase, val preferences: Om
                             futureWindows.complete(request)
                             return@collectLatest
                         }
+                        // A refusal that started the reset measurement is handled at the top of the loop.
+                        if (preferences.resetProbe.active) continue
                         delay(preferences.quotaDelay(System.currentTimeMillis()).takeIf { it > 0 }
                             ?: if (retry) 60_000L else 60 * 60_000L)
                     }

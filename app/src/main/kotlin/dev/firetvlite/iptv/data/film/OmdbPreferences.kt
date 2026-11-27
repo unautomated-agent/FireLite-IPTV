@@ -25,7 +25,37 @@ class OmdbPreferences internal constructor(private val prefs: SharedPreferences,
         }.filterValues { it > 0 }, prefs.getString("miss_titles", "").orEmpty().split('\n').filter { it.isNotBlank() }).today(clock()))
     val stats = mutableStats.asStateFlow()
 
+    /** Receives the one-line result of [OmdbResetProbe]. */
+    @Volatile var resetReport: (String) -> Unit = {}
+    val resetProbe: OmdbResetProbe
+        @Synchronized get() = OmdbResetProbe(prefs.getLong("probe_refused_at", 0), prefs.getInt("probe_done", 0) == 1)
+
     init { quotaDelay(clock()) }
+
+    private fun probe(result: OmdbResult, now: Long) {
+        val line = synchronized(this) {
+            val (next, line) = when (result) {
+                OmdbResult.Failed("REMOTE_LIMIT") -> resetProbe.refused(now) to null
+                is OmdbResult.Failed -> return
+                else -> resetProbe.answered(now)
+            }
+            prefs.edit().putLong("probe_refused_at", next.refusedAt).putInt("probe_done", if (next.done) 1 else 0).apply()
+            line
+        } ?: return
+        // OMDb answers again, so the pause until the next Warsaw midnight no longer applies.
+        prefs.edit().putLong("quota_until", 0).apply()
+        setError(null)
+        resetReport(line)
+    }
+    /** Result of a request sent only to find the reset hour; it is not counted in the statistics. */
+    fun probed(result: OmdbResult, now: Long) {
+        // A key OMDb no longer accepts cannot show the reset: give up this measurement and show the error.
+        if (result is OmdbResult.Failed && result.code in setOf("AUTH", "HTTP_401", "HTTP_403")) {
+            // The limit pause goes too: it would hide this error and hold back a repaired key until midnight.
+            prefs.edit().putLong("probe_refused_at", 0).putLong("quota_until", 0).apply()
+            setError(result.code)
+        } else probe(result, now)
+    }
 
     @Synchronized
     private fun updateStats(change: (OmdbStats) -> OmdbStats) {
@@ -43,11 +73,13 @@ class OmdbPreferences internal constructor(private val prefs: SharedPreferences,
         updateStats { it.completed(result, now) }
         if (result == OmdbResult.Failed("REMOTE_LIMIT")) pauseQuota(now)
         setError((result as? OmdbResult.Failed)?.code)
+        probe(result, now)
     }
     override fun error(code: String, now: Long) {
         updateStats { it.today(now).error(code) }
         if (code == "REMOTE_LIMIT") pauseQuota(now)
         setError(code)
+        probe(OmdbResult.Failed(code), now)
     }
     private fun setError(code: String?) {
         val safe = code?.let { OmdbStats().error(it).lastError }
@@ -56,7 +88,8 @@ class OmdbPreferences internal constructor(private val prefs: SharedPreferences,
     }
     fun save(key: String): Boolean {
         val value = normalizeOmdbKey(key) ?: return false
-        if (value != mutableKey.value) prefs.edit().putLong("quota_until", 0).apply()
+        // Another key has its own counter: a refusal of the old key says nothing about it.
+        if (value != mutableKey.value) prefs.edit().putLong("quota_until", 0).putLong("probe_refused_at", 0).apply()
         prefs.edit().putString("key", value).apply()
         mutableKey.value = value
         setError(if (quotaDelay(clock()) > 0) "REMOTE_LIMIT" else null)

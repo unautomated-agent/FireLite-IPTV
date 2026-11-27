@@ -43,7 +43,9 @@ class AppContainer(application: Application, startedAt: Long = SystemClock.elaps
 
     val database: FireLiteDatabase = FireLiteDatabase.create(application)
     val epg = EpgRepository(database, applicationScope)
-    val films by lazy { FilmRepository(database, OmdbPreferences(application), applicationScope, epg) }
+    val films by lazy { FilmRepository(database, OmdbPreferences(application).also {
+        it.resetReport = { line -> errorReports.enqueue("other", "", line, line) }
+    }, applicationScope, epg) }
     val clockPreferences by lazy { ClockPreferences(application) }
     val reminderPreferences by lazy { ReminderPreferences(application) }
     val remoteKeys by lazy { dev.firetvlite.iptv.data.RemoteKeyPreferences(application) }

@@ -181,6 +181,9 @@ for 30 days, misses for 3 days. Films OMDb does not know stay in the ranking bel
 diagnostics report lists them as `OMDb brak:` lines. Sequential requests are spaced by 250 ms and every request,
 including fallbacks, reserves one of 1000 persisted daily slots (Warsaw calendar day), a free key's full
 provider limit; if OMDb refuses earlier, requests pause until the next day.
+The hour at which OMDb resets its own counter is measured once (`OmdbResetProbe`): after a refusal one
+request is sent every 10 minutes until OMDb answers again, and the last refusal and first answer are sent
+as an `OMDb reset licznika` report. These probe requests are outside the local budget.
 Import completion, active-source/key changes and hourly process refreshes trigger enrichment;
 cache TTLs avoid unnecessary daily requests. This uses the existing app-process refresh model,
 not an OS job that wakes a stopped application. Network/authentication failures never affect playback.

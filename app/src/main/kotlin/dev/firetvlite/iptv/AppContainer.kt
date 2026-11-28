@@ -47,6 +47,7 @@ class AppContainer(application: Application, startedAt: Long = SystemClock.elaps
         it.resetReport = { line -> errorReports.enqueue("other", "", line, line) }
     }, applicationScope, epg) }
     val clockPreferences by lazy { ClockPreferences(application) }
+    val archiveStart by lazy { dev.firetvlite.iptv.data.ArchiveStartPreferences(application) }
     val reminderPreferences by lazy { ReminderPreferences(application) }
     val remoteKeys by lazy { dev.firetvlite.iptv.data.RemoteKeyPreferences(application) }
     private val remoteKeysLoading = applicationScope.launch(Dispatchers.IO) { remoteKeys }

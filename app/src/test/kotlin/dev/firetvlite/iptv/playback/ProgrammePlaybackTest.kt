@@ -136,7 +136,8 @@ class ProgrammePlaybackTest {
         assertFalse(selection.contains("playback.play("))
         assertFalse(selection.contains("prepare("))
         val openArchive = model.substringAfter("fun openArchive(").substringBefore("    private fun select(")
-        assertTrue(openArchive.contains("select(zap, startIndex, group, PlayerMode.Fullscreen, time)"))
+        assertTrue(openArchive.contains("select(zap, startIndex, group, PlayerMode.Fullscreen, " +
+            "container.archiveStart.time(time, System.currentTimeMillis()))"))
         assertTrue(model.contains("applyCatchup(first, archiveTime, restartIfActive = true)"))
         assertTrue(model.contains("restartIfActive: Boolean = false"))
         assertTrue(model.contains("if (restartIfActive) playback.playArchiveFromStart(request) else playback.play(request)"))

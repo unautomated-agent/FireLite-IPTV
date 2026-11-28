@@ -229,8 +229,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         select(zap, startIndex, group, PlayerMode.Fullscreen)
     }
 
+    /** Plays a programme of the archive from its start at [time]. */
     fun openArchive(zap: ZapContext, startIndex: Int, group: GroupKey, time: Long) {
-        select(zap, startIndex, group, PlayerMode.Fullscreen, time)
+        select(zap, startIndex, group, PlayerMode.Fullscreen, container.archiveStart.time(time, System.currentTimeMillis()))
     }
 
     private fun select(zap: ZapContext, startIndex: Int, group: GroupKey, mode: PlayerMode, archiveTime: Long? = null,
@@ -397,7 +398,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         settlePendingZap()
         startupPending = false
         select(allChannels(channel.sourceId), 0, GroupKey.All, PlayerMode.Fullscreen,
-            archiveTime = archiveStart, expectedChannel = channel)
+            archiveTime = archiveStart?.let { container.archiveStart.time(it, System.currentTimeMillis()) },
+            expectedChannel = channel)
     }
 
     fun dismissTimeline() {
@@ -443,7 +445,8 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
                     val limit = now - channel.catchupDays.toLong() * ChannelTimeline.DAY
                     if (item.stop <= limit) return
                     closeTimeline()
-                    openArchive(target.zap, target.index, target.group, maxOf(item.start, limit))
+                    // A slot without a programme has no start to miss, so it is not shifted.
+                    select(target.zap, target.index, target.group, PlayerMode.Fullscreen, maxOf(item.start, limit))
                 } else if (activeChannel?.streamUrl == channel.streamUrl && archiveStartMs == null) {
                     val frame = updateFrame()
                     if (!frame.snapshot.seekable) { notify(PlayerMessage.SeekUnsupported); return }
@@ -587,7 +590,9 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
         catchupJob = playbackWork.launch {
             val current = epg.programmeAt(channel.id, watched)
             catchupJob = null
-            if (current == null) notify(PlayerMessage.SeekUnsupported) else seekAbsolute(current.start)
+            if (current == null) notify(PlayerMessage.SeekUnsupported) else seekAbsolute(
+                if (CatchupUrlBuilder.isSupported(channel)) container.archiveStart.time(current.start, System.currentTimeMillis())
+                else current.start)
         }
     }
 
@@ -636,7 +641,7 @@ class PlayerViewModel(application: Application) : AndroidViewModel(application) 
             notify(PlayerMessage.CatchupUnsupported)
             return
         }
-        archiveStartMs = start * 1000
+        archiveStartMs = CatchupUrlBuilder.startOf(channel, start) * 1000
         mutableLiveChannelId.value = null
         val request = StreamRequest(url, userAgent, archive = true, channelName = channel.name,
             headers = PlaylistHttpHeaders.decode(channel.requestHeaders), channelKey = DeadChannels.key(channel.streamUrl),

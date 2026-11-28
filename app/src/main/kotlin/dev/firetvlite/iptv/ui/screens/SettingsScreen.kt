@@ -178,6 +178,10 @@ fun SettingsScreen(
                                 val visible by preferences.visible.collectAsState()
                                 ToggleRow(stringResource(R.string.settings_clock), visible,
                                     { preferences.setVisible(!visible) }, Modifier.settingsControl("clock"))
+                                val archiveDelay by container.archiveStart.delay.collectAsState()
+                                SecondaryButton(stringResource(R.string.settings_archive_start, archiveDelay),
+                                    { container.archiveStart.next() }, Modifier.settingsControl("archive_start"))
+                                FLText(stringResource(R.string.settings_archive_start_help), style = FireLiteTheme.typography.body)
                                 val levelled by container.loudnessPreferences.enabled.collectAsState()
                                 val loudnessStatus by container.loudness.status.collectAsState()
                                 ToggleRow(stringResource(R.string.settings_loudness), levelled,

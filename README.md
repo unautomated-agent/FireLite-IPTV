@@ -105,6 +105,8 @@ is saved locally and defaults to on. Turning it off does not change programme/ba
   Short Menu opens history. Long Menu opens the quick menu: audio tracks (language/label/codec, selected marked),
   favourite toggle, main menu and settings. Audio selection uses a session-only Media3 override, cleared for a new stream.
   Long OK/Menu never also fire their short actions.
+  A programme opened from the archive is requested 30 s after its guide time (Settings → Wygląd, 0–90 s),
+  because a provider's archive runs behind the guide clock; seeks to an arbitrary time are not shifted.
   Long-press Left jumps to the current programme's start when catch-up is available. Archive seeks stay inside
   a seekable archive or re-request it after debounce; reaching the live edge returns to live.
 - **Programme history**: a translucent right-side list leaves video full-size behind it. Compact single-line
